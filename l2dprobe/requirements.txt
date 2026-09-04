@@ -1,0 +1,5 @@
+live2d-py
+PyOpenGL
+glfw
+numpy
+opencv-python-headless
