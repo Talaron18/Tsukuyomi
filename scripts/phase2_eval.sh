@@ -83,6 +83,14 @@ for R in "${rigs_held[@]}"; do
         echo "!! $R: no $R.model3.json under ${roots[*]}, skipping" >&2
         continue
     fi
+    if [[ ! -f "clips2/$R.npz" ]]; then
+        # Without its clips a rig is seeded from the default pose and has
+        # nothing to be scored against; the score step then crashed.
+        echo "!! $R: no clips2/$R.npz (rerun the clips step with the folder" \
+             "holding $M in MODELS), skipping" >&2
+        echo "$R/clips" >> runs/FAILED.txt
+        continue
+    fi
     base=(--model "$M" --rig "rigs/$R.npz" --clips "clips2/$R.npz")
     for x in "${sources[@]}"; do
         read -ra extra <<< "$(src_args "$x")"
