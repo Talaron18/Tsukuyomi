@@ -26,6 +26,18 @@ Note the probe stripped physics to make rendering deterministic. The runtime
 does the opposite and loads the rig intact, because secondary motion is most of
 what makes the result look alive.
 
+Expressive sources, one per run:
+  --ckpt prior.pt        deterministic next-frame prior (flow.prior)
+  --ckpt flowprior.pt    flow-matching prior (flow.flowprior --save), sampled
+                         a chunk at a time; --seed picks the noise
+  --behaviors stats.json hand-made baseline (flow.behaviors) driving only the
+                         head/body/gaze/brow roles; other expressive
+                         parameters are held at the idle's first frame and
+                         recorded as applied, so the scorer sees them held
+  --static / --neutral   authored replay / rig defaults
+All of them fill the same planned frames, so --dump, base state, part
+opacities and snapping behave identically.
+
 Usage:
     xvfb-run -a python -m flow.runtime \\
         --model CubismWebSamples/Samples/Resources/Hiyori/Hiyori.model3.json \\
@@ -97,17 +109,30 @@ class Autonomic:
     also true of real eyelids and is the detail that makes it look right.
     """
 
-    def __init__(self, fps: float, rng, mean_interval: float = 4.0):
+    def __init__(self, fps: float, rng, mean_interval: float = 4.0,
+                 requests=()):
         self.fps, self.rng = fps, rng
         self.mean_interval = mean_interval
         self.next_blink = rng.exponential(mean_interval)
         self.t = 0.0
         self.close, self.open_ = 0.06, 0.12
+        # Blink requests from behaviour (times in s): a large gaze shift
+        # brings a blink with it. A request moves the next blink earlier; the
+        # Poisson schedule resumes after it.
+        self.requests = sorted(requests)
+
+    def request(self, t: float) -> None:
+        self.requests.append(t)
+        self.requests.sort()
 
     def step(self) -> tuple[float, float]:
         """Returns (eye_open in [0,1], breath in [0,1])."""
         self.t += 1.0 / self.fps
         eye = 1.0
+        while self.requests and self.requests[0] <= self.t:
+            r = self.requests.pop(0)
+            if self.t - self.next_blink < 0:      # not mid-blink
+                self.next_blink = max(r, self.t - 1.0 / self.fps)
         dt = self.t - self.next_blink
         if 0 <= dt < self.close + self.open_:
             if dt < self.close:
@@ -211,7 +236,23 @@ def main(argv=None) -> int:
     ap.add_argument("--model", required=True, help=".model3.json")
     ap.add_argument("--rig", required=True, help="rigs/<name>.npz")
     ap.add_argument("--ckpt", default=None,
-                    help="prior checkpoint; not needed for --static/--neutral")
+                    help="prior checkpoint: the deterministic prior "
+                         "(flow.prior) or a flow-matching one (flow.flowprior "
+                         "--save), told apart by their config keys; not "
+                         "needed for --static/--neutral/--behaviors")
+    ap.add_argument("--behaviors", default=None, metavar="STATS.json",
+                    help="hand-made behaviour baseline (flow.behaviors) with "
+                         "these fitted statistics, or 'default'. Drives head, "
+                         "body, gaze and brow roles; every other expressive "
+                         "parameter is held at the idle's first frame")
+    ap.add_argument("--binding", default=None, metavar="FILE.json",
+                    help="--behaviors role binding override: "
+                         '{"head_x": "ParamFoo"} or {"head_x": ["ParamFoo", -1]}')
+    ap.add_argument("--solver-steps", type=int, default=None,
+                    help="flow checkpoint: Euler steps per chunk "
+                         "(default: what training evaluated with)")
+    ap.add_argument("--device", default="auto",
+                    help="flow checkpoint: cpu, cuda, or auto")
     ap.add_argument("--clips", default=None,
                     help="clips/<name>.npz to seed context from real motion")
     ap.add_argument("--seconds", type=float, default=8.0)
@@ -267,8 +308,9 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     if a.dump_only and not a.dump:
         ap.error("--dump-only needs --dump")
-    if not (a.static or a.neutral or a.ckpt):
-        ap.error("--ckpt is required unless --static or --neutral")
+    if not (a.static or a.neutral or a.ckpt or a.behaviors):
+        ap.error("--ckpt is required unless --static, --neutral or "
+                 "--behaviors")
     if not a.dump_only:
         _, ensure_display = _backend()
         ensure_display(["-m", f"{__package__ or 'flow'}.runtime"]
@@ -307,18 +349,40 @@ def main(argv=None) -> int:
                   + ". Regenerate clips with l2dprobe.motions to align.")
             expressive = [int(i) for i in rows]
 
-    model = desc = None
+    model = desc = flow = None
     window = 48
-    if a.ckpt and not (a.static or a.neutral):
+    use_model = bool(a.ckpt) and not (a.static or a.neutral or a.behaviors)
+    if use_model:
         torch, Prior = _prior()
         ck = torch.load(a.ckpt, map_location="cpu", weights_only=False)
-        model = Prior(ck["ddim"], ck["state"], window=ck["window"])
-        model.load_state_dict(ck["state_dict"])
-        model.eval()
-        window = ck["window"]
         if ck.get("holdout"):
             print(f"checkpoint was trained holding out {ck['holdout']}")
         desc = torch.from_numpy(desc_all[expressive])
+        if "chunk" in ck and "ctx" in ck:
+            # Flow-matching checkpoint: generated a chunk at a time from
+            # noise. --anchor/--reseed call the deterministic next-frame
+            # predict() and have no meaning here.
+            if a.anchor > 0 or a.reseed > 0:
+                ap.error("--anchor/--reseed apply to the deterministic prior "
+                         "only")
+            try:
+                from .flowprior import FlowStream, load_checkpoint
+            except ImportError:
+                from flow.flowprior import FlowStream, load_checkpoint
+            device = ("cuda" if torch.cuda.is_available() else "cpu") \
+                if a.device == "auto" else a.device
+            fmodel, cfg = load_checkpoint(a.ckpt, device)
+            window = cfg["ctx"]
+            steps = a.solver_steps or cfg.get("solver_steps", 6)
+            flow = (fmodel, cfg, device, steps)
+            print(f"flow prior: ctx {cfg['ctx']} chunk {cfg['chunk']} "
+                  f"base {cfg['base_mode']} cond_dim {cfg['cond_dim']} "
+                  f"solver {steps} steps on {device}")
+        else:
+            model = Prior(ck["ddim"], ck["state"], window=ck["window"])
+            model.load_state_dict(ck["state_dict"])
+            model.eval()
+            window = ck["window"]
     span_e = np.maximum(hi[expressive] - lo[expressive], 1e-6)
     default_n = np.clip((dflt[expressive] - lo[expressive]) / span_e * 2 - 1, -1, 1)
 
@@ -335,7 +399,40 @@ def main(argv=None) -> int:
         print("seeded from the default pose (no clips available)")
 
     n_frames = int(a.seconds * a.fps)
-    if a.neutral:
+    blink_requests = []
+    roles = {}
+    if a.behaviors and not (a.static or a.neutral):
+        try:
+            from .behaviors import bind_roles, generate, load_binding, load_stats
+        except ImportError:
+            from flow.behaviors import (bind_roles, generate, load_binding,
+                                        load_stats)
+        stats = load_stats(a.behaviors)
+        roles = bind_roles(pids, [pids[i] for i in expressive], a.rig,
+                           load_binding(a.binding))
+        for r, (p, sg, src) in sorted(roles.items()):
+            print(f"  role {r:<7} -> {p}{'' if sg > 0 else ' (sign -1)'}  "
+                  f"[{src}]" + ("  FALLBACK: confirm by hand"
+                               if src == "fallback" else ""))
+        if not roles:
+            print("no roles bound; everything will be held", file=sys.stderr)
+        gen, blink_requests = generate(stats, list(roles), a.seconds, a.fps,
+                                       rng)
+        # Non-role columns are filled from the base state below, once it is
+        # known; until then they sit at the default.
+        traj = np.tile(default_n.astype(np.float32), (n_frames, 1))
+        col_of = {pids[i]: c for c, i in enumerate(expressive)}
+        for r, (p, sg, _) in roles.items():
+            traj[:, col_of[p]] = np.clip(sg * gen[r][:n_frames], -1, 1)
+        print(f"behaviors: {len(roles)} roles from "
+              f"{'defaults' if a.behaviors == 'default' else a.behaviors}, "
+              f"{len(blink_requests)} gaze-coupled blinks requested")
+    elif flow is not None:
+        fmodel, cfg, device, steps = flow
+        stream = FlowStream(fmodel, desc, seed, steps=steps, seed=a.seed,
+                            device=device)
+        traj = stream.generate(n_frames)
+    elif a.neutral:
         traj = np.tile(default_n.astype(np.float32), (n_frames, 1))
         print("NEUTRAL: rig defaults only, model bypassed")
     elif a.static:
@@ -403,7 +500,7 @@ def main(argv=None) -> int:
     if a.anchor > 0:
         print(f"NOTE: {a.anchor:.0%} of each frame is real motion. This is a "
               f"demo scaffold, not evidence the prior works.")
-    if not (a.static or a.neutral):
+    if use_model:
         # Only model output is "generated"; under --static this described the
         # clips fallback trajectory, not what gets replayed.
         print(f"generated {n_frames} frames  std={traj.std(axis=0).mean():.4f}  "
@@ -414,7 +511,7 @@ def main(argv=None) -> int:
     eye_idx = [i for i, p in enumerate(pids)
                if bands[i] == "autonomic" and "open" in p.lower()]
     breath_idx = [i for i, p in enumerate(pids) if "breath" in p.lower()]
-    auto = Autonomic(a.fps, rng)
+    auto = Autonomic(a.fps, rng, requests=blink_requests)
 
     motions = authored_motions(a.model, a.fps)
     n_parts = len({p for _, m in motions for p in m["parts"]})
@@ -422,7 +519,10 @@ def main(argv=None) -> int:
         print(f"{n_parts} parts are switched by PartOpacity curves and the rig "
               "has no pose3 file; applying them directly (Live2D Native would "
               "ignore them and draw every variant)")
-    model_driven = {pids[i] for i in expressive}
+    # Under --behaviors only the bound roles are driven; the base state holds
+    # every other expressive parameter at the idle's first frame.
+    model_driven = ({p for p, _, _ in roles.values()} if a.behaviors
+                    else {pids[i] for i in expressive})
     band_by_id = dict(zip(pids, bands))
     base_name, base_params, base_parts = base_state(
         motions, base_keep(model_driven, phys, band_by_id))
@@ -443,6 +543,13 @@ def main(argv=None) -> int:
     elif a.static:
         print(f"STATIC: no motion files found; replaying {len(traj)} frames of "
               "the expressive band from the clips, model bypassed")
+
+    if a.behaviors and not (a.static or a.neutral):
+        bound = model_driven
+        for col, i in enumerate(expressive):
+            if pids[i] not in bound and pids[i] in base_params:
+                traj[:, col] = np.clip(
+                    (base_params[pids[i]] - lo[i]) / span_e[col] * 2 - 1, -1, 1)
 
     switches = None
     # --static replays authored values unchanged; it is the reference the
@@ -514,6 +621,8 @@ def main(argv=None) -> int:
             for p, v in (pt or {}).items():
                 opac[f, col_of[p]] = v
         mode = ("static" if a.static else "neutral" if a.neutral
+                else f"behaviors seed={a.seed}" if a.behaviors
+                else f"flow steps={flow[3]} seed={a.seed}" if flow
                 else f"prior anchor={a.anchor:g} reseed={a.reseed:g}")
         os.makedirs(os.path.dirname(os.path.abspath(a.dump)), exist_ok=True)
         np.savez_compressed(
