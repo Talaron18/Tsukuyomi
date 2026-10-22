@@ -358,6 +358,17 @@ def main(argv=None) -> int:
         if ck.get("holdout"):
             print(f"checkpoint was trained holding out {ck['holdout']}")
         desc = torch.from_numpy(desc_all[expressive])
+        want = ck.get("ddim")
+        if want is not None and int(want) != desc_all.shape[1]:
+            # A checkpoint is tied to the descriptor width of the rig files it
+            # was trained against (export_descriptors --pca). Feeding another
+            # width fails deep inside a matmul with no hint of the cause.
+            print(f"ERROR: {a.ckpt} expects {want}-dim descriptors but "
+                  f"{a.rig} has {desc_all.shape[1]}. The rig files were "
+                  "re-exported with different settings since this checkpoint "
+                  "was trained: use the rigs/ it was trained with, or "
+                  "retrain on the current ones.", file=sys.stderr)
+            return 1
         if "chunk" in ck and "ctx" in ck:
             # Flow-matching checkpoint: generated a chunk at a time from
             # noise. --anchor/--reseed call the deterministic next-frame

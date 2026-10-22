@@ -70,10 +70,19 @@ for R in "${rigs_held[@]}"; do
     for x in "${sources[@]}"; do
         read -ra extra <<< "$(src_args "$x")"
         if has score; then
+            # One broken source (say, a checkpoint that no longer matches the
+            # rig files) must not abort every other rig and source.
+            ok=1
             for s in 0 1 2; do
-                python -m flow.runtime "${base[@]}" "${extra[@]}" --seed "$s" \
-                    --seconds "$SECS" --dump "runs/$R.$x.$s.npz" --dump-only
+                if ! python -m flow.runtime "${base[@]}" "${extra[@]}" \
+                        --seed "$s" --seconds "$SECS" \
+                        --dump "runs/$R.$x.$s.npz" --dump-only; then
+                    echo "!! $R/$x: runtime failed, skipping this source" >&2
+                    echo "$R/$x" >> runs/FAILED.txt
+                    ok=0; break
+                fi
             done
+            [[ $ok == 1 ]] || continue
             # Exit code 2 is a FAIL verdict, not an error; keep going.
             python -m flow.score --traj "runs/$R.$x.0.npz" \
                 --seeds "runs/$R.$x.1.npz" "runs/$R.$x.2.npz" \
@@ -83,7 +92,8 @@ for R in "${rigs_held[@]}"; do
         fi
         if has render; then
             xvfb-run -a -s "-screen 0 1024x1024x24" python -m flow.runtime \
-                "${base[@]}" "${extra[@]}" --seconds 20 --out "vids/$R/$x"
+                "${base[@]}" "${extra[@]}" --seconds 20 --out "vids/$R/$x" \
+                || echo "!! $R/$x: render failed" >&2
         fi
     done
 done
