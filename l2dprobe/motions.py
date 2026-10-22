@@ -121,6 +121,36 @@ def eval_segments(segs: list[float], times: np.ndarray) -> np.ndarray:
     return out
 
 
+def authored_motion(path: str, fps: float) -> dict | None:
+    """Every Parameter and PartOpacity curve of one motion, in the rig's units.
+
+    Unlike build(), nothing is normalised or filtered by band: this is the
+    motion as authored, for replay. Returns {"params": {id: (T,)},
+    "parts": {id: (T,)}, "frames": T} or None for an empty motion.
+    """
+    try:
+        with open(path, encoding="utf-8") as fh:
+            blob = json.load(fh)
+    except Exception:  # noqa: BLE001
+        return None
+    dur = float(blob.get("Meta", {}).get("Duration", 0) or 0)
+    if dur <= 0.05:
+        return None
+    times = np.arange(0.0, dur, 1.0 / fps, dtype=np.float32)
+    out = {"params": {}, "parts": {}, "frames": len(times)}
+    for curve in blob.get("Curves", []):
+        key = {"Parameter": "params", "PartOpacity": "parts"}.get(
+            curve.get("Target"))
+        if key is None or not curve.get("Id"):
+            continue
+        try:
+            out[key][curve["Id"]] = eval_segments(curve.get("Segments", []),
+                                                  times)
+        except Exception:  # noqa: BLE001
+            continue
+    return out
+
+
 def physics_params(model_json: str) -> tuple[set[str], bool]:
     """Parameters driven by the physics solver, and whether a file was found.
 

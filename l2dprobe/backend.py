@@ -333,9 +333,36 @@ class Live2DBackend:
         self._disable_autonomics()
         self._bind_param_api()
         self._bind_update()
+        self._bind_parts()
         if not self.strip_dynamics and self.order not in self.DYNAMIC_ORDERS:
             self.order = self.DYNAMIC_ORDERS[0]
         return self
+
+    def _bind_parts(self):
+        """Map part ids to the indices SetPartOpacity takes.
+
+        Part opacity is how most rigs pick an arm or hand variant. Live2D's
+        Native motion player applies PartOpacity curves only through a pose3
+        file; a rig shipped without one (Azur Lane's, whose Unity runtime
+        applies the curves directly) draws every variant at once unless we
+        set the opacities ourselves.
+        """
+        ids_fn = getattr(self.model, "GetPartIds", None)
+        self._set_part = getattr(self.model, "SetPartOpacity", None)
+        self.part_index: dict[str, int] = {}
+        if ids_fn is None or self._set_part is None:
+            self._api_report["parts"] = "MISSING (no part opacity control)"
+            return
+        self.part_index = {str(p): i for i, p in enumerate(ids_fn())}
+        self._api_report["parts"] = f"{len(self.part_index)}"
+
+    def _apply_parts(self, parts):
+        if not parts or self._set_part is None:
+            return
+        for pid, value in parts.items():
+            i = self.part_index.get(pid)
+            if i is not None:
+                self._set_part(i, float(value))
 
     def _bind_update(self):
         """Pick an update entry point that honours a fixed timestep.
@@ -437,7 +464,7 @@ class Live2DBackend:
 
     # ----------------------------------------------------------------- render
 
-    def _apply(self, overrides, reset: bool = True):
+    def _apply(self, overrides, reset: bool = True, parts=None):
         # Reset every frame so probes never leak into each other.
         if reset:
             for spec in self.params:
@@ -445,10 +472,17 @@ class Live2DBackend:
         if overrides:
             for pid, value in overrides.items():
                 self._setter(pid, float(value), 1.0)
+        self._apply_parts(parts)
 
     def render(self, overrides: dict[str, float] | None = None,
-               order: str | None = None) -> np.ndarray:
-        """Render with all params at default except `overrides`. Returns HxWx4 uint8."""
+               order: str | None = None,
+               parts: dict[str, float] | None = None) -> np.ndarray:
+        """Render with all params at default except `overrides`. Returns HxWx4 uint8.
+
+        `parts` sets part opacities by part id. Parts not named keep whatever
+        opacity they last had, which is also how a motion without a pose file
+        leaves them.
+        """
         order = order or self.order
         glBindFramebuffer(GL_FRAMEBUFFER, self._fbo)
         glViewport(0, 0, self.size, self.size)
@@ -456,17 +490,17 @@ class Live2DBackend:
 
         update = self._update or self.model.Update
         if order == "before":
-            self._apply(overrides)
+            self._apply(overrides, parts=parts)
             update()
         elif order == "after":
             update()
-            self._apply(overrides)
+            self._apply(overrides, parts=parts)
         elif order == "sandwich":
-            self._apply(overrides)
+            self._apply(overrides, parts=parts)
             update()
             # Re-assert only what we drive. A second full reset would erase
             # the physics and pose results Update() just produced.
-            self._apply(overrides, reset=self.strip_dynamics)
+            self._apply(overrides, reset=self.strip_dynamics, parts=parts)
         else:
             raise ValueError(f"unknown parameter order {order!r}")
 
@@ -476,10 +510,11 @@ class Live2DBackend:
     def render_native(self) -> np.ndarray:
         """Render whatever the model's own update produces, writing nothing.
 
-        Live2D's motion player applies every curve a motion carries --
-        parameters, part opacities, model opacity -- then physics and pose. That
-        makes this the ground truth for authored playback: if a pipeline replay
-        differs from it, the pipeline dropped something.
+        This is Live2D Native's view of authored playback: its motion player
+        applies parameter curves, then physics and pose. It is not the whole
+        truth -- without a pose3 file it ignores PartOpacity curves, which
+        engines such as Unity apply directly -- so a rig that switches parts
+        that way shows every variant here as well.
         """
         glBindFramebuffer(GL_FRAMEBUFFER, self._fbo)
         glViewport(0, 0, self.size, self.size)

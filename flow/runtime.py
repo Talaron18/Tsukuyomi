@@ -35,6 +35,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -43,12 +44,14 @@ import numpy as np
 
 try:
     from ..l2dprobe.backend import Live2DBackend, ensure_display
-    from ..l2dprobe.motions import band_of, physics_params, toggle_params
+    from ..l2dprobe.motions import (authored_motion, band_of, motion_files,
+                                    physics_params, toggle_params)
     from .prior import Prior
 except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from l2dprobe.backend import Live2DBackend, ensure_display
-    from l2dprobe.motions import band_of, physics_params, toggle_params
+    from l2dprobe.motions import (authored_motion, band_of, motion_files,
+                                  physics_params, toggle_params)
     from prior import Prior
 
 try:
@@ -125,6 +128,34 @@ class Switches:
         p = min(p + step, 1.0) if side else max(p - step, 0.0)
         self.pos[pid] = p
         return lo + p * (hi - lo)
+
+
+def authored_motions(model_json: str, fps: float):
+    """(name, motion) for every motion the rig ships, in motion_files order."""
+    out = []
+    for path in motion_files(model_json):
+        m = authored_motion(path, fps)
+        if m is not None and m["frames"]:
+            out.append((os.path.basename(path), m))
+    return out
+
+
+def base_state(motions, keep):
+    """Part opacities and held parameters from the first frame of the idle.
+
+    Many rigs leave every arm and hand variant visible at the default pose and
+    rely on motion to hide the spares. Holding those at an authored frame
+    instead of the default gives the model a costume that is actually worn.
+    `keep(pid)` says which parameters the base may set: not the ones the
+    model drives, and not physics outputs.
+    """
+    if not motions:
+        return None, {}, {}
+    name, m = next(((n, m) for n, m in motions if "idle" in n.lower()),
+                   motions[0])
+    parts = {p: float(v[0]) for p, v in m["parts"].items()}
+    params = {p: float(v[0]) for p, v in m["params"].items() if keep(p)}
+    return name, params, parts
 
 
 def denorm(n: np.ndarray, lo: np.ndarray, hi: np.ndarray) -> np.ndarray:
@@ -240,8 +271,6 @@ def main(argv=None) -> int:
                                   for i in range(int(cz["n_clips"]))])
         reps = int(np.ceil(n_frames / len(src)))
         traj = np.tile(src, (reps, 1))[:n_frames].astype(np.float32)
-        print(f"STATIC: replaying {len(src)} authored frames "
-              f"({len(src) / a.fps:.1f}s), model bypassed")
     else:
         pool = None
         if (a.anchor > 0 or a.reseed > 0) and a.clips and os.path.exists(a.clips):
@@ -305,6 +334,35 @@ def main(argv=None) -> int:
     breath_idx = [i for i, p in enumerate(pids) if "breath" in p.lower()]
     auto = Autonomic(a.fps, rng)
 
+    motions = authored_motions(a.model, a.fps)
+    n_parts = len({p for _, m in motions for p in m["parts"]})
+    if n_parts and not has_pose(a.model):
+        print(f"{n_parts} parts are switched by PartOpacity curves and the rig "
+              "has no pose3 file; applying them directly (Live2D Native would "
+              "ignore them and draw every variant)")
+    model_driven = {pids[i] for i in expressive}
+    band_by_id = dict(zip(pids, bands))
+    base_name, base_params, base_parts = base_state(
+        motions, lambda p: p not in model_driven
+        and band_by_id.get(p) != "physics" and p not in phys)
+    if base_name and not (a.static or a.neutral):
+        print(f"base state from {base_name}: {len(base_parts)} part "
+              f"opacities, {len(base_params)} held parameters")
+
+    static_frames = None
+    if a.static and motions:
+        # Replay the motion files themselves, every curve in the rig's own
+        # units. The clips hold only the expressive band, normalised, so a
+        # replay from them drops part opacities, discrete parameters, and any
+        # parameter the probe never kept -- the arm switches among them.
+        seq = [(m, t) for _, m in motions for t in range(m["frames"])]
+        static_frames = [seq[f % len(seq)] for f in range(n_frames)]
+        print(f"STATIC: replaying {len(motions)} motion files curve for curve "
+              f"({len(seq) / a.fps:.1f}s incl. part opacities)")
+    elif a.static:
+        print(f"STATIC: no motion files found; replaying {len(traj)} frames of "
+              "the expressive band from the clips, model bypassed")
+
     switches = None
     # --static replays authored values unchanged; it is the reference the
     # other modes are judged against, so nothing may rewrite it. Snapping did:
@@ -332,7 +390,13 @@ def main(argv=None) -> int:
         by_id = {s.pid: s for s in be.params}
 
         def frame_overrides(f):
-            over = {}
+            if static_frames is not None:
+                m, t = static_frames[f]
+                return ({p: float(v[t]) for p, v in m["params"].items()},
+                        {p: float(v[t]) for p, v in m["parts"].items()})
+            if a.neutral:
+                return {}, None
+            over = dict(base_params)
             vals = denorm(traj[f], lo[expressive], hi[expressive])
             for col, i in enumerate(expressive):
                 if pids[i] in by_id:
@@ -340,25 +404,26 @@ def main(argv=None) -> int:
                     if switches is not None and pids[i] in switches.states:
                         v = switches(pids[i], v)
                     over[pids[i]] = v
-            return over
+            return over, base_parts
 
         if a.warmup > 0 and n_frames:
-            first = frame_overrides(0)
+            first, first_parts = frame_overrides(0)
             for _ in range(int(a.warmup * a.fps)):
-                be.render(first)
+                be.render(first, parts=first_parts)
 
         written = 0
         for f in range(n_frames):
-            over = frame_overrides(f)
+            over, parts = frame_overrides(f)
             if not a.no_autonomic:
                 eye, breath = auto.step()
+                # Under --static the authored curve wins where there is one.
                 for i in eye_idx:
-                    if pids[i] in by_id:
+                    if pids[i] in by_id and pids[i] not in over:
                         over[pids[i]] = float(lo[i] + eye * (hi[i] - lo[i]))
                 for i in breath_idx:
-                    if pids[i] in by_id:
+                    if pids[i] in by_id and pids[i] not in over:
                         over[pids[i]] = float(lo[i] + breath * (hi[i] - lo[i]))
-            img = be.render(over)
+            img = be.render(over, parts=parts)
             _save(img, os.path.join(a.out, f"f{f:05d}.png"))
             written += 1
     print(f"rendered {written} frames -> {a.out}/")
@@ -366,6 +431,14 @@ def main(argv=None) -> int:
     _contact_sheet(a.out, n_frames)
     _encode(a.out, a.fps)
     return 0
+
+
+def has_pose(model_json: str) -> bool:
+    try:
+        with open(model_json, encoding="utf-8") as fh:
+            return bool(json.load(fh).get("FileReferences", {}).get("Pose"))
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def _save(img, path):

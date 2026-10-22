@@ -93,7 +93,7 @@ def report_files(model_json: str):
     print(f"  physics outputs: {len(phys)}" + ("" if has else "  (no physics file)"))
 
 
-def report_motion(curves, files, rig_npz, model_json):
+def report_motion(curves, files, rig_npz, model_json):  # noqa: C901
     print(f"\nmotion files: {len(files)}")
     parts = curves["PartOpacity"]
     print(f"PartOpacity curves: {sum(len(v) for v in parts.values())} "
@@ -106,6 +106,12 @@ def report_motion(curves, files, rig_npz, model_json):
               f"{' ...' if len(uniq) > 6 else ''}  in-between {frac_mid:.2f}")
     if curves["Model"]:
         print(f"Model-target curves: {sorted(curves['Model'])}")
+    with open(model_json, encoding="utf-8") as fh:
+        has_pose = bool(json.load(fh).get("FileReferences", {}).get("Pose"))
+    if parts and not has_pose:
+        print("!! no pose3 file: Live2D Native ignores these PartOpacity curves, "
+              "so native.mp4 draws every variant they would hide. The runtime "
+              "applies them itself (--static and model mode).")
 
     if not rig_npz or not os.path.exists(rig_npz):
         print("\n(no --rig given: skipping band and discrete-parameter report)")
@@ -254,9 +260,11 @@ def main(argv=None) -> int:
     curves, files = authored_curves(a.model, a.fps)
     report_motion(curves, files, a.rig, a.model)
     render(a.model, out, a.fps, a.size, a.seconds, a.group)
-    print("\nCompare native.mp4 with preview_<name>_static_nosnap/preview.mp4:"
-          "\n  native also shows extra arms  -> rig or live2d-py build"
-          "\n  native clean, ours not        -> our replay drops the switch"
+    print("\nCompare native.mp4 with the runtime's --static replay:"
+          "\n  extra arms in native only     -> PartOpacity ignored without a "
+          "pose file (see above); --static is right"
+          "\n  extra arms in both            -> something else hides them in "
+          "the original engine"
           "\n  neutral.png shows every arm   -> the default pose is the cause")
     return 0
 
