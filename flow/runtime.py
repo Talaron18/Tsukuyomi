@@ -231,9 +231,17 @@ def main(argv=None) -> int:
     elif a.static:
         # Real authored frames, looped. Any visual defect here belongs to how
         # the runtime applies parameters, not to what the model produced.
-        reps = int(np.ceil(n_frames / len(seed)))
-        traj = np.tile(seed, (reps, 1))[:n_frames].astype(np.float32)
-        print(f"STATIC: replaying {len(seed)} seed frames, model bypassed")
+        # Whole clips back to back: looping only the seed window replayed 1.6s
+        # with a hard seam each time, which reads as a defect of its own.
+        src = seed
+        if a.clips and os.path.exists(a.clips):
+            cz = np.load(a.clips, allow_pickle=True)
+            src = np.concatenate([cz[f"clip{i}"].astype(np.float32)
+                                  for i in range(int(cz["n_clips"]))])
+        reps = int(np.ceil(n_frames / len(src)))
+        traj = np.tile(src, (reps, 1))[:n_frames].astype(np.float32)
+        print(f"STATIC: replaying {len(src)} authored frames "
+              f"({len(src) / a.fps:.1f}s), model bypassed")
     else:
         pool = None
         if (a.anchor > 0 or a.reseed > 0) and a.clips and os.path.exists(a.clips):
