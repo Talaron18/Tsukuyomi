@@ -138,3 +138,12 @@ def test_gaze_head_body_are_never_snapped():
     assert not snappable("Param14", "gaze")
     for pid in ("ParamHandChangeR", "ParamArmL2Hand1T", "ParamSphereOn"):
         assert snappable(pid, "arm" if "Arm" in pid or "Hand" in pid else "other"), pid
+
+
+def test_whole_model_hold_never_takes_head_body_gaze():
+    # On a bust-up rig a body angle can reach the top and bottom of the box
+    # and look like a whole-model transform; snappable() is the guard.
+    from flow.runtime import snappable
+    assert not snappable("ParamBodyAngleX", "other")
+    assert not snappable("zongtiZ", "body")
+    assert snappable("ParamAllX", "other")

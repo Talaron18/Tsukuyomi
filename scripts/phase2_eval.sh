@@ -66,7 +66,8 @@ fi
 if has train; then
     python -m flow.flowprior clips2 --rigs rigs --holdout "$HOLDOUT" \
         --epochs "$EPOCHS" --steps 200 --threads "$(nproc)" --device auto \
-        --base "$BASE" --save fp.pt --log fp.log.json 2>&1 | tee fp.train.txt
+        --base "$BASE" --rollout-seconds "$SECS" \
+        --save fp.pt --log fp.log.json 2>&1 | tee fp.train.txt
 fi
 
 sources=(beh flow static)

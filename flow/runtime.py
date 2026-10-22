@@ -375,7 +375,12 @@ def main(argv=None) -> int:
                   "whole-model transform parameters are not held (pass "
                   "--probe-dir, or list them with --hold)", file=sys.stderr)
         else:
-            held |= set(found)
+            # The detector was calibrated on full-body rigs, where a body
+            # angle leaves the feet still. On a bust-up rig the bottom of the
+            # box is torso and a body angle could reach both edges; never let
+            # that freeze the head, body or gaze.
+            group_by_id = dict(zip(pids, groups))
+            held |= {p for p in found if snappable(p, group_by_id.get(p, ""))}
     held &= {pids[i] for i in expressive}
     if held:
         print(f"holding {len(held)} whole-model parameters still: "
