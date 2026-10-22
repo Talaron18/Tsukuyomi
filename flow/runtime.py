@@ -47,12 +47,25 @@ import numpy as np
 # made Switches, Autonomic and base_state untestable without both, and made
 # --static and --dump-only runs depend on things they never use.
 try:
+    from ..l2dprobe.analyze import group_of
     from ..l2dprobe.motions import (authored_motion, band_of, motion_files,
                                     physics_params, toggle_params)
 except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from l2dprobe.analyze import group_of
     from l2dprobe.motions import (authored_motion, band_of, motion_files,
                                   physics_params, toggle_params)
+
+# Groups that are continuous by nature. Animators often park gaze or the head
+# at an extreme and hold it, which toggle_params reads as a switch -- on
+# aidang_2 it snapped ParamEyeBallX/Y and gaze stopped moving entirely. A head
+# turn or a glance is never a part swap, so these are never snapped.
+NEVER_SNAP = ("gaze", "head", "body")
+
+
+def snappable(pid: str, rig_group: str) -> bool:
+    return (rig_group not in NEVER_SNAP
+            and group_of(pid) not in NEVER_SNAP)
 
 
 def _backend():
@@ -438,7 +451,8 @@ def main(argv=None) -> int:
     if not a.no_snap and not (a.static or a.neutral):
         found = toggle_params(a.model, a.fps)
         live = {pids[i]: found[pids[i]] for i in expressive
-                if pids[i] in found and bands[i] == "expressive"}
+                if pids[i] in found and bands[i] == "expressive"
+                and snappable(pids[i], groups[i])}
         if live:
             switches = Switches({p: (v[1], v[2]) for p, v in live.items()},
                                 a.snap_ramp)

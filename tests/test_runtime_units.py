@@ -125,3 +125,16 @@ def test_static_dump_replays_motion_curve_for_curve(tmp_path):
     assert list(z["part_id"]) == ["PartArmB"]
     assert z["part_opacity"][:, 0] == pytest.approx(eval_segments(swap, t),
                                                     abs=1e-5)
+
+
+def test_gaze_head_body_are_never_snapped():
+    # aidang_2's animators hold the eyes at extremes, so toggle_params flagged
+    # ParamEyeBallX/Y as switches and gaze froze. Continuous groups are exempt
+    # whether the rig file or the id says so.
+    from flow.runtime import snappable
+    for pid in ("ParamEyeBallX", "ParamEyeBallY", "ParamAngleX",
+                "ParamBodyAngleZ"):
+        assert not snappable(pid, "other"), pid
+    assert not snappable("Param14", "gaze")
+    for pid in ("ParamHandChangeR", "ParamArmL2Hand1T", "ParamSphereOn"):
+        assert snappable(pid, "arm" if "Arm" in pid or "Hand" in pid else "other"), pid
