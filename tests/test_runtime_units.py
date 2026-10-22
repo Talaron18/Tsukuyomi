@@ -142,8 +142,11 @@ def test_gaze_head_body_are_never_snapped():
 
 def test_whole_model_hold_never_takes_head_body_gaze():
     # On a bust-up rig a body angle can reach the top and bottom of the box
-    # and look like a whole-model transform; snappable() is the guard.
-    from flow.runtime import snappable
-    assert not snappable("ParamBodyAngleX", "other")
-    assert not snappable("zongtiZ", "body")
-    assert snappable("ParamAllX", "other")
+    # and look like a whole-model transform. ParamAllRotate sits in the body
+    # group but is a whole-model rotation and must stay holdable.
+    from flow.runtime import protected_from_hold
+    for pid in ("ParamBodyAngleX", "ParamAngleZ", "ParamEyeBallX"):
+        assert protected_from_hold(pid, "other"), pid
+    assert protected_from_hold("Param14", "gaze")
+    for pid in ("ParamAllX", "ParamAllRotate", "zongtiZ", "PARAM_moveY"):
+        assert not protected_from_hold(pid, "body"), pid

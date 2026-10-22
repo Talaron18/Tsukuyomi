@@ -82,6 +82,17 @@ def snappable(pid: str, rig_group: str) -> bool:
             and group_of(pid) not in NEVER_SNAP)
 
 
+def protected_from_hold(pid: str, rig_group: str) -> bool:
+    """Head and body angles and gaze are never held as whole-model transforms.
+
+    Narrower than NEVER_SNAP on purpose: analyze.GROUPS files AllRotate under
+    body, and ParamAllRotate is exactly the kind of parameter to hold.
+    """
+    low = pid.lower()
+    return ("angle" in low or "eyeball" in low
+            or rig_group in ("head", "gaze") or group_of(pid) in ("head", "gaze"))
+
+
 def _backend():
     try:
         from ..l2dprobe.backend import Live2DBackend, ensure_display
@@ -380,7 +391,8 @@ def main(argv=None) -> int:
             # box is torso and a body angle could reach both edges; never let
             # that freeze the head, body or gaze.
             group_by_id = dict(zip(pids, groups))
-            held |= {p for p in found if snappable(p, group_by_id.get(p, ""))}
+            held |= {p for p in found
+                     if not protected_from_hold(p, group_by_id.get(p, ""))}
     held &= {pids[i] for i in expressive}
     if held:
         print(f"holding {len(held)} whole-model parameters still: "
