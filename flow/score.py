@@ -346,7 +346,17 @@ def score(traj_path: str, clips_path: str, rig_path: str,
             res["toggle"] = {"n_params": len(states), "gen": fg, "ref": fr,
                              "params": sorted(pid[c] for c in states)}
 
-    o = res["overall"] or {}
+    if not res["overall"]:
+        # Nothing the clips animate actually moves (every driven column is
+        # constant, as on 魔女), so there is no reference to hold a trajectory
+        # to. That is missing data, not a failed check, and reporting it as a
+        # FAIL made authored motion fail against itself.
+        res["checks"] = {}
+        res["pass"] = None
+        res["no_data"] = ("the clips hold every driven parameter constant; "
+                          "nothing to score against")
+        return res
+    o = res["overall"]
     checks = {
         "std": bool(o) and STD_BAND[0] <= o["std"] <= STD_BAND[1],
         "jerk": bool(o) and o["jerk"] <= JERK_MAX,
@@ -391,6 +401,9 @@ def print_table(res: dict) -> None:
     if t:
         print(f"toggle in-between ({t['n_params']} switch params): "
               f"gen {t['gen']:.3f}  authored {t['ref']:.3f}")
+    if res["pass"] is None:
+        print(f"checks: n/a   => NO DATA ({res['no_data']})")
+        return
     c = res["checks"]
     print("checks: " + "  ".join(f"{k}={'ok' if v else 'FAIL'}"
                                  for k, v in c.items())
@@ -414,7 +427,8 @@ def main(argv=None) -> int:
         with open(a.json, "w", encoding="utf-8") as fh:
             json.dump(res, fh, indent=1, default=float)
         print(f"-> {a.json}")
-    return 0 if res["pass"] else 2
+    # 0 pass, 2 fail, 3 nothing to score.
+    return 3 if res["pass"] is None else 0 if res["pass"] else 2
 
 
 if __name__ == "__main__":

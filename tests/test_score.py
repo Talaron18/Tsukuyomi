@@ -111,3 +111,21 @@ def test_periodic_peak_ignores_drift_and_constants():
     peak, plain = periodic_peak(drift, FPS)
     assert peak == 0.0 and plain > 0.6      # the plain max would misfire
     assert periodic_peak(np.sin(2 * np.pi * t / 3), FPS)[0] > 0.9
+
+
+def test_constant_clips_report_no_data_not_fail(tmp_path):
+    # 魔女's clips hold every driven parameter constant. Authored motion scored
+    # against itself must not FAIL; there is simply nothing to compare.
+    x = np.full((200, len(PIDS)), 0.25, np.float32)
+    cpath = tmp_path / "flat.npz"
+    np.savez(cpath, clip0=x, mask0=np.ones(len(PIDS), bool),
+             pid=np.array(PIDS, dtype=object),
+             param_row=np.arange(len(PIDS), dtype=np.int32),
+             fps=np.float32(FPS), n_clips=np.int32(1))
+    rpath = tmp_path / "rig.npz"
+    np.savez(rpath, pid=np.array(PIDS, dtype=object),
+             group=np.array(GROUPS, dtype=object),
+             minimum=np.full(len(PIDS), -30, np.float32),
+             maximum=np.full(len(PIDS), 30, np.float32))
+    res = score(str(cpath), str(cpath), str(rpath))
+    assert res["pass"] is None and "no_data" in res
