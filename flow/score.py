@@ -32,6 +32,21 @@ Metrics, each generated / authored unless stated:
            (motions.toggle_params), fraction of frames strictly inside 10-90%
            of the authored range. Each such frame is a partially drawn limb.
 
+Reported beside the checks, not yet part of pass/fail:
+
+  novelty  for each generated 2 s window (stride 0.5 s), the RMS distance to
+           the nearest authored 2 s window, in normalised units, on the
+           standard-ID role columns (head, body, gaze, brow) matched by
+           parameter id. Median over windows, next to the same statistic for
+           authored motion: with the rig's own clips as reference that is
+           leave-one-clip-out; with --novelty-ref (other rigs' clips, e.g. the
+           training set) it is this rig's clips against that reference. Near
+           0 is copying; far above the authored figure is off the manifold.
+  diversity  --seeds b.npz c.npz ...: mean pairwise RMS between rollouts
+           over their first --div-seconds, on the same columns. Every source
+           starts from the same context, so 0 is mode collapse (or a
+           deterministic source, which is 0 by construction).
+
 Only columns the authored clips actually drive are scored: a column no clip
 touches has zero authored variance, so any ratio on it is meaningless, and the
 masks are what says which columns those are.
@@ -65,6 +80,7 @@ must pass, which is the sanity check on the metric code.
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import os
 import sys
@@ -73,9 +89,11 @@ import numpy as np
 
 try:
     from ..l2dprobe.motions import toggle_params
+    from .behaviors import HOLDOUT, ROLES, canon
 except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from l2dprobe.motions import toggle_params
+    from flow.behaviors import HOLDOUT, ROLES, canon
 
 STD_BAND = (0.7, 1.3)
 JERK_MAX = 1.5
@@ -271,6 +289,163 @@ def inbetween(segs, cols, states: dict) -> tuple[float, int]:
     return (hit / tot if tot else float("nan")), tot
 
 
+# ------------------------------------------------- novelty and diversity
+
+ROLE_IDS = [canon(p) for p in ROLES.values()]
+NOV_WIN, NOV_STRIDE, NOV_SUB = 2.0, 0.5, 3
+NOV_MAX_GEN, NOV_MAX_REF = 400, 4000
+
+
+def role_columns(pid: list[str]) -> list[int | None]:
+    """Column of each standard role id in `pid`, or None."""
+    at = {canon(p): c for c, p in enumerate(pid)}
+    return [at.get(r) for r in ROLE_IDS]
+
+
+def windows(tr: dict, fps: float, tag: int = 0):
+    """(W, L, R) role values, (W, R) validity, (W,) source tag.
+
+    Windows are subsampled in time (every NOV_SUB-th frame): a 2 s window at
+    10 Hz still resolves a glance, and the distance matrix shrinks 9-fold.
+    """
+    cols = role_columns(tr["pid"])
+    L = int(round(NOV_WIN * fps))
+    st = max(int(round(NOV_STRIDE * fps)), 1)
+    xs, ms, tags = [], [], []
+    for k, (x, m) in enumerate(tr["segs"]):
+        if len(x) < L:
+            continue
+        full = np.zeros((len(x), len(cols)), np.float32)
+        ok = np.zeros((len(x), len(cols)), bool)
+        for j, c in enumerate(cols):
+            if c is not None:
+                full[:, j], ok[:, j] = x[:, c], m[:, c]
+        for s in range(0, len(x) - L + 1, st):
+            xs.append(full[s:s + L:NOV_SUB])
+            ms.append(ok[s:s + L].all(axis=0))
+            tags.append(tag * 100000 + k)
+    if not xs:
+        return (np.zeros((0, 1, len(cols)), np.float32),
+                np.zeros((0, len(cols)), bool), np.zeros(0, int))
+    return np.stack(xs), np.stack(ms), np.asarray(tags)
+
+
+def nearest(A, Am, B, Bm, at=None, bt=None) -> np.ndarray:
+    """RMS distance of each A window to its nearest B window.
+
+    Over the role columns valid in both; a pair sharing fewer than half of
+    A's valid columns does not count, so a match on one column cannot pass
+    for a match on the pose. Pairs with the same tag are excluded (leave one
+    clip out).
+    """
+    if not len(A) or not len(B):
+        return np.full(len(A), np.nan)
+    L = A.shape[1]
+    num = np.zeros((len(A), len(B)))
+    den = np.zeros((len(A), len(B)))
+    for c in range(A.shape[2]):
+        a, b = A[:, :, c].astype(np.float64), B[:, :, c].astype(np.float64)
+        sq = (a * a).sum(1)[:, None] + (b * b).sum(1)[None] - 2 * a @ b.T
+        w = Am[:, c, None] & Bm[None, :, c]
+        num += np.where(w, np.maximum(sq, 0), 0)
+        den += w * L
+    need = np.maximum(np.ceil(0.5 * Am.sum(1)), 1)[:, None] * L
+    d = np.where((den >= need) & (den > 0), np.sqrt(num / np.maximum(den, 1)),
+                 np.inf)
+    if at is not None and bt is not None:
+        d[at[:, None] == bt[None]] = np.inf
+    best = d.min(axis=1)
+    return np.where(np.isfinite(best), best, np.nan)
+
+
+def _cap(W, M, T, n, rng):
+    if len(W) <= n:
+        return W, M, T
+    k = np.sort(rng.choice(len(W), n, replace=False))
+    return W[k], M[k], T[k]
+
+
+def ref_files(spec, own_clips: str, holdout=()) -> list[str]:
+    """Reference clips files: directories expand to *.npz. The scored rig's
+    own file and every held-out rig are dropped -- otherwise "cross-rig"
+    novelty is partly a comparison with itself."""
+    out = []
+    for s in spec:
+        out += (sorted(glob.glob(os.path.join(s, "*.npz")))
+                if os.path.isdir(s) else sorted(glob.glob(s)))
+    own = os.path.basename(own_clips)[:-4]
+    keep = []
+    for f in out:
+        if os.path.basename(f)[:-4] in set(holdout) | {own}:
+            continue
+        try:
+            with np.load(f, allow_pickle=True) as z:
+                if "n_clips" in z.files:        # not a rig or a dump
+                    keep.append(f)
+        except Exception:  # noqa: BLE001
+            continue
+    return keep
+
+
+def novelty(gen: dict, own: dict, ref_paths=None, seed: int = 0) -> dict | None:
+    rng = np.random.default_rng(seed)
+    fps = own["fps"]
+    G, Gm, _ = _cap(*windows(gen, fps), NOV_MAX_GEN, rng)
+    O, Om, Ot = windows(own, fps, tag=0)
+    if ref_paths:
+        parts = [windows(segments_of(p), fps, tag=i + 1)
+                 for i, p in enumerate(ref_paths)]
+        R = np.concatenate([p[0] for p in parts]) if parts else O[:0]
+        Rm = np.concatenate([p[1] for p in parts]) if parts else Om[:0]
+        Rt = np.concatenate([p[2] for p in parts]) if parts else Ot[:0]
+        R, Rm, Rt = _cap(R, Rm, Rt, NOV_MAX_REF, rng)
+        O, Om, Ot = _cap(O, Om, Ot, NOV_MAX_GEN, rng)
+        g = nearest(G, Gm, R, Rm)
+        a = nearest(O, Om, R, Rm)
+        label = f"{len(ref_paths)} reference rigs"
+    else:
+        R, Rm = O, Om
+        g = nearest(G, Gm, O, Om)
+        a = nearest(O, Om, O, Om, Ot, Ot)        # leave one clip out
+        label = "own clips (leave-one-clip-out for authored)"
+    if not np.isfinite(g).any():
+        return None
+    gm = float(np.nanmedian(g))
+    am = float(np.nanmedian(a)) if np.isfinite(a).any() else float("nan")
+    used = [ROLE_IDS[j] for j in range(len(ROLE_IDS)) if Gm[:, j].any()]
+    return {"ref": label, "files": list(ref_paths or []),
+            "gen_median": gm, "authored_median": am,
+            "ratio": _ratio(gm, am) if am == am else float("nan"),
+            "n_gen": int(np.isfinite(g).sum()), "n_ref": int(len(R)),
+            "cols": used}
+
+
+def diversity(paths: list[str], seconds: float) -> dict | None:
+    """Mean pairwise RMS between rollouts over their first `seconds`."""
+    trs = [segments_of(p) for p in paths]
+    xs = []
+    for tr in trs:
+        x = np.concatenate([s[0] for s in tr["segs"]])
+        m = np.concatenate([s[1] for s in tr["segs"]])
+        cols = [c for c in role_columns(tr["pid"]) if c is not None]
+        n = int(round(seconds * tr["fps"]))
+        xs.append((x[:n, cols], m[:n, cols]))
+    n = min(len(x) for x, _ in xs)
+    d = []
+    for i in range(len(xs)):
+        for j in range(i + 1, len(xs)):
+            (a, am), (b, bm) = xs[i], xs[j]
+            if a.shape[1] != b.shape[1]:
+                raise ValueError("--seeds files have different columns")
+            w = am[:n] & bm[:n]
+            if w.any():
+                d.append(float(np.sqrt((((a[:n] - b[:n]) ** 2)[w]).mean())))
+    if not d:
+        return None
+    return {"mean_pairwise_rms": float(np.mean(d)), "n_runs": len(paths),
+            "seconds": n / trs[0]["fps"], "pairs": d}
+
+
 def _ratio(g: float, a: float) -> float:
     if a < 1e-9:
         return float("nan") if g < 1e-9 else float("inf")
@@ -300,7 +475,8 @@ def summarize(gen, ref, cols, fps):
 
 
 def score(traj_path: str, clips_path: str, rig_path: str,
-          model_json: str | None = None) -> dict:
+          model_json: str | None = None, novelty_ref=None, seeds=None,
+          div_seconds: float = 10.0, holdout=()) -> dict:
     gen = segments_of(traj_path)
     ref = segments_of(clips_path)
     if gen["pid"] != ref["pid"]:
@@ -325,6 +501,14 @@ def score(traj_path: str, clips_path: str, rig_path: str,
             s["params"] = [pid[c] for c in cols]
             res["groups"][g] = s
     res["overall"] = summarize(gen["segs"], ref["segs"], driven, fps)
+
+    refs = ref_files(novelty_ref, clips_path, holdout) if novelty_ref else None
+    if novelty_ref and not refs:
+        raise ValueError("--novelty-ref left no reference files after "
+                         "dropping this rig and the held-out ones")
+    res["novelty"] = novelty(gen, ref, refs)
+    res["diversity"] = (diversity([traj_path] + list(seeds), div_seconds)
+                        if seeds else None)
 
     res["toggle"] = None
     if model_json:
@@ -397,6 +581,16 @@ def print_table(res: dict) -> None:
               f"{_fmt(s['dp95'])} {_fmt(s['jerk'])}  "
               f"{_fmt(s['still_gen'], 5)}/{_fmt(s['still_ref'], 5)}  "
               f"{_fmt(s['period_gen'], 5)}/{_fmt(s['period_ref'], 5)}")
+    nv = res.get("novelty")
+    if nv:
+        print(f"novelty  nearest-window RMS, median: gen {nv['gen_median']:.3f}"
+              f"  authored {nv['authored_median']:.3f}  "
+              f"(ratio {_fmt(nv['ratio'], 4)}; vs {nv['ref']}; "
+              f"{len(nv['cols'])} role cols)")
+    dv = res.get("diversity")
+    if dv:
+        print(f"diversity  mean pairwise RMS over {dv['n_runs']} runs, first "
+              f"{dv['seconds']:.0f}s: {dv['mean_pairwise_rms']:.3f}")
     t = res["toggle"]
     if t:
         print(f"toggle in-between ({t['n_params']} switch params): "
@@ -419,9 +613,21 @@ def main(argv=None) -> int:
     ap.add_argument("--model", default=None,
                     help=".model3.json; enables the toggle check")
     ap.add_argument("--json", default=None, help="write the full result here")
+    ap.add_argument("--novelty-ref", nargs="+", default=None,
+                    metavar="CLIPS",
+                    help="clips dirs or files to measure novelty against "
+                         "(e.g. the training rigs); default: this rig's own")
+    ap.add_argument("--holdout", default=HOLDOUT,
+                    help="rigs never used as a novelty reference")
+    ap.add_argument("--seeds", nargs="+", default=None, metavar="DUMP",
+                    help="other rollouts of the same source and context, "
+                         "for the diversity figure")
+    ap.add_argument("--div-seconds", type=float, default=10.0)
     a = ap.parse_args(argv)
 
-    res = score(a.traj, a.clips, a.rig, a.model)
+    res = score(a.traj, a.clips, a.rig, a.model, a.novelty_ref, a.seeds,
+                a.div_seconds,
+                [h.strip() for h in a.holdout.split(",") if h.strip()])
     print_table(res)
     if a.json:
         with open(a.json, "w", encoding="utf-8") as fh:
