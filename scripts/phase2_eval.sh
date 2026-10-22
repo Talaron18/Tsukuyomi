@@ -11,14 +11,27 @@
 #
 # Environment knobs (defaults in brackets):
 #   HOLDOUT   held-out rigs, comma separated [aidang_2,Natori,Hiyori,lafei,xuefeng]
-#   MODELS    root holding the .model3.json files [live2d-models]
+#   MODELS    folders holding the .model3.json files, colon separated
+#             [live2d-models:CubismWebSamples] (missing ones are ignored)
 #   DET_CKPT  deterministic prior checkpoint, or empty to skip that source [prior.pt]
 #   EPOCHS    flow-prior epochs [40]
 #   SECONDS_  seconds per scored run [60]
 set -euo pipefail
 
+# python -m flow.X resolves against the current directory, so a run started
+# anywhere but the repo root found no `flow` package. Point Python at the repo
+# this script lives in instead.
+REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+export PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}"
+
 HOLDOUT=${HOLDOUT:-aidang_2,Natori,Hiyori,lafei,xuefeng}
-MODELS=${MODELS:-live2d-models}
+MODELS=${MODELS:-live2d-models:CubismWebSamples}
+IFS=: read -ra model_roots <<< "$MODELS"
+roots=()
+for r in "${model_roots[@]}"; do [[ -e "$r" ]] && roots+=("$r"); done
+if (( ${#roots[@]} == 0 )); then
+    echo "no model folder found among: $MODELS" >&2; exit 1
+fi
 DET_CKPT=${DET_CKPT-prior.pt}
 EPOCHS=${EPOCHS:-40}
 SECS=${SECONDS_:-60}
@@ -30,15 +43,17 @@ model_of() {
     # The rig file is named after the model file, so search by that name.
     # -L: MODELS may itself be a symlink (e.g. in a side directory for one
     # source), and find does not descend into a symlinked start point.
-    find -L "$MODELS" -name "$1.model3.json" -not -name '*.probe.*' -print -quit
+    find -L "${roots[@]}" -name "$1.model3.json" -not -name '*.probe.*' \
+        -print -quit
 }
 
 mkdir -p runs vids
 
 if has clips; then
     # Clips built before the vowel-band fix carry ParamA/I/U/E/O as motion.
-    python -m l2dprobe.motions --models "$MODELS/**/*.model3.json" \
-        --rigs rigs --out clips2
+    globs=()
+    for r in "${roots[@]}"; do globs+=(--models "$r/**/*.model3.json"); done
+    python -m l2dprobe.motions "${globs[@]}" --rigs rigs --out clips2
 fi
 if has fit; then
     python -m flow.behaviors --fit clips2 --holdout "$HOLDOUT" --out beh.json
@@ -65,7 +80,7 @@ IFS=, read -ra rigs_held <<< "$HOLDOUT"
 for R in "${rigs_held[@]}"; do
     M=$(model_of "$R")
     if [[ -z "$M" ]]; then
-        echo "!! $R: no $R.model3.json under $MODELS, skipping" >&2
+        echo "!! $R: no $R.model3.json under ${roots[*]}, skipping" >&2
         continue
     fi
     base=(--model "$M" --rig "rigs/$R.npz" --clips "clips2/$R.npz")
