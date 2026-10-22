@@ -100,6 +100,7 @@ def make_rig(model: str, dest: str) -> dict:
     from l2dprobe.analyze import group_of
     with Live2DBackend(model, size=SIZE) as be:
         specs = list(be.params)
+        parts = be._api_report.get("parts", "")
     pids = [s.pid for s in specs]
     np.savez_compressed(
         dest, pid=np.array(pids, dtype=object),
@@ -110,7 +111,7 @@ def make_rig(model: str, dest: str) -> dict:
         default=np.array([s.default for s in specs], np.float32),
         descriptor=np.zeros((len(pids), 8), np.float32),
         mirror=np.full(len(pids), -1, np.int32))
-    return {"n": len(pids), "dest": dest}
+    return {"n": len(pids), "dest": dest, "parts": parts}
 
 
 def main(argv) -> int:

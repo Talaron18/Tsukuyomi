@@ -105,7 +105,12 @@ def test_part_opacity_applied_without_pose(samples, gl_prefix, tmp_path):
     nopose_dir.mkdir()
     nopose = _no_pose_copy(haru, str(nopose_dir))
     rig = str(tmp_path / "Haru.npz")
-    gl_probe(gl_prefix, "make_rig", haru, rig)
+    made = gl_probe(gl_prefix, "make_rig", haru, rig)
+    if str(made.get("parts", "")).startswith("MISSING"):
+        pytest.skip("this live2d-py build has no GetPartIds/SetPartOpacity: "
+                    "pose-less rigs that switch parts by PartOpacity curves "
+                    "WILL draw every variant on it (the runtime refuses to "
+                    "run them). Upgrade live2d-py; 0.8.1 is tested.")
 
     pose = _static_frame(gl_prefix, haru, rig, tmp_path / "pose", 120)
     fixed = _static_frame(gl_prefix, nopose, rig, tmp_path / "nopose", 120)
