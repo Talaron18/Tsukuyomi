@@ -130,6 +130,15 @@ def ensure_display(argv=None) -> None:
     raise SystemExit(subprocess.call(cmd, env=env))
 
 
+# One GL context and one Cubism framework per process, shared by every backend
+# opened in it. Tearing them down per rig (live2d.dispose + glfw.terminate) and
+# re-initialising left the next model drawing with no textures: correct
+# silhouette, every pixel black. Any process that opened two backends --
+# render_dataset's pool workers, run_probe --batch, contact_sheet -- produced
+# black renders for every rig after its first.
+_SHARED: dict = {}
+
+
 class IncompatibleRig(RuntimeError):
     """The Cubism Core cannot load this rig. Skip it rather than crash."""
 
@@ -169,11 +178,20 @@ class Live2DBackend:
     # so writes made before it can be restored away. Which order works depends on
     # the version, so we detect it empirically in calibrate().
     ORDERS = ("after", "before", "sandwich")
+    # With physics and pose live, "after" is wrong however well it scores: the
+    # per-frame reset lands after Update() has run the solver, so every physics
+    # output is put back to its default and hair, cloth and ribbons never move.
+    # Calibration cannot see this -- it probes head parameters, which "after"
+    # applies fine -- so it picked "after" on some runs and silently froze all
+    # secondary motion. Dynamic renders only consider orders that leave the
+    # solver's output alone.
+    DYNAMIC_ORDERS = ("before", "sandwich")
 
     def __init__(self, model_json: str, size: int = 512, bg=(0.0, 0.0, 0.0, 0.0),
                  osmesa: bool = False, order: str = "after",
                  strip_dynamics: bool = True,
-                 gl_version: tuple[int, int] | None = None):
+                 gl_version: tuple[int, int] | None = None,
+                 fps: float | None = None):
         if not os.path.exists(model_json):
             raise FileNotFoundError(
                 f"{model_json}\n"
@@ -188,6 +206,13 @@ class Live2DBackend:
         self.order = order
         self.strip_dynamics = strip_dynamics
         self.gl_version = gl_version
+        # Seconds of simulated time per render. LAppModel.Update() measures
+        # wall-clock time, so offline rendering at hundreds of frames a second
+        # advanced physics and pose fades by ~2-3 ms per video frame instead of
+        # 33 ms: springs barely moved and a 0.5 s pose fade took several
+        # seconds of video. A fixed step ties dynamics to the output frame rate.
+        self.dt = 1.0 / fps if fps else None
+        self._update = None
         self._probe_model = None
         self._window = None
         self._fbo = None
@@ -260,10 +285,23 @@ class Live2DBackend:
     # ------------------------------------------------------------------ model
 
     def open(self):
-        self._init_context()
-        live2d.init()
-        live2d.glInit()
-        self._init_fbo()
+        shared = _SHARED.get("ctx")
+        if shared is not None:
+            if shared["size"] != self.size or shared["osmesa"] != self.osmesa:
+                raise RuntimeError(
+                    "a Live2D backend was already opened in this process with "
+                    f"size={shared['size']} osmesa={shared['osmesa']}; the GL "
+                    "context is shared and cannot change. Use one size per "
+                    "process.")
+            self._window, self._fbo = shared["window"], shared["fbo"]
+            glfw.make_context_current(self._window)
+        else:
+            self._init_context()
+            live2d.init()
+            live2d.glInit()
+            self._init_fbo()
+            _SHARED["ctx"] = {"window": self._window, "fbo": self._fbo,
+                              "size": self.size, "osmesa": self.osmesa}
 
         # Physics/pose/motions are time-integrated and would make renders
         # history-dependent. Strip them from the definition before loading.
@@ -294,7 +332,42 @@ class Live2DBackend:
 
         self._disable_autonomics()
         self._bind_param_api()
+        self._bind_update()
+        if not self.strip_dynamics and self.order not in self.DYNAMIC_ORDERS:
+            self.order = self.DYNAMIC_ORDERS[0]
         return self
+
+    def _bind_update(self):
+        """Pick an update entry point that honours a fixed timestep.
+
+        live2d-py >= 0.8 wraps a native model whose Update takes the delta
+        explicitly; the Python wrapper's Update() feeds it wall-clock time.
+        Older builds expose the native Update directly, with or without a delta
+        argument. Without a usable fixed step the render still works, but
+        physics timing is wrong, so that is recorded rather than hidden.
+        """
+        if self.dt is None:
+            self._update = self.model.Update
+            self._api_report["timestep"] = "wallclock"
+            return
+        inner = getattr(self.model, "_model", None)
+        for target, label in ((inner, "native"), (self.model, "direct")):
+            fn = getattr(target, "Update", None) if target is not None else None
+            if fn is None:
+                continue
+            try:
+                fn(0.0)
+            except TypeError:
+                continue
+            dt = self.dt
+            self._update = lambda: fn(dt)
+            self._api_report["timestep"] = f"fixed {dt:.4f}s ({label})"
+            return
+        self._update = self.model.Update
+        self._api_report["timestep"] = "wallclock (no fixed-step API found)"
+        print("WARNING: this live2d-py build has no fixed-timestep Update; "
+              "physics will run at render speed, not video speed",
+              file=sys.stderr)
 
     @staticmethod
     def _find_moc(model_json: str) -> str | None:
@@ -364,10 +437,11 @@ class Live2DBackend:
 
     # ----------------------------------------------------------------- render
 
-    def _apply(self, overrides):
+    def _apply(self, overrides, reset: bool = True):
         # Reset every frame so probes never leak into each other.
-        for spec in self.params:
-            self._setter(spec.pid, spec.default, 1.0)
+        if reset:
+            for spec in self.params:
+                self._setter(spec.pid, spec.default, 1.0)
         if overrides:
             for pid, value in overrides.items():
                 self._setter(pid, float(value), 1.0)
@@ -380,16 +454,19 @@ class Live2DBackend:
         glViewport(0, 0, self.size, self.size)
         live2d.clearBuffer(*self.bg)
 
+        update = self._update or self.model.Update
         if order == "before":
             self._apply(overrides)
-            self.model.Update()
+            update()
         elif order == "after":
-            self.model.Update()
+            update()
             self._apply(overrides)
         elif order == "sandwich":
             self._apply(overrides)
-            self.model.Update()
-            self._apply(overrides)
+            update()
+            # Re-assert only what we drive. A second full reset would erase
+            # the physics and pose results Update() just produced.
+            self._apply(overrides, reset=self.strip_dynamics)
         else:
             raise ValueError(f"unknown parameter order {order!r}")
 
@@ -462,7 +539,8 @@ class Live2DBackend:
         probes = probes[:24]
 
         scores: dict[str, float] = {}
-        for order in self.ORDERS:
+        orders = self.ORDERS if self.strip_dynamics else self.DYNAMIC_ORDERS
+        for order in orders:
             base = self.render(order=order).astype(np.int16)
             total = 0.0
             for spec in probes:
@@ -512,15 +590,12 @@ class Live2DBackend:
         return best
 
     def close(self):
-        try:
-            if self._probe_model is not None:
-                self._probe_model.__exit__(None, None, None)
-                self._probe_model = None
-            live2d.dispose()
-        finally:
-            if self._window is not None:
-                glfw.destroy_window(self._window)
-            glfw.terminate()
+        # The context and framework stay up for the next backend in this
+        # process; see _SHARED. The OS reclaims them at exit.
+        if self._probe_model is not None:
+            self._probe_model.__exit__(None, None, None)
+            self._probe_model = None
+        self.model = None
 
     def __enter__(self):
         return self.open()

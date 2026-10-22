@@ -23,7 +23,10 @@ for its own reason:
   mouth     Lip sync must be frame-accurate to audio. A generative model drifts;
             phoneme timing does not.
   discrete  Categorical parameters are part swaps and opacity toggles.
-            Interpolating through them yields half-visible limbs.
+            Interpolating through them yields half-visible limbs. The probe's
+            render heuristic misses many of them, so the runtime also snaps
+            parameters that authored motion uses as switches; see
+            toggle_params.
 
 Values are normalised to [-1, 1] across each parameter's own range, so a
 trajectory means the same thing on every rig.
@@ -166,6 +169,70 @@ def motion_files(model_json: str) -> list[str]:
             found += [os.path.join(dirpath, f) for f in files
                       if f.endswith(".motion3.json")]
     return sorted({p for p in found if os.path.exists(p)})
+
+
+# A parameter whose authored values sit strictly inside (10%, 90%) of their
+# observed range for less than this fraction of driven frames is a switch.
+# Measured on the Cubism samples: arm and hand swaps, effect toggles and part
+# fades sit at 0.00-0.06 (a few held-pose arm rolls reach 0.20), while head,
+# body and limb motion sits at 0.74-0.99. Nothing falls between 0.25 and 0.7.
+TOGGLE_DWELL = 0.25
+TOGGLE_MIN_FRAMES = 30
+
+
+def toggle_params(model_json: str, fps: float = 30.0,
+                  dwell: float = TOGGLE_DWELL
+                  ) -> dict[str, tuple[float, float, float]]:
+    """Parameters the rig's own motions use as switches.
+
+    Riggers animate a part swap as a jump, or a short fade, between two values
+    and then hold it. A motion model trained with squared error does the
+    opposite: it hedges between modes, and a swap parameter at 0.4 draws both
+    arms at partial opacity. The probe's render heuristic labels these
+    continuous whenever the swap is a colour change rather than an alpha one,
+    which is the common case for arms drawn over the body. How authored motion
+    uses a parameter is the more reliable witness.
+
+    The test also catches expression parameters riggers hold at an extreme
+    (brow and mouth forms), which is why this is used to snap values at
+    playback rather than to drop parameters from training: snapping a brow
+    between its two authored states costs little, a ghosted limb costs the
+    whole shot.
+
+    Returns {pid: (in-between fraction, low state, high state)} in the rig's
+    own units, for parameters below the threshold. Parameters with no
+    authored motion are not judged.
+    """
+    seen: dict[str, list[np.ndarray]] = {}
+    for path in motion_files(model_json):
+        try:
+            with open(path, encoding="utf-8") as fh:
+                blob = json.load(fh)
+        except Exception:  # noqa: BLE001
+            continue
+        dur = float(blob.get("Meta", {}).get("Duration", 0) or 0)
+        if dur <= 0.05:
+            continue
+        times = np.arange(0.0, dur, 1.0 / fps, dtype=np.float32)
+        for curve in blob.get("Curves", []):
+            if curve.get("Target") != "Parameter" or not curve.get("Id"):
+                continue
+            try:
+                vals = eval_segments(curve.get("Segments", []), times)
+            except Exception:  # noqa: BLE001
+                continue
+            seen.setdefault(curve["Id"], []).append(vals)
+    out = {}
+    for pid, chunks in seen.items():
+        v = np.concatenate(chunks)
+        lo, hi = float(v.min()), float(v.max())
+        if len(v) < TOGGLE_MIN_FRAMES or hi - lo < 1e-6:
+            continue
+        u = (v - lo) / (hi - lo)
+        frac = float(((u > 0.1) & (u < 0.9)).mean())
+        if frac < dwell:
+            out[pid] = (frac, lo, hi)
+    return out
 
 
 def band_of(pid: str, kind: str, group: str, phys: set[str]) -> str:

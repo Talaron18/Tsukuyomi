@@ -16,12 +16,18 @@ the way the design always intended, and each for its own reason:
              is Block 4.
   discrete   Held at default. Part swaps cannot be interpolated.
 
+Expressive parameters that the rig's own motions use as switches -- arm and
+hand swaps, effect fades, which the probe often labels continuous -- are snapped
+to one of their two authored states as they play, with hysteresis and a short
+ramp. A model trained with squared error hedges between modes, and a swap
+parameter left at 0.4 draws both arms at partial opacity.
+
 Note the probe stripped physics to make rendering deterministic. The runtime
 does the opposite and loads the rig intact, because secondary motion is most of
 what makes the result look alive.
 
 Usage:
-    xvfb-run -a python -m l2dprobe.runtime \\
+    xvfb-run -a python -m flow.runtime \\
         --model CubismWebSamples/Samples/Resources/Hiyori/Hiyori.model3.json \\
         --rig rigs/Hiyori.npz --ckpt prior.pt --seconds 8 --out preview/
 """
@@ -37,12 +43,12 @@ import numpy as np
 
 try:
     from ..l2dprobe.backend import Live2DBackend, ensure_display
-    from ..l2dprobe.motions import band_of, physics_params
+    from ..l2dprobe.motions import band_of, physics_params, toggle_params
     from .prior import Prior
 except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from l2dprobe.backend import Live2DBackend, ensure_display
-    from l2dprobe.motions import band_of, physics_params
+    from l2dprobe.motions import band_of, physics_params, toggle_params
     from prior import Prior
 
 try:
@@ -84,6 +90,43 @@ class Autonomic:
         return eye, float(breath)
 
 
+class Switches:
+    """Drive switch-like parameters the way a rigger keys them.
+
+    Each switch holds one of its two authored states. It changes state only
+    when the model's value crosses most of the way to the other one -- the
+    hysteresis keeps a value hovering at the midpoint from flickering -- and
+    then ramps across in a few frames, which is how authored swaps look.
+    Everything in between is visible only during that ramp.
+    """
+
+    def __init__(self, states: dict[str, tuple[float, float]], ramp: int,
+                 enter: float = 0.7):
+        self.states = states
+        self.ramp = max(int(ramp), 1)
+        self.enter = enter
+        self.side: dict[str, int] = {}
+        self.pos: dict[str, float] = {}
+
+    def __call__(self, pid: str, value: float) -> float:
+        lo, hi = self.states[pid]
+        u = (value - lo) / (hi - lo)
+        if pid not in self.side:
+            self.side[pid] = int(u >= 0.5)
+            self.pos[pid] = float(self.side[pid])
+        side = self.side[pid]
+        if side == 0 and u > self.enter:
+            side = 1
+        elif side == 1 and u < 1 - self.enter:
+            side = 0
+        self.side[pid] = side
+        step = 1.0 / self.ramp
+        p = self.pos[pid]
+        p = min(p + step, 1.0) if side else max(p - step, 0.0)
+        self.pos[pid] = p
+        return lo + p * (hi - lo)
+
+
 def denorm(n: np.ndarray, lo: np.ndarray, hi: np.ndarray) -> np.ndarray:
     """[-1,1] back to the rig's own units."""
     return lo + (np.clip(n, -1, 1) + 1) * 0.5 * (hi - lo)
@@ -121,6 +164,15 @@ def main(argv=None) -> int:
                     help="render the rig default pose only. If THIS looks "
                          "wrong, the costume is broken before any parameter "
                          "we set, and the discrete band is the cause.")
+    ap.add_argument("--no-snap", action="store_true",
+                    help="drive switch-like parameters continuously, as before. "
+                         "Expect ghosted limbs on rigs with fading swaps.")
+    ap.add_argument("--snap-ramp", type=int, default=6,
+                    help="frames a snapped switch takes to change state")
+    ap.add_argument("--warmup", type=float, default=1.0,
+                    help="seconds of simulation on the first pose before "
+                         "recording, so physics starts at rest instead of "
+                         "springing out of the default pose on frame one")
     ap.add_argument("--gain", type=float, default=1.0,
                     help="scale motion about its own mean. A post-hoc knob, "
                          "not a fix: it magnifies the model's mistakes as much "
@@ -245,19 +297,48 @@ def main(argv=None) -> int:
     breath_idx = [i for i, p in enumerate(pids) if "breath" in p.lower()]
     auto = Autonomic(a.fps, rng)
 
+    switches = None
+    if not a.no_snap:
+        found = toggle_params(a.model, a.fps)
+        live = {pids[i]: found[pids[i]] for i in expressive if pids[i] in found}
+        if live:
+            switches = Switches({p: (v[1], v[2]) for p, v in live.items()},
+                                a.snap_ramp)
+            print(f"snapping {len(live)} switch-like parameters: "
+                  + ", ".join(sorted(live)))
+
     os.makedirs(a.out, exist_ok=True)
     # strip_dynamics=False: physics and pose stay live, which is the whole point
     # of previewing rather than reading numbers.
-    with Live2DBackend(a.model, size=a.size, strip_dynamics=False) as be:
+    # fps: physics and pose advance by one video frame per render, not by
+    # however long the render happened to take.
+    with Live2DBackend(a.model, size=a.size, strip_dynamics=False,
+                       fps=a.fps) as be:
         be.calibrate()
+        print("backend: " + ", ".join(
+            f"{k}={be._api_report[k]}" for k in ("order", "timestep")
+            if k in be._api_report))
         by_id = {s.pid: s for s in be.params}
-        written = 0
-        for f in range(n_frames):
+
+        def frame_overrides(f):
             over = {}
             vals = denorm(traj[f], lo[expressive], hi[expressive])
             for col, i in enumerate(expressive):
                 if pids[i] in by_id:
-                    over[pids[i]] = float(vals[col])
+                    v = float(vals[col])
+                    if switches is not None and pids[i] in switches.states:
+                        v = switches(pids[i], v)
+                    over[pids[i]] = v
+            return over
+
+        if a.warmup > 0 and n_frames:
+            first = frame_overrides(0)
+            for _ in range(int(a.warmup * a.fps)):
+                be.render(first)
+
+        written = 0
+        for f in range(n_frames):
+            over = frame_overrides(f)
             if not a.no_autonomic:
                 eye, breath = auto.step()
                 for i in eye_idx:
