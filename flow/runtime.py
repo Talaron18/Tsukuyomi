@@ -279,6 +279,20 @@ def main(argv=None) -> int:
     if not expressive:
         print("no expressive parameters", file=sys.stderr)
         return 1
+    if a.clips and os.path.exists(a.clips):
+        # Clips record which rig rows they hold. Built under older band rules
+        # (vowels counted as expressive until recently) their columns no longer
+        # match, and seeding or anchoring from them would misalign every
+        # parameter. Their rows are what any checkpoint trained on them saw, so
+        # they win; parameters now banded otherwise are just not written.
+        rows = np.load(a.clips, allow_pickle=True)["param_row"].astype(int)
+        if list(rows) != expressive:
+            gone = [pids[i] for i in rows if bands[i] != "expressive"]
+            print(f"clips use {len(rows)} columns, current bands give "
+                  f"{len(expressive)}; following the clips"
+                  + (f", not writing {', '.join(gone)}" if gone else "")
+                  + ". Regenerate clips with l2dprobe.motions to align.")
+            expressive = [int(i) for i in rows]
 
     model = desc = None
     window = 48
@@ -376,9 +390,12 @@ def main(argv=None) -> int:
     if a.anchor > 0:
         print(f"NOTE: {a.anchor:.0%} of each frame is real motion. This is a "
               f"demo scaffold, not evidence the prior works.")
-    print(f"generated {n_frames} frames  std={traj.std(axis=0).mean():.4f}  "
-          f"per-frame delta={np.abs(np.diff(traj, axis=0)).mean():.5f}"
-          + (f"  (gain {a.gain}x)" if a.gain != 1.0 else ""))
+    if not (a.static or a.neutral):
+        # Only model output is "generated"; under --static this described the
+        # clips fallback trajectory, not what gets replayed.
+        print(f"generated {n_frames} frames  std={traj.std(axis=0).mean():.4f}  "
+              f"per-frame delta={np.abs(np.diff(traj, axis=0)).mean():.5f}"
+              + (f"  (gain {a.gain}x)" if a.gain != 1.0 else ""))
 
     # Autonomic targets, found by band rather than by name where possible.
     eye_idx = [i for i, p in enumerate(pids)
@@ -420,7 +437,8 @@ def main(argv=None) -> int:
     # on aidang_2 it changed which arm was drawn during authored playback.
     if not a.no_snap and not (a.static or a.neutral):
         found = toggle_params(a.model, a.fps)
-        live = {pids[i]: found[pids[i]] for i in expressive if pids[i] in found}
+        live = {pids[i]: found[pids[i]] for i in expressive
+                if pids[i] in found and bands[i] == "expressive"}
         if live:
             switches = Switches({p: (v[1], v[2]) for p, v in live.items()},
                                 a.snap_ramp)
@@ -459,6 +477,10 @@ def main(argv=None) -> int:
             over = dict(base_params)
             vals = denorm(traj[f], lo[expressive], hi[expressive])
             for col, i in enumerate(expressive):
+                if bands[i] != "expressive":
+                    applied[f, col] = default_n[col]
+                    applied_mask[f, col] = False
+                    continue
                 v = float(vals[col])
                 if switches is not None and pids[i] in switches.states:
                     v = switches(pids[i], v)

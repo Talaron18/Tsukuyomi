@@ -14,7 +14,8 @@ import math
 import numpy as np
 import pytest
 
-from l2dprobe.motions import authored_motion, eval_segments, toggle_params
+from l2dprobe.motions import (authored_motion, band_of, eval_segments,
+                              toggle_params)
 
 
 def test_linear_and_clamping():
@@ -81,3 +82,20 @@ def test_toggle_params_ignores_short_and_flat(tmp_path):
     model = _write_rig(tmp_path, [
         {"Target": "Parameter", "Id": "Flat", "Segments": [0, 1, 0, 6, 1]}])
     assert toggle_params(model, 30.0) == {}
+
+
+def test_vowels_are_mouth_band():
+    # ParamA/I/U/E/O drive lip-sync shapes; as expressive parameters the prior
+    # generated vowels and the runtime snapped them as switches.
+    for pid in ("ParamA", "ParamI", "ParamU", "ParamE", "ParamO", "PARAM_A"):
+        assert band_of(pid, "continuous", "other", set()) == "mouth", pid
+    for pid in ("ParamAngleX", "ParamEyeLOpen", "ParamArmA", "ParamE2"):
+        assert band_of(pid, "continuous", "other", set()) != "mouth", pid
+
+
+def test_body_angle_groups_as_body_not_head():
+    from l2dprobe.analyze import group_of
+    for pid in ("ParamBodyAngleX", "ParamBodyAngleY", "ParamBodyAngleZ"):
+        assert group_of(pid) == "body", pid
+    for pid in ("ParamAngleX", "ParamAngleY", "ParamAngleZ"):
+        assert group_of(pid) == "head", pid

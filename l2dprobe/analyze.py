@@ -65,8 +65,10 @@ GROUPS = (
     ("eyelid", ("EyeLOpen", "EyeROpen", "EyeSmile", "EyeForm")),
     ("brow", ("Brow",)),
     ("mouth", ("Mouth",)),
-    ("head", ("AngleX", "AngleY", "AngleZ")),
+    # Body before head: "ParamBodyAngleX" contains "AngleX", and first match
+    # wins, so the old order labelled every body angle as head.
     ("body", ("BodyAngle", "AllRotate")),
+    ("head", ("AngleX", "AngleY", "AngleZ")),
     ("arm", ("Arm", "Hand", "Elbow", "Shoulder")),
     ("hair", ("Hair",)),
     ("face", ("Cheek", "Tere", "Blush")),

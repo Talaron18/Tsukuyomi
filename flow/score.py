@@ -130,10 +130,10 @@ def segments_of(path: str) -> dict:
 def group_labels(rig_npz: str, pid: list[str], row) -> list[str]:
     """Functional group per column, from the rig file's `group` field.
 
-    analyze.group_of matches "AngleX" before "BodyAngle", so rig files label
+    Rig files exported before analyze.GROUPS put body ahead of head label
     ParamBodyAngleX/Y/Z as head. Head and body are the two groups whose
     behaviour differs most (body sways slowly, head darts), so they are split
-    back apart here rather than scored as one.
+    back apart here for those files rather than scored as one.
     """
     z = np.load(rig_npz, allow_pickle=True)
     rpid = [str(p) for p in z["pid"]]

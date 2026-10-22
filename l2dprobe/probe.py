@@ -36,7 +36,7 @@ except ImportError:  # running as loose scripts rather than a package
     import os
     import sys
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from yachiyo.l2dprobe.backend import Live2DBackend, ParamSpec
+    from backend import Live2DBackend, ParamSpec
 
 GRID = 32
 SGRID = 16   # signed maps are coarser; they encode direction, not shape

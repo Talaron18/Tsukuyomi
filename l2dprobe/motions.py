@@ -49,6 +49,18 @@ import numpy as np
 
 AUTONOMIC = ("breath", "blink")
 MOUTH = ("mouth", "lip")
+# Vowel mouth shapes (ParamA/I/U/E/O and PARAM_A etc.) carry no "mouth" in
+# their id, so they fell into the expressive band: the prior generated vowels
+# and the runtime snapped them as switches. They belong to lip sync.
+VOWELS = {"a", "i", "u", "e", "o"}
+
+
+def is_vowel(pid: str) -> bool:
+    low = pid.lower()
+    for prefix in ("param_", "param"):
+        if low.startswith(prefix):
+            return low[len(prefix):] in VOWELS
+    return False
 
 
 def bezier_x(p, s):
@@ -273,7 +285,7 @@ def band_of(pid: str, kind: str, group: str, phys: set[str]) -> str:
     low = pid.lower()
     if any(k in low for k in AUTONOMIC) or group == "breath":
         return "autonomic"
-    if any(k in low for k in MOUTH) or group == "mouth":
+    if any(k in low for k in MOUTH) or group == "mouth" or is_vowel(pid):
         return "mouth"
     if group in ("eyelid",) and "open" in low:
         return "autonomic"     # driven by the blink generator at runtime
