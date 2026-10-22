@@ -28,7 +28,9 @@ has() { [[ " $STEPS " == *" $1 "* ]]; }
 
 model_of() {
     # The rig file is named after the model file, so search by that name.
-    find "$MODELS" -name "$1.model3.json" -not -name '*.probe.*' -print -quit
+    # -L: MODELS may itself be a symlink (e.g. in a side directory for one
+    # source), and find does not descend into a symlinked start point.
+    find -L "$MODELS" -name "$1.model3.json" -not -name '*.probe.*' -print -quit
 }
 
 mkdir -p runs vids
