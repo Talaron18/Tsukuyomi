@@ -105,7 +105,7 @@ for R in "${rigs_held[@]}"; do
                 --seeds "runs/$R.$x.1.npz" "runs/$R.$x.2.npz" \
                 --clips "clips2/$R.npz" --rig "rigs/$R.npz" --model "$M" \
                 --novelty-ref clips2 --holdout "$HOLDOUT" \
-                --json "runs/$R.$x.json" | tee "runs/$R.$x.txt" || true
+                --json "runs/$R.$x.json" 2>&1 | tee "runs/$R.$x.txt" || true
         fi
         if has render; then
             xvfb-run -a -s "-screen 0 1024x1024x24" python -m flow.runtime \
