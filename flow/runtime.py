@@ -60,11 +60,13 @@ import numpy as np
 # --static and --dump-only runs depend on things they never use.
 try:
     from ..l2dprobe.analyze import group_of
+    from ..l2dprobe.transforms import whole_model_params
     from ..l2dprobe.motions import (authored_motion, band_of, motion_files,
                                     physics_params, toggle_params)
 except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from l2dprobe.analyze import group_of
+    from l2dprobe.transforms import whole_model_params
     from l2dprobe.motions import (authored_motion, band_of, motion_files,
                                   physics_params, toggle_params)
 
@@ -235,6 +237,14 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True, help=".model3.json")
     ap.add_argument("--rig", required=True, help="rigs/<name>.npz")
+    ap.add_argument("--probe-dir", default="out",
+                    help="probe outputs (rig_<name>.npz) used to find the "
+                         "whole-model transform parameters to hold still")
+    ap.add_argument("--no-hold-global", action="store_true",
+                    help="let the model drive whole-model position, scale and "
+                         "rotation (it moved characters off the canvas)")
+    ap.add_argument("--hold", default="",
+                    help="extra comma-separated parameter ids to hold still")
     ap.add_argument("--ckpt", default=None,
                     help="prior checkpoint: the deterministic prior "
                          "(flow.prior) or a flow-matching one (flow.flowprior "
@@ -248,6 +258,10 @@ def main(argv=None) -> int:
     ap.add_argument("--binding", default=None, metavar="FILE.json",
                     help="--behaviors role binding override: "
                          '{"head_x": "ParamFoo"} or {"head_x": ["ParamFoo", -1]}')
+    ap.add_argument("--keep", type=int, default=None,
+                    help="flow checkpoint: frames committed per sampled chunk "
+                         "(default half the chunk; the full chunk pulsed at "
+                         "the chunk rate)")
     ap.add_argument("--solver-steps", type=int, default=None,
                     help="flow checkpoint: Euler steps per chunk "
                          "(default: what training evaluated with)")
@@ -349,6 +363,24 @@ def main(argv=None) -> int:
                   + ". Regenerate clips with l2dprobe.motions to align.")
             expressive = [int(i) for i in rows]
 
+    # Whole-model transforms (ParamAllX, PARAM_moveY, zongtiZ ...) are for
+    # staging. Driven freely they carried characters off the canvas, so they
+    # are held: at the idle's first frame when it sets them, else at default.
+    held = set(p for p in a.hold.split(",") if p)
+    if not a.no_hold_global and not (a.static or a.neutral):
+        rig_name = os.path.basename(a.rig).rsplit(".npz", 1)[0]
+        found = whole_model_params(a.probe_dir, rig_name)
+        if found is None:
+            print(f"WARNING: no probe output {a.probe_dir}/rig_{rig_name}.npz; "
+                  "whole-model transform parameters are not held (pass "
+                  "--probe-dir, or list them with --hold)", file=sys.stderr)
+        else:
+            held |= set(found)
+    held &= {pids[i] for i in expressive}
+    if held:
+        print(f"holding {len(held)} whole-model parameters still: "
+              + ", ".join(sorted(held)))
+
     model = desc = flow = None
     window = 48
     use_model = bool(a.ckpt) and not (a.static or a.neutral or a.behaviors)
@@ -440,8 +472,10 @@ def main(argv=None) -> int:
               f"{len(blink_requests)} gaze-coupled blinks requested")
     elif flow is not None:
         fmodel, cfg, device, steps = flow
+        keep = a.keep or max(1, cfg["chunk"] // 2)
         stream = FlowStream(fmodel, desc, seed, steps=steps, seed=a.seed,
-                            device=device)
+                            device=device, keep=keep)
+        print(f"flow: committing {keep} of every {cfg['chunk']} sampled frames")
         traj = stream.generate(n_frames)
     elif a.neutral:
         traj = np.tile(default_n.astype(np.float32), (n_frames, 1))
@@ -533,7 +567,7 @@ def main(argv=None) -> int:
     # Under --behaviors only the bound roles are driven; the base state holds
     # every other expressive parameter at the idle's first frame.
     model_driven = ({p for p, _, _ in roles.values()} if a.behaviors
-                    else {pids[i] for i in expressive})
+                    else {pids[i] for i in expressive}) - held
     band_by_id = dict(zip(pids, bands))
     base_name, base_params, base_parts = base_state(
         motions, base_keep(model_driven, phys, band_by_id))
@@ -609,8 +643,10 @@ def main(argv=None) -> int:
             over = dict(base_params)
             vals = denorm(traj[f], lo[expressive], hi[expressive])
             for col, i in enumerate(expressive):
-                if bands[i] != "expressive":
-                    applied[f, col] = default_n[col]
+                if bands[i] != "expressive" or pids[i] in held:
+                    applied[f, col] = (
+                        (over[pids[i]] - lo[i]) / span_x[col] * 2 - 1
+                        if pids[i] in over else default_n[col])
                     applied_mask[f, col] = False
                     continue
                 v = float(vals[col])

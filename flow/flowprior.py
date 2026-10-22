@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import json
 import math
 import os
 import sys
@@ -296,8 +297,21 @@ def rollout(model, rig, ctx, chunk, device, seconds=4.0, fps=30, steps=6):
         out.append(nxt.cpu().numpy()[0])
         buf = torch.cat([buf, nxt], dim=1)[:, -ctx:]
     out = np.concatenate(out)
+    # Saturation split by whether this rig's clips ever drive the column. The
+    # loss masks undriven columns, so the model gets no gradient for them; if
+    # they are what pins at +-1, the fix is in the objective, not in training
+    # length. aidang_2 on the server had 56% of all values pinned.
+    driven = np.zeros(out.shape[1], bool)
+    for m in rig["masks"]:
+        driven |= np.asarray(m, bool)
+    pinned = np.abs(out) > 0.98
+    sat = lambda cols: float(pinned[:, cols].mean()) if cols.any() else None  # noqa: E731
     return {"std": float(out.std(axis=0).mean()),
-            "frame_delta": float(np.abs(np.diff(out, axis=0)).mean())}
+            "frame_delta": float(np.abs(np.diff(out, axis=0)).mean()),
+            "saturation": float(pinned.mean()),
+            "saturation_driven": sat(driven),
+            "saturation_undriven": sat(~driven),
+            "undriven_cols": int((~driven).sum())}
 
 
 CONFIG_KEYS = ("ddim", "state", "layers", "heads", "ctx", "chunk", "cond_dim",
@@ -336,12 +350,21 @@ class FlowStream:
         frames = stream.next_chunk(cond)   # (chunk, P) in [-1, 1]
 
     `cond` is (cond_dim,) or None for the chunk about to be generated.
+
+    `keep` frames of each sampled chunk are committed and the rest discarded
+    (receding horizon). Generated chunks start close to the context and
+    accelerate toward their end, so committing whole chunks produced a pulse
+    at the chunk rate: on aidang_2 the last frames moved 2.6x the first, every
+    0.4 s. Keeping the first half removed the pulse and halved jerk in a local
+    test, at twice the sampling cost.
     Diversity comes only from the noise, which a per-stream torch.Generator
     makes reproducible: the same seed repeats, different seeds differ.
     """
 
-    def __init__(self, model, desc, seed_ctx, steps=6, seed=0, device="cpu"):
+    def __init__(self, model, desc, seed_ctx, steps=6, seed=0, device="cpu",
+                 keep=None):
         self.model, self.steps, self.device = model, steps, device
+        self.keep = max(1, min(int(keep or model.chunk), model.chunk))
         self.desc = torch.as_tensor(desc).to(device)
         ctx = np.asarray(seed_ctx, np.float32)[-model.ctx:]
         if len(ctx) < model.ctx:
@@ -357,7 +380,8 @@ class FlowStream:
             cond = torch.as_tensor(np.asarray(cond, np.float32)[None]
                                    ).to(self.device)
         nxt = self.model.sample(self.buf, self.desc, self.buf.shape[-1],
-                                self.steps, cond=cond, generator=self.gen)
+                                self.steps, cond=cond, generator=self.gen
+                                )[:, :self.keep]
         self.buf = torch.cat([self.buf, nxt], dim=1)[:, -self.model.ctx:]
         return nxt[0].cpu().numpy()
 
@@ -428,6 +452,13 @@ def main(argv=None) -> int:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--save", default=None, metavar="PATH.pt",
                     help="write state_dict + config for flow.runtime --ckpt")
+    ap.add_argument("--log", default=None, metavar="PATH.json",
+                    help="training log: per-epoch loss and held-out "
+                         "evaluation (default: next to --save, else "
+                         "flowprior_log.json)")
+    ap.add_argument("--rollout-seconds", type=float, default=20.0,
+                    help="free-rollout length for the held-out evaluation; "
+                         "saturation takes several seconds to build up")
     a = ap.parse_args(argv)
 
     torch.set_num_threads(a.threads)
@@ -476,6 +507,18 @@ def main(argv=None) -> int:
     scale = math.sqrt(tot_sq / count) if count else 1.0
     model.res_scale.fill_(max(scale, 1e-4))
     print(f"residual scale (rms of chunk minus '{a.base}' baseline): {scale:.5f}")
+    log_path = a.log or (os.path.splitext(a.save)[0] + ".log.json" if a.save
+                         else "flowprior_log.json")
+    log = {"args": vars(a), "device": device, "res_scale": scale,
+           "train_rigs": [r["name"] for r in train], "holdout": hold,
+           "epochs": [], "heldout": {}}
+
+    def write_log():
+        # Rewritten after every epoch so a long run that is interrupted still
+        # leaves its numbers behind -- the last server run left none.
+        os.makedirs(os.path.dirname(os.path.abspath(log_path)), exist_ok=True)
+        with open(log_path, "w", encoding="utf-8") as fh:
+            json.dump(log, fh, indent=1, default=float)
 
     opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, a.epochs)
@@ -505,6 +548,9 @@ def main(argv=None) -> int:
             opt.step()
             tot += loss.item(); n += 1
         sched.step()
+        log["epochs"].append({"epoch": ep, "loss": tot / max(n, 1),
+                              "seconds": time.time() - t0})
+        write_log()
         if ep == 0:
             print(f"  epoch 0 {time.time() - t0:.0f}s -> "
                   f"~{(time.time() - t0) * a.epochs / 60:.0f} min")
@@ -524,8 +570,14 @@ def main(argv=None) -> int:
         print("no held-out rig present in this clips dir; nothing evaluated")
     for h in held:
         e = evaluate(model, h, a.ctx, a.chunk, device, steps=a.solver_steps)
-        r = rollout(model, h, a.ctx, a.chunk, device, steps=a.solver_steps)
+        r = rollout(model, h, a.ctx, a.chunk, device, steps=a.solver_steps,
+                    seconds=a.rollout_seconds)
         real = np.concatenate(h["clips"])
+        log["heldout"][h["name"]] = {
+            "eval": e, "rollout": r,
+            "real_std": float(real.std(axis=0).mean()),
+            "real_frame_delta": float(np.abs(np.diff(real, axis=0)).mean())}
+        write_log()
         print(f"\nHELD-OUT RIG {h['name']}")
         if not e:
             print("  no clip long enough to evaluate")
@@ -540,8 +592,14 @@ def main(argv=None) -> int:
               "(0 means it ignores the noise)")
         print(f"  free rollout  std={r['std']:.4f}  "
               f"per-frame delta={r['frame_delta']:.5f}")
+        fmt = lambda v: "-" if v is None else f"{v:.2f}"  # noqa: E731
+        print(f"  pinned at +-1 {r['saturation']:.2f}  (driven cols "
+              f"{fmt(r['saturation_driven'])}, never-driven cols "
+              f"{fmt(r['saturation_undriven'])}, {r['undriven_cols']} of them)")
         print(f"  real clips    std={real.std(axis=0).mean():.4f}  "
               f"per-frame delta={np.abs(np.diff(real, axis=0)).mean():.5f}")
+    write_log()
+    print(f"\nlog -> {log_path}")
     if held:
         print("\nRollout ratios near 1.0 are the goal. The deterministic model "
               "hit\n0.26-0.99 amplitude with up to 3.4x the frame-to-frame "

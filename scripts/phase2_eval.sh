@@ -15,6 +15,7 @@
 #             [live2d-models:CubismWebSamples] (missing ones are ignored)
 #   DET_CKPT  deterministic prior checkpoint, or empty to skip that source [prior.pt]
 #   EPOCHS    flow-prior epochs [40]
+#   BASE      flow-prior chunk baseline: hold, damped or velocity [hold]
 #   SECONDS_  seconds per scored run [60]
 set -euo pipefail
 
@@ -34,6 +35,10 @@ if (( ${#roots[@]} == 0 )); then
 fi
 DET_CKPT=${DET_CKPT-prior.pt}
 EPOCHS=${EPOCHS:-40}
+# "hold": continuing the last chunk's velocity ("damped") fed noise back
+# chunk after chunk until values pinned at their limits -- 56% of aidang_2's
+# values on the first server run, 47% vs 9-12% with hold in a local test.
+BASE=${BASE:-hold}
 SECS=${SECONDS_:-60}
 STEPS=${STEPS:-"clips fit train score render ab"}
 
@@ -61,7 +66,7 @@ fi
 if has train; then
     python -m flow.flowprior clips2 --rigs rigs --holdout "$HOLDOUT" \
         --epochs "$EPOCHS" --steps 200 --threads "$(nproc)" --device auto \
-        --save fp.pt
+        --base "$BASE" --save fp.pt --log fp.log.json 2>&1 | tee fp.train.txt
 fi
 
 sources=(beh flow static)

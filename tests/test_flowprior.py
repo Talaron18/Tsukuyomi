@@ -72,3 +72,20 @@ def test_stream_seeds_repeat_and_differ(tmp_path):
     assert np.abs(a - b).mean() > 1e-4
     c = run(0, lambda f: np.ones(2, np.float32))
     assert np.abs(a - c).mean() > 1e-6
+
+
+def test_stream_keep_commits_part_of_each_chunk():
+    # Receding horizon: with keep=k each sample commits k frames, so a stream
+    # needs CHUNK/k times as many samples and only the first k frames of each
+    # sampled chunk ever reach the output.
+    m = _model(0)
+    desc = np.random.default_rng(0).standard_normal((P, DDIM)).astype(
+        np.float32)
+    s = FlowStream(m, desc, np.zeros((CTX, P), np.float32), steps=2, seed=0,
+                   keep=1)
+    assert s.next_chunk().shape == (1, P)
+    full = FlowStream(m, desc, np.zeros((CTX, P), np.float32), steps=2,
+                      seed=0)
+    assert full.next_chunk().shape == (CHUNK, P)
+    assert FlowStream(m, desc, np.zeros((CTX, P), np.float32),
+                      keep=99).keep == CHUNK
