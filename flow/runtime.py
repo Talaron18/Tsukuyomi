@@ -342,9 +342,12 @@ def main(argv=None) -> int:
               "ignore them and draw every variant)")
     model_driven = {pids[i] for i in expressive}
     band_by_id = dict(zip(pids, bands))
+    # Autonomic and mouth stay out of the base: blink and breath are generated
+    # procedurally and mouth waits for lip sync, so freezing them at an idle
+    # frame would switch both off.
     base_name, base_params, base_parts = base_state(
-        motions, lambda p: p not in model_driven
-        and band_by_id.get(p) != "physics" and p not in phys)
+        motions, lambda p: p not in model_driven and p not in phys
+        and band_by_id.get(p) not in ("physics", "autonomic", "mouth"))
     if base_name and not (a.static or a.neutral):
         print(f"base state from {base_name}: {len(base_parts)} part "
               f"opacities, {len(base_params)} held parameters")
@@ -385,8 +388,14 @@ def main(argv=None) -> int:
                        fps=a.fps) as be:
         be.calibrate()
         print("backend: " + ", ".join(
-            f"{k}={be._api_report[k]}" for k in ("order", "timestep")
+            f"{k}={be._api_report[k]}" for k in ("order", "timestep", "parts")
             if k in be._api_report))
+        if n_parts and not be.part_index:
+            print("ERROR: this rig switches parts with PartOpacity curves but "
+                  "this live2d-py build has no GetPartIds/SetPartOpacity, so "
+                  "every variant would be drawn. Upgrade live2d-py (>=0.8.1 "
+                  "is tested).", file=sys.stderr)
+            return 1
         by_id = {s.pid: s for s in be.params}
 
         def frame_overrides(f):
