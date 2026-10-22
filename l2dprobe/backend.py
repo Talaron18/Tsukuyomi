@@ -471,7 +471,24 @@ class Live2DBackend:
             raise ValueError(f"unknown parameter order {order!r}")
 
         self.model.Draw()
+        return self._read()
 
+    def render_native(self) -> np.ndarray:
+        """Render whatever the model's own update produces, writing nothing.
+
+        Live2D's motion player applies every curve a motion carries --
+        parameters, part opacities, model opacity -- then physics and pose. That
+        makes this the ground truth for authored playback: if a pipeline replay
+        differs from it, the pipeline dropped something.
+        """
+        glBindFramebuffer(GL_FRAMEBUFFER, self._fbo)
+        glViewport(0, 0, self.size, self.size)
+        live2d.clearBuffer(*self.bg)
+        (self._update or self.model.Update)()
+        self.model.Draw()
+        return self._read()
+
+    def _read(self) -> np.ndarray:
         buf = glReadPixels(0, 0, self.size, self.size, GL_RGBA, GL_UNSIGNED_BYTE)
         # PyOpenGL returns bytes on some builds and an ndarray on others.
         # np.frombuffer raises on the latter, so normalise first.

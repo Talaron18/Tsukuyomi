@@ -306,7 +306,10 @@ def main(argv=None) -> int:
     auto = Autonomic(a.fps, rng)
 
     switches = None
-    if not a.no_snap:
+    # --static replays authored values unchanged; it is the reference the
+    # other modes are judged against, so nothing may rewrite it. Snapping did:
+    # on aidang_2 it changed which arm was drawn during authored playback.
+    if not a.no_snap and not (a.static or a.neutral):
         found = toggle_params(a.model, a.fps)
         live = {pids[i]: found[pids[i]] for i in expressive if pids[i] in found}
         if live:
