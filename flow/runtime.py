@@ -42,22 +42,37 @@ import sys
 
 import numpy as np
 
+# Only the pure-numpy pieces are imported at module level. The backend needs
+# live2d-py and a GL display, and the prior needs torch; importing either here
+# made Switches, Autonomic and base_state untestable without both, and made
+# --static and --dump-only runs depend on things they never use.
 try:
-    from ..l2dprobe.backend import Live2DBackend, ensure_display
     from ..l2dprobe.motions import (authored_motion, band_of, motion_files,
                                     physics_params, toggle_params)
-    from .prior import Prior
 except ImportError:
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from l2dprobe.backend import Live2DBackend, ensure_display
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from l2dprobe.motions import (authored_motion, band_of, motion_files,
                                   physics_params, toggle_params)
-    from prior import Prior
 
-try:
-    import torch
-except ImportError as exc:  # pragma: no cover
-    raise SystemExit(f"needs pytorch: {exc}") from exc
+
+def _backend():
+    try:
+        from ..l2dprobe.backend import Live2DBackend, ensure_display
+    except ImportError:
+        from l2dprobe.backend import Live2DBackend, ensure_display
+    return Live2DBackend, ensure_display
+
+
+def _prior():
+    try:
+        import torch
+    except ImportError as exc:  # pragma: no cover
+        raise SystemExit(f"needs pytorch: {exc}") from exc
+    try:
+        from .prior import Prior
+    except ImportError:
+        from flow.prior import Prior
+    return torch, Prior
 
 
 class Autonomic:
@@ -140,6 +155,21 @@ def authored_motions(model_json: str, fps: float):
     return out
 
 
+def base_keep(model_driven, phys, band_by_id):
+    """Which parameters base_state may hold at the idle's first frame.
+
+    Not the ones the model drives, and not physics outputs. Autonomic and
+    mouth stay out too: blink and breath are generated procedurally and mouth
+    waits for lip sync, so freezing them at an idle frame would switch both
+    off -- which is what happened before this was split out.
+    """
+    def keep(pid):
+        return (pid not in model_driven and pid not in phys
+                and band_by_id.get(pid) not in ("physics", "autonomic",
+                                                "mouth"))
+    return keep
+
+
 def base_state(motions, keep):
     """Part opacities and held parameters from the first frame of the idle.
 
@@ -167,7 +197,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True, help=".model3.json")
     ap.add_argument("--rig", required=True, help="rigs/<name>.npz")
-    ap.add_argument("--ckpt", required=True)
+    ap.add_argument("--ckpt", default=None,
+                    help="prior checkpoint; not needed for --static/--neutral")
     ap.add_argument("--clips", default=None,
                     help="clips/<name>.npz to seed context from real motion")
     ap.add_argument("--seconds", type=float, default=8.0)
@@ -208,9 +239,27 @@ def main(argv=None) -> int:
                     help="scale motion about its own mean. A post-hoc knob, "
                          "not a fix: it magnifies the model's mistakes as much "
                          "as its motion, and clamps at the parameter range.")
+    ap.add_argument("--dump", default=None, metavar="PATH.npz",
+                    help="write what is actually applied each frame -- the "
+                         "expressive band normalised to [-1,1] in the clips' "
+                         "column order, after gain and snapping, plus part "
+                         "opacities -- for python -m flow.score")
+    ap.add_argument("--dump-only", action="store_true",
+                    help="write --dump and stop before opening a renderer. "
+                         "Scoring needs no pixels, so this needs no GL either")
+    ap.add_argument("--no-parts", action="store_true",
+                    help="never write part opacities, as Live2D Native does "
+                         "for a rig without a pose3 file. Diagnostic: shows "
+                         "what PartOpacity application is fixing")
     a = ap.parse_args(argv)
-    ensure_display(["-m", f"{__package__ or 'l2dprobe'}.runtime"]
-                   + (argv if argv is not None else sys.argv[1:]))
+    if a.dump_only and not a.dump:
+        ap.error("--dump-only needs --dump")
+    if not (a.static or a.neutral or a.ckpt):
+        ap.error("--ckpt is required unless --static or --neutral")
+    if not a.dump_only:
+        _, ensure_display = _backend()
+        ensure_display(["-m", f"{__package__ or 'flow'}.runtime"]
+                       + (argv if argv is not None else sys.argv[1:]))
 
     rng = np.random.default_rng(a.seed)
     z = np.load(a.rig, allow_pickle=True)
@@ -231,15 +280,18 @@ def main(argv=None) -> int:
         print("no expressive parameters", file=sys.stderr)
         return 1
 
-    ck = torch.load(a.ckpt, map_location="cpu", weights_only=False)
-    model = Prior(ck["ddim"], ck["state"], window=ck["window"])
-    model.load_state_dict(ck["state_dict"])
-    model.eval()
-    window = ck["window"]
-    if ck.get("holdout"):
-        print(f"checkpoint was trained holding out {ck['holdout']}")
-
-    desc = torch.from_numpy(desc_all[expressive])
+    model = desc = None
+    window = 48
+    if a.ckpt and not (a.static or a.neutral):
+        torch, Prior = _prior()
+        ck = torch.load(a.ckpt, map_location="cpu", weights_only=False)
+        model = Prior(ck["ddim"], ck["state"], window=ck["window"])
+        model.load_state_dict(ck["state_dict"])
+        model.eval()
+        window = ck["window"]
+        if ck.get("holdout"):
+            print(f"checkpoint was trained holding out {ck['holdout']}")
+        desc = torch.from_numpy(desc_all[expressive])
     span_e = np.maximum(hi[expressive] - lo[expressive], 1e-6)
     default_n = np.clip((dflt[expressive] - lo[expressive]) / span_e * 2 - 1, -1, 1)
 
@@ -342,12 +394,8 @@ def main(argv=None) -> int:
               "ignore them and draw every variant)")
     model_driven = {pids[i] for i in expressive}
     band_by_id = dict(zip(pids, bands))
-    # Autonomic and mouth stay out of the base: blink and breath are generated
-    # procedurally and mouth waits for lip sync, so freezing them at an idle
-    # frame would switch both off.
     base_name, base_params, base_parts = base_state(
-        motions, lambda p: p not in model_driven and p not in phys
-        and band_by_id.get(p) not in ("physics", "autonomic", "mouth"))
+        motions, base_keep(model_driven, phys, band_by_id))
     if base_name and not (a.static or a.neutral):
         print(f"base state from {base_name}: {len(base_parts)} part "
               f"opacities, {len(base_params)} held parameters")
@@ -379,6 +427,71 @@ def main(argv=None) -> int:
             print(f"snapping {len(live)} switch-like parameters: "
                   + ", ".join(sorted(live)))
 
+    # Decide every frame's writes before a renderer exists. The values are the
+    # same either way; doing it here means --dump records exactly what the
+    # render loop will apply (after gain and snapping) and --dump-only can stop
+    # without GL. Switches are stateful, so they must run once per frame in
+    # order -- the old loop also ran them for every warmup render of frame 0.
+    frames = []
+    applied = np.empty((n_frames, len(expressive)), np.float32)
+    applied_mask = np.ones((n_frames, len(expressive)), bool)
+    segment = np.zeros(n_frames, np.int32)
+    span_x = np.maximum(hi[expressive] - lo[expressive], 1e-6)
+    seg_id = -1
+    for f in range(n_frames):
+        if static_frames is not None:
+            m, t = static_frames[f]
+            if t == 0:
+                seg_id += 1
+            segment[f] = max(seg_id, 0)
+            over = {p: float(v[t]) for p, v in m["params"].items()}
+            parts = {p: float(v[t]) for p, v in m["parts"].items()}
+            for col, i in enumerate(expressive):
+                if pids[i] in over:
+                    applied[f, col] = (over[pids[i]] - lo[i]) / span_x[col] * 2 - 1
+                else:
+                    applied[f, col] = default_n[col]
+                    applied_mask[f, col] = False
+        elif a.neutral:
+            over, parts = {}, None
+            applied[f] = default_n
+        else:
+            over = dict(base_params)
+            vals = denorm(traj[f], lo[expressive], hi[expressive])
+            for col, i in enumerate(expressive):
+                v = float(vals[col])
+                if switches is not None and pids[i] in switches.states:
+                    v = switches(pids[i], v)
+                over[pids[i]] = v
+                applied[f, col] = (v - lo[i]) / span_x[col] * 2 - 1
+            parts = base_parts
+        if a.no_parts:
+            parts = None
+        frames.append((over, parts))
+    np.clip(applied, -1, 1, out=applied)
+
+    if a.dump:
+        part_ids = sorted({p for _, pt in frames if pt for p in pt})
+        opac = np.full((n_frames, len(part_ids)), np.nan, np.float32)
+        col_of = {p: j for j, p in enumerate(part_ids)}
+        for f, (_, pt) in enumerate(frames):
+            for p, v in (pt or {}).items():
+                opac[f, col_of[p]] = v
+        mode = ("static" if a.static else "neutral" if a.neutral
+                else f"prior anchor={a.anchor:g} reseed={a.reseed:g}")
+        os.makedirs(os.path.dirname(os.path.abspath(a.dump)), exist_ok=True)
+        np.savez_compressed(
+            a.dump, traj=applied, mask=applied_mask, segment=segment,
+            pid=np.array([pids[i] for i in expressive], dtype=object),
+            param_row=np.asarray(expressive, np.int32),
+            fps=np.float32(a.fps), part_id=np.array(part_ids, dtype=object),
+            part_opacity=opac, mode=np.array(mode))
+        print(f"dump -> {a.dump}  ({n_frames} frames, {len(expressive)} "
+              f"expressive, {len(part_ids)} parts, mode {mode})")
+        if a.dump_only:
+            return 0
+
+    Live2DBackend, _ = _backend()
     os.makedirs(a.out, exist_ok=True)
     # strip_dynamics=False: physics and pose stay live, which is the whole point
     # of previewing rather than reading numbers.
@@ -397,23 +510,16 @@ def main(argv=None) -> int:
                   "is tested).", file=sys.stderr)
             return 1
         by_id = {s.pid: s for s in be.params}
+        # Expressive ids the loaded model lacks (a rig file from another
+        # build of the model) are dropped, as before; authored replay is not
+        # filtered.
+        absent = ({pids[i] for i in expressive} - set(by_id)
+                  if static_frames is None else set())
 
         def frame_overrides(f):
-            if static_frames is not None:
-                m, t = static_frames[f]
-                return ({p: float(v[t]) for p, v in m["params"].items()},
-                        {p: float(v[t]) for p, v in m["parts"].items()})
-            if a.neutral:
-                return {}, None
-            over = dict(base_params)
-            vals = denorm(traj[f], lo[expressive], hi[expressive])
-            for col, i in enumerate(expressive):
-                if pids[i] in by_id:
-                    v = float(vals[col])
-                    if switches is not None and pids[i] in switches.states:
-                        v = switches(pids[i], v)
-                    over[pids[i]] = v
-            return over, base_parts
+            over, parts = frames[f]
+            over = {p: v for p, v in over.items() if p not in absent}
+            return over, parts
 
         if a.warmup > 0 and n_frames:
             first, first_parts = frame_overrides(0)
