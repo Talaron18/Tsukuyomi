@@ -82,3 +82,23 @@ def test_fit_skips_holdout(tmp_path):
     assert st["rigs"] == ["Train"]
     assert st["roles"]["head_x"]["std"] < 0.3
     json.dumps(st)                               # writable as-is
+
+
+def test_abtest_hides_sources_and_tallies(tmp_path):
+    from flow.abtest import make, tally
+    vids = []
+    for src in ("beh", "flow", "static"):
+        p = tmp_path / f"{src}.mp4"
+        p.write_bytes(src.encode())
+        vids.append(f"Natori/{src}={p}")
+    out = tmp_path / "ab"
+    assert make(str(out), vids, seed=0) == 0
+    key = json.loads((out / "answer_key.json").read_text())
+    assert len(key) == 3
+    for pid, k in key.items():
+        # Files carry no source name; contents match the key.
+        assert (out / f"p{pid}_A.mp4").read_bytes() == k["A"].encode()
+    lines = [f"{pid} A" if key[pid]["A"] == "static" or key[pid]["B"] != "static"
+             else f"{pid} B" for pid in key]
+    (out / "judgments.txt").write_text("\n".join(lines))
+    assert tally(str(out)) == 0
