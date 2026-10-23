@@ -21,6 +21,10 @@
 #   CTX_NOISE flow-prior context-noise sigma, training only [0]
 #   LOCAL     1 = give the flow head per-parameter history (--local) [0]
 #   SMOOTH    runtime causal smoothing seconds, flow source only [0.08]
+#   EVENTS    event-model stats file written by the fit step and read by
+#             the events source (flow.events) [ev.json]
+#   SOURCES   sources to dump, score and render [beh flow static events]
+#             (det is added when DET_CKPT exists)
 set -euo pipefail
 
 # python -m flow.X resolves against the current directory, so a run started
@@ -50,6 +54,7 @@ BASIS=${BASIS:-0}
 CTX_NOISE=${CTX_NOISE:-0}
 LOCAL=${LOCAL:-0}
 SMOOTH=${SMOOTH:-0.08}
+EVENTS=${EVENTS:-ev.json}
 local_arg=(); [[ "$LOCAL" == 1 ]] && local_arg=(--local)
 STEPS=${STEPS:-"clips fit train score render ab"}
 
@@ -73,6 +78,9 @@ if has clips; then
 fi
 if has fit; then
     python -m flow.behaviors --fit clips2 --holdout "$HOLDOUT" --out beh.json
+    # Fitted, not trained: per-rig event statistics, rig-median pooled.
+    python -m flow.events --fit clips2 --holdout "$HOLDOUT" --out "$EVENTS" \
+        2>&1 | tee "${EVENTS%.json}.fit.txt"
 fi
 if has train; then
     python -m flow.flowprior clips2 --rigs rigs --holdout "$HOLDOUT" \
@@ -82,7 +90,7 @@ if has train; then
         --save fp.pt --log fp.log.json 2>&1 | tee fp.train.txt
 fi
 
-sources=(beh flow static)
+read -ra sources <<< "${SOURCES:-beh flow static events}"
 [[ -n "$DET_CKPT" && -f "$DET_CKPT" ]] && sources+=(det)
 
 src_args() {
@@ -91,6 +99,7 @@ src_args() {
         flow)   echo --ckpt fp.pt --smooth "$SMOOTH" ;;
         det)    echo --ckpt "$DET_CKPT" ;;
         static) echo --static ;;
+        events) echo --events "$EVENTS" ;;
     esac
 }
 
@@ -117,8 +126,9 @@ for R in "${rigs_held[@]}"; do
             # rig files) must not abort every other rig and source.
             ok=1
             for s in 0 1 2; do
+                tok=(); [[ $x == events ]] && tok=(--tokens "runs/$R.$x.$s.tokens.json")
                 if ! python -m flow.runtime "${base[@]}" "${extra[@]}" \
-                        --seed "$s" --seconds "$SECS" \
+                        --seed "$s" --seconds "$SECS" "${tok[@]}" \
                         --dump "runs/$R.$x.$s.npz" --dump-only; then
                     echo "!! $R/$x: runtime failed, skipping this source" >&2
                     echo "$R/$x" >> runs/FAILED.txt
