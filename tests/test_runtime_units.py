@@ -150,3 +150,18 @@ def test_whole_model_hold_never_takes_head_body_gaze():
     assert protected_from_hold("Param14", "gaze")
     for pid in ("ParamAllX", "ParamAllRotate", "zongtiZ", "PARAM_moveY"):
         assert not protected_from_hold(pid, "body"), pid
+
+
+def test_smooth_causal_uses_only_the_past_and_cuts_jitter():
+    from flow.runtime import smooth_causal
+    rng = np.random.default_rng(0)
+    x = np.cumsum(rng.standard_normal((300, 2)) * 0.01, 0)
+    x = x + rng.standard_normal(x.shape) * 0.05          # high-freq wobble
+    y = smooth_causal(x.astype(np.float32), 0.08, 30.0)
+    jerk = lambda z: np.abs(np.diff(z, 3, axis=0)).mean()  # noqa: E731
+    assert jerk(y) < jerk(x) / 5
+    x2 = x.copy()
+    x2[200:] += 1.0                                        # change the future
+    y2 = smooth_causal(x2.astype(np.float32), 0.08, 30.0)
+    assert np.array_equal(y[:200], y2[:200])               # past unaffected
+    assert smooth_causal(x, 0, 30.0) is x

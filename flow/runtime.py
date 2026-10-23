@@ -233,6 +233,29 @@ def base_state(motions, keep):
     return name, params, parts
 
 
+def smooth_causal(traj: np.ndarray, tau: float, fps: float) -> np.ndarray:
+    """Critically damped follower: two cascaded one-pole lags, past frames only.
+
+    The v3 flow prior's large-scale motion was about right but carried
+    high-frequency wobble: jerk 42-248x authored on Hiyori/Natori. A
+    non-causal blur fixed it entirely, which says the excess is all high
+    frequency; this is the real-time version. tau 0.08 s (~160 ms lag) took
+    jerk to 2.3x (Hiyori) and 13x (Natori) with the amount of motion
+    unchanged. A stopgap until the model itself generates smooth chunks.
+    """
+    if tau <= 0 or len(traj) == 0:
+        return traj
+    a = 1.0 - np.exp(-1.0 / (tau * fps))
+    y1 = traj[0].astype(np.float64).copy()
+    y2 = y1.copy()
+    out = np.empty_like(traj)
+    for f in range(len(traj)):
+        y1 += a * (traj[f] - y1)
+        y2 += a * (y1 - y2)
+        out[f] = y2
+    return out
+
+
 def denorm(n: np.ndarray, lo: np.ndarray, hi: np.ndarray) -> np.ndarray:
     """[-1,1] back to the rig's own units."""
     return lo + (np.clip(n, -1, 1) + 1) * 0.5 * (hi - lo)
@@ -263,6 +286,9 @@ def main(argv=None) -> int:
     ap.add_argument("--binding", default=None, metavar="FILE.json",
                     help="--behaviors role binding override: "
                          '{"head_x": "ParamFoo"} or {"head_x": ["ParamFoo", -1]}')
+    ap.add_argument("--smooth", type=float, default=0.08,
+                    help="flow checkpoint: seconds of causal smoothing on the "
+                         "generated motion (~2x this in lag); 0 disables")
     ap.add_argument("--keep", type=int, default=None,
                     help="flow checkpoint: frames committed per sampled chunk "
                          "(default half the chunk; the full chunk pulsed at "
@@ -484,6 +510,10 @@ def main(argv=None) -> int:
                             device=device, keep=keep)
         print(f"flow: committing {keep} of every {cfg['chunk']} sampled frames")
         traj = stream.generate(n_frames)
+        if a.smooth > 0:
+            traj = smooth_causal(traj, a.smooth, a.fps).astype(np.float32)
+            print(f"flow: causal smoothing tau {a.smooth:g}s "
+                  f"(~{2 * a.smooth * 1000:.0f} ms lag)")
     elif a.neutral:
         traj = np.tile(default_n.astype(np.float32), (n_frames, 1))
         print("NEUTRAL: rig defaults only, model bypassed")

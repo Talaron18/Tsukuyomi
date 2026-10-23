@@ -125,10 +125,11 @@ HOLDOUT = "aidang_2,Natori,Hiyori,lafei,xuefeng"
 class FlowPrior(nn.Module):
     def __init__(self, ddim: int, state: int = 128, layers: int = 4,
                  heads: int = 4, ctx: int = 32, chunk: int = 12,
-                 cond_dim: int = 0):
+                 cond_dim: int = 0, local_feats: bool = False):
         super().__init__()
         self.ctx, self.chunk, self.state = ctx, chunk, state
         self.cond_dim = cond_dim
+        self.local_feats = bool(local_feats)
         # Scale of the residual, measured from training data. Registered as a
         # buffer so sampling uses the same number training saw.
         self.register_buffer("res_scale", torch.tensor(1.0))
@@ -150,8 +151,18 @@ class FlowPrior(nn.Module):
         # collapses every parameter into one state, so without its own value a
         # head cannot know what it is being asked to move -- the same omission
         # that made the deterministic model predict zero.
+        #
+        # local_feats adds this parameter's own recent history: last value,
+        # where its last velocity and its smoothed velocity would carry it by
+        # this chunk frame, and the frame's position in the chunk. Without
+        # them each head had to dig its own velocity out of one pooled state
+        # shared by ~100 parameters -- the bottleneck prior.py documents --
+        # and the v3 model lost to plain damped extrapolation on 4 of 5
+        # held-out rigs: every kept chunk restarted from rest in a new
+        # direction (aidang_2 frame delta 0.013 -> 0.053 within each chunk).
+        n_local = 4 if self.local_feats else 0
         self.head = nn.Sequential(
-            nn.Linear(ddim + state + 2, state), nn.SiLU(),
+            nn.Linear(ddim + state + 2 + n_local, state), nn.SiLU(),
             nn.Linear(state, state // 2), nn.SiLU(),
             nn.Linear(state // 2, 1))
         # Created last and only when used, so a cond_dim=0 model has the same
@@ -201,7 +212,30 @@ class FlowPrior(nn.Module):
         hh = h.unsqueeze(2).expand(b, k, p, h.shape[-1])
         tt = t[:, None, None, None].expand(b, k, p, 1)
         loc = xt.unsqueeze(-1)
-        return self.head(torch.cat([dd, hh, loc, tt], dim=-1)).squeeze(-1)
+        parts = [dd, hh, loc, tt]
+        if self.local_feats:
+            parts.append(self.history(ctx_vals, k))
+        return self.head(torch.cat(parts, dim=-1)).squeeze(-1)
+
+    def history(self, ctx_vals, k):
+        """(B,K,P,4) per-parameter context features for each chunk frame.
+
+        Displacements are divided by res_scale so they share units with the
+        residual the head predicts.
+        """
+        last = ctx_vals[:, -1]                                   # (B,P)
+        v1 = ctx_vals[:, -1] - ctx_vals[:, -2]
+        n = min(4, ctx_vals.shape[1] - 1)
+        vs = (ctx_vals[:, -1] - ctx_vals[:, -1 - n]) / n
+        steps = torch.arange(1, k + 1, device=ctx_vals.device,
+                             dtype=ctx_vals.dtype)[None, :, None]   # (1,K,1)
+        scale = self.res_scale.clamp_min(1e-4)
+        b, p = last.shape
+        feats = [last[:, None].expand(b, k, p),
+                 v1[:, None] * steps / scale,
+                 vs[:, None] * steps / scale,
+                 (steps / max(self.chunk, 1)).expand(b, k, p)]
+        return torch.stack(feats, dim=-1)
 
     @torch.no_grad()
     def sample(self, ctx_vals, desc, n_params, steps: int = 6, cond=None,
@@ -315,7 +349,8 @@ def rollout(model, rig, ctx, chunk, device, seconds=4.0, fps=30, steps=6):
 
 
 CONFIG_KEYS = ("ddim", "state", "layers", "heads", "ctx", "chunk", "cond_dim",
-               "base_mode", "res_scale", "solver_steps", "holdout")
+               "base_mode", "res_scale", "solver_steps", "holdout",
+               "local_feats")
 
 
 def save_checkpoint(path, model, cfg):
@@ -331,9 +366,11 @@ def load_checkpoint(path, device="cpu"):
     cfg.setdefault("layers", 4)
     cfg.setdefault("heads", 4)
     cfg.setdefault("cond_dim", 0)
+    cfg.setdefault("local_feats", False)       # checkpoints from before it
     model = FlowPrior(cfg["ddim"], cfg["state"], cfg["layers"], cfg["heads"],
                       ctx=cfg["ctx"], chunk=cfg["chunk"],
-                      cond_dim=cfg["cond_dim"])
+                      cond_dim=cfg["cond_dim"],
+                      local_feats=cfg["local_feats"])
     model.load_state_dict(ck["state_dict"])
     model.base_mode = cfg.get("base_mode", "hold")
     model.to(device).eval()
@@ -443,6 +480,13 @@ def main(argv=None) -> int:
     ap.add_argument("--state", type=int, default=128)
     ap.add_argument("--layers", type=int, default=4)
     ap.add_argument("--heads", type=int, default=4)
+    ap.add_argument("--local", action="store_true",
+                    help="give the head each parameter's own recent history. "
+                         "Opt-in: locally it cut chunk error on Hiyori from "
+                         "-60%% to -6%% vs damped, but the free rollout moved "
+                         "2x and jittered 3x more -- it learns to lean on "
+                         "velocity, and its own jittery output then feeds back "
+                         "(exposure bias). Needs context-noise training first.")
     ap.add_argument("--cond-dim", type=int, default=0,
                     help="per-chunk context vector size (0 = no slot)")
     ap.add_argument("--cond-drop", type=float, default=0.1,
@@ -485,7 +529,8 @@ def main(argv=None) -> int:
         print(f"cond slot {a.cond_dim}-d: {n_c} training rigs carry cond "
               f"arrays, the rest train the null token")
     model = FlowPrior(ddim, a.state, a.layers, a.heads, ctx=a.ctx,
-                      chunk=a.chunk, cond_dim=a.cond_dim).to(device)
+                      chunk=a.chunk, cond_dim=a.cond_dim,
+                      local_feats=a.local).to(device)
     model.base_mode = a.base
     print(f"model: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M params"
           f"  chunk={a.chunk} frames ({a.chunk / 30:.2f}s)  "
@@ -562,6 +607,7 @@ def main(argv=None) -> int:
             "ddim": ddim, "state": a.state, "layers": a.layers,
             "heads": a.heads, "ctx": a.ctx, "chunk": a.chunk,
             "cond_dim": a.cond_dim, "base_mode": a.base,
+            "local_feats": a.local,
             "res_scale": float(model.res_scale), "solver_steps": a.solver_steps,
             "holdout": hold})
         print(f"saved -> {a.save}")
