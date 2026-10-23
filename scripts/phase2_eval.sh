@@ -27,7 +27,7 @@
 #             (det is added when DET_CKPT exists)
 #   JOBS      (rig, source) jobs run at once in the score/render steps [nproc]
 #   JOB_THREADS  BLAS threads per job [1]
-#   THREADS   flow-prior training threads [nproc]
+#   THREADS   flow-prior training threads [physical cores]
 #   BATCH     flow-prior batch size [16]; larger keeps more cores busy but
 #             changes training -- benchmark first (see the script's README note)
 set -euo pipefail
@@ -65,6 +65,16 @@ STEPS=${STEPS:-"clips fit train score render ab"}
 
 has() { [[ " $STEPS " == *" $1 "* ]]; }
 
+physical_cores() {
+    # Training threads past the physical core count made it slower: on a
+    # 36-thread / 18-core server, batch 16 ran 78 samples/s at 18 threads and
+    # 68 at 36 (scripts/bench_train.sh). Hyperthreads compete for the same
+    # floating-point units.
+    local n
+    n=$(lscpu -p=Core,Socket 2>/dev/null | grep -v '^#' | sort -u | wc -l)
+    (( n > 0 )) && echo "$n" || nproc
+}
+
 model_of() {
     # The rig file is named after the model file, so search by that name.
     # -L: MODELS may itself be a symlink (e.g. in a side directory for one
@@ -89,7 +99,7 @@ if has fit; then
 fi
 if has train; then
     python -m flow.flowprior clips2 --rigs rigs --holdout "$HOLDOUT" \
-        --epochs "$EPOCHS" --steps 200 --threads "${THREADS:-$(nproc)}" \
+        --epochs "$EPOCHS" --steps 200 --threads "${THREADS:-$(physical_cores)}" \
         --batch "${BATCH:-16}" --device auto \
         --base "$BASE" --rollout-seconds "$SECS" \
         --basis "$BASIS" --ctx-noise "$CTX_NOISE" "${local_arg[@]}" \
