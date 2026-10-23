@@ -499,8 +499,21 @@ class SiliconFlowTTS:
                 "response_format": self.fmt, "stream": False}
         if self.sr:
             body["sample_rate"] = int(self.sr)
-        with post(self.url, body, key, "siliconflow tts") as fh:
-            data = fh.read()
+        import http.client
+        for attempt in range(3):
+            try:
+                with post(self.url, body, key, "siliconflow tts") as fh:
+                    data = fh.read()
+                break
+            except (http.client.IncompleteRead, ConnectionError) as exc:
+                # The connection dropped mid-download on the server (Hiyori:
+                # 226784 bytes read, 36430 more expected); synthesis is
+                # stateless, so ask again.
+                if attempt == 2:
+                    raise RuntimeError(f"siliconflow tts: download cut off "
+                                       f"three times ({exc!r})") from None
+                self.log(f"siliconflow tts: download cut off ({exc!r}); "
+                         "retrying")
         if data[:1] in (b"{", b"["):
             raise RuntimeError("siliconflow tts answered with JSON, not audio: "
                                + data[:1000].decode("utf-8", "replace"))

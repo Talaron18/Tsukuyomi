@@ -289,6 +289,28 @@ def test_siliconflow_tts_request_and_errors(monkeypatch):
         tts.synth("Hi")
 
 
+def test_siliconflow_tts_retries_a_cut_off_download(monkeypatch):
+    import http.client
+    import urllib.request
+    body = wav_bytes(vowel(0.5))
+    calls = []
+
+    class Cut(io.BytesIO):
+        def read(self, *a):
+            raise http.client.IncompleteRead(b"x" * 10, 36430)
+
+    def urlopen(req, timeout=None):
+        calls.append(1)
+        return Cut() if len(calls) == 1 else io.BytesIO(body)
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    monkeypatch.setenv("SILICONFLOW_API_KEY", "k")
+    tts = sp.SiliconFlowTTS("https://h/v1/", "SILICONFLOW_API_KEY",
+                            log=lambda s: None)
+    x, sr, _ = tts.synth("Hi there.")
+    assert len(calls) == 2 and len(x) == int(0.5 * SR)
+
+
 def test_siliconflow_tts_base_follows_the_chat_backend_only():
     a = types.SimpleNamespace(tts="siliconflow", backend="deepseek",
                               api_base="https://api.deepseek.com",
