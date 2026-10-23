@@ -25,6 +25,11 @@
 #             the events source (flow.events) [ev.json]
 #   SOURCES   sources to dump, score and render [beh flow static events]
 #             (det is added when DET_CKPT exists)
+#   JOBS      (rig, source) jobs run at once in the score/render steps [nproc]
+#   JOB_THREADS  BLAS threads per job [1]
+#   THREADS   flow-prior training threads [nproc]
+#   BATCH     flow-prior batch size [16]; larger keeps more cores busy but
+#             changes training -- benchmark first (see the script's README note)
 set -euo pipefail
 
 # python -m flow.X resolves against the current directory, so a run started
@@ -84,7 +89,8 @@ if has fit; then
 fi
 if has train; then
     python -m flow.flowprior clips2 --rigs rigs --holdout "$HOLDOUT" \
-        --epochs "$EPOCHS" --steps 200 --threads "$(nproc)" --device auto \
+        --epochs "$EPOCHS" --steps 200 --threads "${THREADS:-$(nproc)}" \
+        --batch "${BATCH:-16}" --device auto \
         --base "$BASE" --rollout-seconds "$SECS" \
         --basis "$BASIS" --ctx-noise "$CTX_NOISE" "${local_arg[@]}" \
         --save fp.pt --log fp.log.json 2>&1 | tee fp.train.txt
@@ -104,6 +110,48 @@ src_args() {
 }
 
 IFS=, read -ra rigs_held <<< "$HOLDOUT"
+
+# One (rig, source) job: three seeded dumps, the score, the preview render.
+# Jobs are independent and each is single-threaded work, so they run JOBS at
+# a time; run one after another they left a 36-core server mostly idle.
+one_source() {
+    local R=$1 M=$2 x=$3 s tok extra base log
+    base=(--model "$M" --rig "rigs/$R.npz" --clips "clips2/$R.npz")
+    read -ra extra <<< "$(src_args "$x")"
+    log="runs/$R.$x.log"
+    : > "$log"
+    if has score; then
+        # One broken source (say, a checkpoint that no longer matches the
+        # rig files) must not abort every other rig and source.
+        for s in 0 1 2; do
+            tok=(); [[ $x == events ]] && tok=(--tokens "runs/$R.$x.$s.tokens.json")
+            if ! python -m flow.runtime "${base[@]}" "${extra[@]}" \
+                    --seed "$s" --seconds "$SECS" "${tok[@]}" \
+                    --dump "runs/$R.$x.$s.npz" --dump-only >> "$log" 2>&1; then
+                echo "!! $R/$x: runtime failed, skipping this source (see $log)" >&2
+                echo "$R/$x" >> runs/FAILED.txt
+                return 0
+            fi
+        done
+        # Exit code 2 is a FAIL verdict, not an error; keep going.
+        python -m flow.score --traj "runs/$R.$x.0.npz" \
+            --seeds "runs/$R.$x.1.npz" "runs/$R.$x.2.npz" \
+            --clips "clips2/$R.npz" --rig "rigs/$R.npz" --model "$M" \
+            --novelty-ref clips2 --holdout "$HOLDOUT" \
+            --json "runs/$R.$x.json" > "runs/$R.$x.txt" 2>&1 || true
+        echo "-- $R/$x: $(grep -h 'checks:' "runs/$R.$x.txt" || echo 'no verdict')"
+    fi
+    if has render; then
+        xvfb-run -a -s "-screen 0 1024x1024x24" python -m flow.runtime \
+            "${base[@]}" "${extra[@]}" --seconds 20 --out "vids/$R/$x" \
+            >> "$log" 2>&1 || echo "!! $R/$x: render failed (see $log)" >&2
+    fi
+}
+
+# Each job gets one BLAS thread: JOBS processes x many threads each would
+# oversubscribe the cores and run slower than either alone.
+export OMP_NUM_THREADS=${JOB_THREADS:-1} MKL_NUM_THREADS=${JOB_THREADS:-1}
+JOBS=${JOBS:-$(nproc)}
 for R in "${rigs_held[@]}"; do
     M=$(model_of "$R")
     if [[ -z "$M" ]]; then
@@ -118,39 +166,12 @@ for R in "${rigs_held[@]}"; do
         echo "$R/clips" >> runs/FAILED.txt
         continue
     fi
-    base=(--model "$M" --rig "rigs/$R.npz" --clips "clips2/$R.npz")
     for x in "${sources[@]}"; do
-        read -ra extra <<< "$(src_args "$x")"
-        if has score; then
-            # One broken source (say, a checkpoint that no longer matches the
-            # rig files) must not abort every other rig and source.
-            ok=1
-            for s in 0 1 2; do
-                tok=(); [[ $x == events ]] && tok=(--tokens "runs/$R.$x.$s.tokens.json")
-                if ! python -m flow.runtime "${base[@]}" "${extra[@]}" \
-                        --seed "$s" --seconds "$SECS" "${tok[@]}" \
-                        --dump "runs/$R.$x.$s.npz" --dump-only; then
-                    echo "!! $R/$x: runtime failed, skipping this source" >&2
-                    echo "$R/$x" >> runs/FAILED.txt
-                    ok=0; break
-                fi
-            done
-            [[ $ok == 1 ]] || continue
-            # Exit code 2 is a FAIL verdict, not an error; keep going.
-            python -m flow.score --traj "runs/$R.$x.0.npz" \
-                --seeds "runs/$R.$x.1.npz" "runs/$R.$x.2.npz" \
-                --clips "clips2/$R.npz" --rig "rigs/$R.npz" --model "$M" \
-                --novelty-ref clips2 --holdout "$HOLDOUT" \
-                --json "runs/$R.$x.json" 2>&1 | tee "runs/$R.$x.txt" || true
-        fi
-        if has render; then
-            xvfb-run -a -s "-screen 0 1024x1024x24" python -m flow.runtime \
-                "${base[@]}" "${extra[@]}" --seconds 20 --out "vids/$R/$x" \
-                || echo "!! $R/$x: render failed" >&2
-        fi
+        while (( $(jobs -rp | wc -l) >= JOBS )); do wait -n || true; done
+        one_source "$R" "$M" "$x" &
     done
 done
-
+wait
 if has ab; then
     items=()
     for R in "${rigs_held[@]}"; do
