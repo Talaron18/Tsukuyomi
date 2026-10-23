@@ -24,6 +24,10 @@ a directed glance moves like the idle glances around it.
              that side, no [brow:*] without brow roles), from the roles
              and adapted statistics the runtime binds (runtime.event_roles).
              A vocabulary tag not offered is dropped by the parser.
+             Each gesture gets a line saying what it shows, measured from
+             the motion as the runtime plays it (flow.gestures), or taken
+             from rigs/<rig>.gestures.json / --gestures, which can also
+             hide one (the parser then drops it too).
   realize    realize(): each tag -> one or more tokens on the roles the rig
              binds (aidang_2 binds no gaze -- its eyeballs are switches --
              so [look:*] turns the head only). Amplitudes are fractions of
@@ -75,10 +79,12 @@ import numpy as np
 
 try:
     from . import events as ev
+    from . import gestures as gz
     from . import speech as sp
 except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from flow import events as ev
+    from flow import gestures as gz
     from flow import speech as sp
 
 # The only place model names appear: one default per backend.
@@ -779,10 +785,34 @@ def _tag_key(name, arg):
     return f"{name}:{arg}" if isinstance(VOCAB.get(name), tuple) else name
 
 
-def system_prompt(persona, labels, offered=None):
+def gesture_lines(labels, descriptions=None):
+    """The prompt's [gesture:NAME] entry. With descriptions ({label: text},
+    flow.gestures): one line per label, sorted, so the model picks by what
+    moves rather than by an opaque file name (DeepSeek announced "a big
+    wave" with Hiyori's hiyori_m02, one wide arm-and-hand move). Without:
+    the labels inline, as before."""
+    if not labels:
+        return ""
+    if descriptions is None:
+        return ("[gesture:NAME]  play one of your own full-body motions, "
+                "NAME one of: " + ", ".join(sorted(labels)) + ". Each lasts "
+                "several seconds; use at most one per reply.\n")
+    # "motions", not "full-body motions": on the Cubism samples a directed
+    # gesture moves the arms only (the head and body stay with the tags).
+    out = ("[gesture:NAME]  play one of your own motions, at most one per "
+           "reply. NAME one of these (what each one shows; choose by that, "
+           "not by the name):\n")
+    for lab in sorted(labels):
+        d = descriptions.get(lab)
+        out += f"  {lab}" + (f": {d}" if d else "") + "\n"
+    return out
+
+
+def system_prompt(persona, labels, offered=None, descriptions=None):
     """Byte-stable for a given persona and rig (no clock, no turn count), so
     the prompt cache hits on every turn. `offered`: the tag keys this rig
-    can show (offer()); None offers them all."""
+    can show (offer()); None offers them all. `descriptions`: {label:
+    text} for the gesture lines (gesture_lines)."""
     ok = set(all_tags() if offered is None else offered)
     tags = ""
     for keys, what in TAG_LINES:
@@ -790,12 +820,7 @@ def system_prompt(persona, labels, offered=None):
         if have:
             tags += " ".join(f"[{k}]" for k in have) + f"  {what}\n"
     tags += "[pause:0.5]  stay silent for that many seconds (0.2 to 3)\n"
-    if labels:
-        g = ("[gesture:NAME]  play one of your own full-body motions, NAME one "
-             "of: " + ", ".join(sorted(labels)) + ". Each lasts several "
-             "seconds; use at most one per reply.\n")
-    else:
-        g = ""
+    g = gesture_lines(labels, descriptions)
     vary = [what for keys, what in VARY if any(k in ok for k in keys)]
     vary = ("Vary them: " + ", ".join(vary) + ". ") if vary else "Vary them. "
     ex = [e for e in EXAMPLES if all(k in ok for k in _EX_TAG.findall(e))]
@@ -1327,6 +1352,12 @@ def main(argv=None) -> int:
                          "directory each (turn01, ...)")
     ap.add_argument("--print-system", action="store_true",
                     help="print the system prompt and stop")
+    ap.add_argument("--gestures", default=None, metavar="FILE.json",
+                    help="per-rig gesture descriptions: a JSON object label "
+                         "-> text, or label -> {\"desc\": text, \"hide\": "
+                         "true}; wins over the measured lines (flow."
+                         "gestures). Default: <rig without .npz>.gestures."
+                         "json when it exists")
     a = ap.parse_args(argv)
 
     try:
@@ -1346,10 +1377,30 @@ def main(argv=None) -> int:
                                a.binding, a.fps, a.no_snap,
                                a.events_pool_only, log=lambda s: None)
     offered, out = offer(st, roles)
+    info = sys.stderr if a.print_system else sys.stdout
     if out:
         print("director: not offered on this rig: " + left_out_text(out),
-              file=sys.stderr if a.print_system else sys.stdout)
-    system = system_prompt(a.persona, labels, offered)
+              file=info)
+    # What each gesture shows, measured on what the runtime will play with
+    # these roles bound (flow.gestures), then the rig's override file.
+    if a.gestures and not os.path.exists(a.gestures):
+        ap.error(f"--gestures {a.gestures}: no such file")
+    gpath = a.gestures or gz.override_path(a.rig)
+    over = gz.load_overrides(gpath)
+    measured = gz.rig_descriptions(a.model_json, a.rig, roles, a.clips,
+                                   a.fps, GESTURE_MAX)
+    all_labels = labels
+    labels, descriptions = gz.apply_overrides(labels, measured, over)
+    if over:
+        print(f"director: gesture overrides from {gpath}", file=info)
+    for lab in sorted(all_labels):
+        o = over.get(lab, {})
+        src = ("hidden" if o.get("hide") else
+               "override" if o.get("desc") else "measured")
+        print(f"director: gesture {lab} [{src}]: "
+              + (descriptions.get(lab) or measured.get(all_labels[lab], "")),
+              file=info)
+    system = system_prompt(a.persona, labels, offered, descriptions)
     if a.print_system:
         print(system)
         return 0
