@@ -89,11 +89,27 @@ def test_mouth_opens_on_voice_and_shuts_in_silence():
     assert (at(0.0, 0.28) == 0).all()                 # before the voice
     assert (at(0.4, 1.0) > 0.7).all()                 # first phrase, open
     # Closed again within RELEASE-ish time of the phrase end (1.1 s): the
-    # release decays 0.57 a frame, under SHUT after 6 frames (0.2 s).
+    # release keeps 27% a frame, under SHUT after 3 frames (0.1 s).
     assert (at(1.32, 1.58) == 0).all()
     assert (at(1.7, 2.1) > 0.7).all()
     assert (at(2.42, 2.6) == 0).all()
     assert m.max() <= 1.0
+
+
+def test_mouth_dips_between_syllables():
+    """Two syllables with a 70 ms closure between them (aidang_2's edge
+    run dips to -39/-42 dBFS for 2 frames between syllables): the mouth
+    must visibly close there, not hang half open (0.41/0.23 with the old
+    50 ms window and 60 ms release)."""
+    x = np.concatenate([quiet(0.2), vowel(0.3), quiet(0.07, -60.0, seed=4),
+                        vowel(0.3), quiet(0.3, seed=5)])
+    n = int(len(x) / SR * FPS)
+    m = sp.mouth_open(x, SR, FPS, n)
+    t = np.arange(n) / FPS
+    gap = m[(t > 0.5) & (t < 0.58)]
+    assert gap.min() < 0.3, m.round(2)
+    assert m[(t > 0.3) & (t < 0.45)].min() > 0.7
+    assert m[(t > 0.62) & (t < 0.8)].max() > 0.7
 
 
 def test_mouth_does_not_flap_on_noise():
@@ -178,6 +194,33 @@ def test_word_boundaries_set_tag_times():
     assert sp_[p.spoken.index("d")][1] == pytest.approx(1.7)
     segs = dr.subtitles(p.spoken, sp_)
     assert segs == [{"start": 0.1, "end": 1.7, "text": "Oh, hello world."}]
+
+
+def test_ellipsis_stays_with_its_phrase():
+    """Hiyori's edge run had segments ".", "." cut out of "little...":
+    a run of sentence ends and a closing quote belong to the phrase, by
+    the rate model and by word boundaries alike."""
+    p = dr.parse("Well, maybe a little... [nod] I kept checking. "
+                 "そうね。。。でも「いいわ。」 Hmm… okay?!")
+    want = ["Well, maybe a little...", "I kept checking.", "そうね。。。",
+            "でも「いいわ。」", "Hmm…", "okay?!"]
+    _, spans, _ = dr.timeline(p.spoken, p.tags)
+    rate = dr.subtitles(p.spoken, spans)
+    assert [s["text"] for s in rate] == want
+    words = [("Well", 0.1, 0.3), ("maybe", 0.4, 0.6), ("a", 0.6, 0.7),
+             ("little", 0.7, 1.0), ("I", 1.5, 1.6), ("kept", 1.6, 1.8),
+             ("checking", 1.8, 2.2)]
+    q = dr.parse("Well, maybe a little... [nod] I kept checking.")
+    said = sp.speak(q.spoken, q.tags, FakeTTS([(quiet(2.5, -20), words)]),
+                    w_rate, log=lambda s: None)
+    assert said["method"] == "words"
+    segs = dr.subtitles(q.spoken, said["spans"])
+    assert [s["text"] for s in segs] == want[:2]
+    assert segs[0]["end"] == pytest.approx(1.0)
+    # Punctuation alone is never a segment, leading or after a clause.
+    sp1 = [(0.1 * i, 0.1 * i + 0.1) for i in range(20)]
+    assert [s["text"] for s in dr.subtitles("...hi. A, ... b.", sp1)] == \
+        ["...hi.", "A, ...", "b."]
 
 
 def test_poor_word_match_falls_back_to_energy():
@@ -441,6 +484,33 @@ def test_tts_none_writes_nothing_new(tmp_path):
     assert not any(k["type"] == "mouth" for k in toks)
     plan = np.load(out / "plan.npz", allow_pickle=True)
     assert "mouth" not in plan.files and "mouth_pid" not in plan.files
+
+
+def test_lipsync_off_writes_no_mouth(tmp_path):
+    """--lipsync off: speech and its timing, but no mouth anywhere -- the
+    mouth tuning cannot change such a run."""
+    model, rig = _mouth_rig(tmp_path / "x")
+    reply = tmp_path / "reply.txt"
+    reply.write_text("Hello there. [nod] How are you?", encoding="utf-8")
+    audio = tmp_path / "said.wav"
+    audio.write_bytes(wav_bytes(two_phrases()))
+    runs = []
+    for k in range(2):
+        out = tmp_path / f"run{k}"
+        assert dr.main(["--model-json", str(model), "--rig", str(rig),
+                        "--backend", "file", "--reply-file", str(reply),
+                        "--out", str(out), "--probe-dir", str(tmp_path),
+                        "--tts", "file", "--tts-file", str(audio),
+                        "--lipsync", "off"]) == 0
+        acts = json.loads((out / "actions.json").read_text())
+        assert "mouth" not in acts and acts["tts"]["timing"] == "vad"
+        toks = json.loads((out / "tokens.json").read_text())["tokens"]
+        assert not any(t["type"] == "mouth" for t in toks)
+        plan = np.load(out / "plan.npz", allow_pickle=True)
+        assert "mouth" not in plan.files
+        runs.append((toks, plan["traj"]))
+    assert runs[0][0] == runs[1][0]
+    np.testing.assert_array_equal(runs[0][1], runs[1][1])
 
 
 def test_mouth_frames_resample_and_map_to_the_rig():

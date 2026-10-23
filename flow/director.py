@@ -161,6 +161,8 @@ SENT_PAUSE = 0.35
 CLAUSE_PAUSE = 0.15
 SENT_END = set(".!?。！？…\n")
 CLAUSE = set(",;:、，；：—")
+# What may follow a sentence end and still belong to it.
+SENT_TAIL = SENT_END - {"\n"} | set("\"'”’」』)）")
 SUB_MAX = {"cjk": 22, "latin": 48}   # characters per subtitle before a clause split
 
 _FULLWIDTH = str.maketrans({"［": "[", "］": "]", "：": ":", "【": "[", "】": "]"})
@@ -365,13 +367,28 @@ def subtitles(spoken, spans):
     segs, a = [], 0
     cjk = sum(_is_cjk(c) for c in spoken) > len(spoken) / 3
     cap = SUB_MAX["cjk" if cjk else "latin"]
+    run = False
     for i, ch in enumerate(spoken):
         last = i == len(spoken) - 1
-        if ch in SENT_END or last or (ch in CLAUSE and i + 1 - a >= cap):
+        # A run of sentence ends ("...", "?!", "。。。") and a closing quote
+        # stay with their phrase: cutting at its first '.' left ".", "."
+        # as segments of their own (Hiyori's edge TTS run, "Well, maybe a
+        # little... I kept checking").
+        run = ch in SENT_END or (run and ch in SENT_TAIL)
+        if run and not last and spoken[i + 1] in SENT_TAIL:
+            continue
+        if run or last or (ch in CLAUSE and i + 1 - a >= cap):
             while a < i and spoken[a].isspace():
                 a += 1
             text = spoken[a:i + 1].strip()
-            if text:
+            if text and not any(c.isalnum() for c in text):
+                # Punctuation only: onto the phrase it ends, or, leading
+                # ("...well"), into the one it starts. Never on its own.
+                if not segs:
+                    continue
+                segs[-1]["text"] += text
+                segs[-1]["end"] = round(max(segs[-1]["end"], spans[i][1]), 3)
+            elif text:
                 t0, t1 = spans[a][0], spans[i][1]
                 segs.append({"start": round(t0, 3),
                              "end": round(max(t1, t0 + 0.5), 3),

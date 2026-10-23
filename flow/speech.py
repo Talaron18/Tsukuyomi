@@ -73,16 +73,31 @@ MIN_VOICED = 0.05
 MIN_COVER = 0.5
 
 # Lip sync. Level maps linearly over MOUTH_SPAN dB under the loud level, so a
-# vowel at the loud level opens fully and a consonant 10 dB down ~0.6. The
+# vowel at the loud level opens fully, a consonant 10 dB down ~0.6 and
+# anything 24 dB down (-30 dB under the peak of an edge voice) is shut. The
 # gate is separate from the VAD's and does not join gaps: the mouth should
-# close between phrases and dip between syllables. Attack is fast (a mouth
-# opens with the sound), release slower, as a jaw does (~60 ms).
+# close between phrases and dip between syllables. The level is read over
+# MOUTH_WIN and smoothed with a fast attack and a jaw-like release.
+#
+# Measured on the server's edge runs (runs/demo/tts/{aidang_2,Hiyori}/edge,
+# 30 fps; silent = 20 ms level 35 dB under the loud level, syllable dip = a
+# level minimum 8 dB under the peaks either side within 0.25 s): with a
+# 50 ms window (1.5 frames) and a 60 ms release the mouth was still 0.43 at
+# aidang_2's -56 dBFS gap at 1.07 s and 0.41 at the -39 dB dip at 1.47 s;
+# open > 0.1 in 8.5% / 14% of silent frames, median 0.48 / 0.43 at dips,
+# 15% / 0% of dips under 0.3. With 25 ms and 25 ms: 0.17 and 0.14 there,
+# silent frames open 2% / 2%, dips median 0.22 / 0.13, 62% / 100% of dips
+# under 0.3, correlation with the level 0.90 / 0.89 -> 0.95 / 0.95, mean
+# open while voiced 0.78 -> 0.74 / 0.81 -> 0.75. The span is unchanged: the
+# map was already linear in dB, the window and release hid the dips. A shorter release does little
+# more at 30 fps: one frame already decays to exp(-33/25) = 27%.
 MOUTH_SPAN = 24.0
+MOUTH_WIN = 0.025
 MOUTH_GATE_DB = 30.0
 MOUTH_HYST_DB = 3.0
 MOUTH_FLOOR_DB = -55.0
-ATTACK = 0.02
-RELEASE = 0.06
+ATTACK = 0.015
+RELEASE = 0.025
 SHUT = 0.05
 
 # Vowel prototypes (F1, F2) in Hz, for an adult female voice -- Japanese
@@ -638,7 +653,7 @@ def mouth_open(x, sr, fps, n_frames):
     out = np.zeros(n_frames, np.float32)
     if not len(x) or not n_frames:
         return out
-    db = _db(x, sr, t, 1.5 / fps)
+    db = _db(x, sr, t, MOUTH_WIN)
     db[t * sr >= len(x)] = -120.0
     ref = _loud(db)
     if ref is None:
