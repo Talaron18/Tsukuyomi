@@ -162,8 +162,12 @@ def test_gesture_player_fades_and_marks_unkeyed():
              "duration": 1.0, "fade": 0.5}]
     fr = gp.frames(toks, 90)
     assert fr[10][0]["ParamArmL"] == pytest.approx(10 / 59)
-    # mid-fade: both motions keyed, values between old and new
-    assert 0.0 < fr[37][1]["PartA"] < 1.0
+    # mid-fade: both motions keyed; parameters blend, but part visibility
+    # only switches (old part before the midpoint, new after) -- a blended
+    # part drew both arm variants half visible ("4 hands" in the A/B)
+    fade = [fr[f][1]["PartA"] for f in range(30, 45)]
+    assert set(fade) <= {0.0, 1.0}
+    assert fade[0] == 1.0 and fade[-1] == 0.0
     assert gp.keyed[37] == {"ParamArmL", "ParamArmR"}
     # after the fade ArmL is unkeyed and back at its base value
     assert fr[60][0]["ParamArmL"] == pytest.approx(0.2)

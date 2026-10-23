@@ -1113,8 +1113,13 @@ class GesturePlayer:
                 if gi > 0:
                     keyed = keyed | self.keys(ges[gi - 1])
                 w = float(min_jerk(el / fade))
-                new = tuple({p: (1 - w) * o[p] + w * n[p] for p in n}
-                            for o, n in zip(old, new))
+                # Parameters blend; part visibility switches at the midpoint.
+                # Blended, both arm variants were half visible through the
+                # fade -- "a frame with 4 hands" in the server A/B (lafei).
+                params = {p: (1 - w) * old[0][p] + w * new[0][p] for p in new[0]}
+                parts = new[1] if w >= 0.5 else {
+                    p: old[1].get(p, v) for p, v in new[1].items()}
+                new = (params, parts)
             out.append(new)
             self.keyed.append(keyed)
         return out

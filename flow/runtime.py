@@ -848,8 +848,12 @@ def main(argv=None) -> int:
                 for p, v in po.items():
                     over[p] = (1 - w) * v + w * over.get(
                         p, float(dflt[pid_index[p]]) if p in pid_index else v)
-                for p, v in (pp or {}).items():
-                    parts[p] = (1 - w) * v + w * parts.get(p, v)
+                # Part visibility is 0 or 1 in authored motion; blending it
+                # drew both arm variants half visible for the whole fade.
+                # Switch at the midpoint instead.
+                if w < 0.5:
+                    for p, v in (pp or {}).items():
+                        parts[p] = v
             for col, i in enumerate(expressive):
                 if pids[i] in over:
                     applied[f, col] = (over[pids[i]] - lo[i]) / span_x[col] * 2 - 1

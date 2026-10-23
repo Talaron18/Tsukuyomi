@@ -349,12 +349,30 @@ class Live2DBackend:
         """
         ids_fn = getattr(self.model, "GetPartIds", None)
         self._set_part = getattr(self.model, "SetPartOpacity", None)
+        self._pose = False
         self.part_index: dict[str, int] = {}
         if ids_fn is None or self._set_part is None:
             self._api_report["parts"] = "MISSING (no part opacity control)"
             return
         self.part_index = {str(p): i for i, p in enumerate(ids_fn())}
         self._api_report["parts"] = f"{len(self.part_index)}"
+        # With a pose3 file the pose decides which part of a group is shown,
+        # and it reads that from a parameter named after each part -- the
+        # slot Live2D's own motion player writes PartOpacity curves into --
+        # not from the opacity we set. Writing only the opacity, the pose kept
+        # fading toward its default part while we forced the authored one:
+        # Natori drew a translucent second arm behind every gesture.
+        self._pose = False
+        if not self.strip_dynamics:
+            try:
+                import json as _json
+                with open(self.model_json, encoding="utf-8") as fh:
+                    refs = _json.load(fh).get("FileReferences", {})
+                self._pose = bool(refs.get("Pose"))
+            except Exception:  # noqa: BLE001
+                pass
+        if self._pose:
+            self._api_report["parts"] += " (pose-fed)"
 
     def _apply_parts(self, parts):
         if not parts or self._set_part is None:
@@ -363,6 +381,8 @@ class Live2DBackend:
             i = self.part_index.get(pid)
             if i is not None:
                 self._set_part(i, float(value))
+                if self._pose:
+                    self._setter(pid, float(value), 1.0)
 
     def _bind_update(self):
         """Pick an update entry point that honours a fixed timestep.
