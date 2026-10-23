@@ -96,6 +96,17 @@ except ImportError:
     from flow.behaviors import HOLDOUT, ROLES, canon
 
 STD_BAND = (0.7, 1.3)
+# Per-group checks. The overall averages hid what made aidang_2's flow output
+# look stiff and non-human although it passed: gaze still 0% of the time
+# against 85% authored, brows 0% vs 65% (jerk 40x), arms and body moving a
+# third as much frame to frame. A face holds a fixation and then moves; a body
+# shifts its weight. These are checked group by group.
+FACE_GROUPS = ("head", "gaze", "brow")
+FACE_STD = (0.5, 2.0)
+HOLD_MIN_AUTHORED = 0.3     # groups that rest at least this often...
+HOLD_FRACTION = 0.5         # ...must rest at least half as often generated
+STIFF_GROUPS = ("body", "arm")
+STIFF_MIN = 0.5             # frame-to-frame motion ratio
 JERK_MAX = 1.5
 TOGGLE_SLACK = 0.05
 PERIOD_MAX = 0.6
@@ -564,12 +575,36 @@ def score(traj_path: str, clips_path: str, rig_path: str,
                       <= max(PERIOD_MAX, s["period_ref"] + 0.1)
                       for s in res["groups"].values()),
     }
+    g = res["groups"]
+    # A group whose authored motion barely moves (Natori's snapped brows) has
+    # no usable ratio; it is not judged rather than failed.
+    face = {k: g[k] for k in FACE_GROUPS if k in g
+            and np.isfinite(g[k]["jerk"]) and np.isfinite(g[k]["std"])
+            and g[k]["jerk_ref"] > 1e-9}
+    checks["face"] = all(v["jerk"] <= JERK_MAX
+                         and FACE_STD[0] <= v["std"] <= FACE_STD[1]
+                         for v in face.values())
+    checks["holds"] = all(v["still_gen"] >= HOLD_FRACTION * v["still_ref"]
+                          for v in g.values()
+                          if v["still_ref"] >= HOLD_MIN_AUTHORED)
+    checks["stiff"] = all(v["dmean"] >= STIFF_MIN
+                          for k, v in g.items() if k in STIFF_GROUPS)
+    res["failed_groups"] = sorted(
+        {k for k, v in face.items()
+         if not (v["jerk"] <= JERK_MAX and FACE_STD[0] <= v["std"] <= FACE_STD[1])}
+        | {k for k, v in g.items() if v["still_ref"] >= HOLD_MIN_AUTHORED
+           and v["still_gen"] < HOLD_FRACTION * v["still_ref"]}
+        | {k for k, v in g.items() if k in STIFF_GROUPS
+           and v["dmean"] < STIFF_MIN})
     res["checks"] = checks
     res["pass"] = all(checks.values())
     res["thresholds"] = {"std": STD_BAND, "jerk_max": JERK_MAX,
                          "toggle_slack": TOGGLE_SLACK,
                          "period_max": PERIOD_MAX, "still_eps": STILL_EPS,
-                         "period_rule": "gen <= max(period_max, ref + 0.1)"}
+                         "period_rule": "gen <= max(period_max, ref + 0.1)",
+                         "face_std": FACE_STD, "hold_fraction": HOLD_FRACTION,
+                         "hold_min_authored": HOLD_MIN_AUTHORED,
+                         "stiff_min": STIFF_MIN}
     return res
 
 
@@ -617,7 +652,9 @@ def print_table(res: dict) -> None:
     c = res["checks"]
     print("checks: " + "  ".join(f"{k}={'ok' if v else 'FAIL'}"
                                  for k, v in c.items())
-          + f"   => {'PASS' if res['pass'] else 'FAIL'}")
+          + f"   => {'PASS' if res['pass'] else 'FAIL'}"
+          + (f"   (groups: {', '.join(res['failed_groups'])})"
+             if res.get("failed_groups") else ""))
 
 
 def main(argv=None) -> int:
