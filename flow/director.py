@@ -63,7 +63,15 @@ except ImportError:
     from flow import events as ev
 
 # The only place model names appear: one default per backend.
-DEFAULT_MODEL = {"anthropic": "claude-opus-5-5", "ollama": "gemma4:e4b"}
+DEFAULT_MODEL = {"anthropic": "claude-opus-5-5", "ollama": "gemma4:e4b",
+                 "siliconflow": "Qwen/Qwen3.6-35B-A3B",
+                 "deepseek": "deepseek-chat"}
+# OpenAI-compatible chat/completions services: base URL and the environment
+# variable holding the key. SiliconFlow's mainland site is api.siliconflow.cn
+# with its own keys; pass --api-base for it.
+OPENAI_COMPAT = {"siliconflow": ("https://api.siliconflow.com/v1",
+                                 "SILICONFLOW_API_KEY"),
+                 "deepseek": ("https://api.deepseek.com", "DEEPSEEK_API_KEY")}
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 # ------------------------------------------------------------- vocabulary
@@ -700,12 +708,95 @@ class OllamaBackend:
         self.log(f"ollama: stop {self.stop_reason}; usage {self.usage}")
 
 
+class OpenAICompatBackend:
+    """chat/completions with stream=True (server-sent events), stdlib only.
+
+    Follows RegionFlow's siliconflow_judge (bench/edit_quality_vlm.py): the
+    response body is surfaced on errors, since that is where SiliconFlow says
+    what was wrong; 429 and 5xx are retried with backoff, other 4xx are fatal.
+    No enable_thinking / thinking_budget: on SiliconFlow those started 400ing
+    on every model there. A reasoning model's trace arrives as
+    delta.reasoning_content and is skipped -- only delta.content is spoken.
+    """
+
+    def __init__(self, name, model, api_base=None, key_env=None,
+                 max_tokens=2048, timeout=120, retries=4, log=print):
+        base, env = OPENAI_COMPAT[name]
+        self.name, self.model, self.max_tokens = name, model, max_tokens
+        self.url = (api_base or base).rstrip("/") + "/chat/completions"
+        self.key_env = key_env or env
+        self.timeout, self.retries, self.log = timeout, retries, log
+        self.stop_reason, self.usage = None, {}
+
+    def _open(self, body):
+        import time
+        import urllib.error
+        import urllib.request
+        key = os.environ.get(self.key_env)
+        if not key:
+            raise SystemExit(f"--backend {self.name} needs {self.key_env} "
+                             "in the environment")
+        req = urllib.request.Request(
+            self.url, data=json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json",
+                     "Authorization": f"Bearer {key}"})
+        last = None
+        for attempt in range(self.retries):
+            try:
+                return urllib.request.urlopen(req, timeout=self.timeout)
+            except urllib.error.HTTPError as exc:
+                detail = exc.read()[:1000].decode("utf-8", "replace")
+                last = RuntimeError(f"{exc.code} from {self.name}: {detail}")
+                if exc.code != 429 and exc.code < 500:
+                    raise last from None
+            except (urllib.error.URLError, TimeoutError) as exc:
+                last = RuntimeError(f"{self.name}: {exc}")
+            if attempt < self.retries - 1:
+                time.sleep(2 ** attempt)
+        raise last
+
+    def stream(self, system, messages):
+        body = {"model": self.model, "stream": True,
+                "max_tokens": self.max_tokens,
+                "messages": [{"role": "system", "content": system}] + messages}
+        self.stop_reason, self.usage = None, {}
+        with self._open(body) as fh:
+            for line in fh:
+                line = line.decode("utf-8", "replace").strip() \
+                    if isinstance(line, bytes) else line.strip()
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                d = json.loads(data)
+                if d.get("usage"):
+                    self.usage = {k: d["usage"].get(k) for k in
+                                  ("prompt_tokens", "completion_tokens",
+                                   "prompt_cache_hit_tokens")
+                                  if k in d["usage"]}
+                for ch in d.get("choices") or ():
+                    text = (ch.get("delta") or {}).get("content") or ""
+                    if text:
+                        yield text
+                    fr = ch.get("finish_reason")
+                    if fr:
+                        # A filtered reply goes down the refusal path: no
+                        # motion from a half-spoken answer.
+                        self.stop_reason = ("refusal" if fr == "content_filter"
+                                            else fr)
+        self.log(f"{self.name}: stop {self.stop_reason}; usage {self.usage}")
+
+
 def make_backend(a, log=print):
     model = a.model or DEFAULT_MODEL.get(a.backend)
     if a.backend == "anthropic":
         return AnthropicBackend(model, a.effort, a.max_tokens, log)
     if a.backend == "ollama":
         return OllamaBackend(model, a.ollama_url, a.seed, log=log)
+    if a.backend in OPENAI_COMPAT:
+        return OpenAICompatBackend(a.backend, model, a.api_base, a.api_key_env,
+                                   a.max_tokens, log=log)
     if a.backend == "file":
         if not a.reply_file:
             raise SystemExit("--backend file needs --reply-file")
@@ -852,13 +943,19 @@ def main(argv=None) -> int:
     ap.add_argument("--persona", default=None, help="who the character is "
                     "(first line of the system prompt)")
     ap.add_argument("--backend", default="anthropic",
-                    choices=("anthropic", "ollama", "file", "stdin"))
+                    choices=("anthropic", "siliconflow", "deepseek", "ollama",
+                             "file", "stdin"))
     ap.add_argument("--model", default=None, help="language model (default "
                     + ", ".join(f"{k}: {v}" for k, v in DEFAULT_MODEL.items())
                     + ")")
     ap.add_argument("--effort", default="low", help="anthropic effort")
     ap.add_argument("--max-tokens", type=int, default=2048)
     ap.add_argument("--ollama-url", default="http://localhost:11434")
+    ap.add_argument("--api-base", default=None, help="siliconflow/deepseek: "
+                    "override the base URL (e.g. https://api.siliconflow.cn/v1)")
+    ap.add_argument("--api-key-env", default=None, help="siliconflow/deepseek: "
+                    "environment variable holding the key (default "
+                    "SILICONFLOW_API_KEY / DEEPSEEK_API_KEY)")
     ap.add_argument("--reply-file", default=None,
                     help="--backend file: a tagged reply to use as is")
     ap.add_argument("--cjk-rate", type=float, default=CJK_RATE,

@@ -1,6 +1,7 @@
 """
 flow.director: tagged replies -> event tokens. No network, no GL: language
-models are faked (a fake `anthropic` module, a fake Ollama stream, the file
+models are faked (a fake `anthropic` module, a fake Ollama stream, fake
+SiliconFlow/DeepSeek server-sent events, the file
 backend).
 
 The parser must give the same result however the reply is chunked and never
@@ -295,6 +296,69 @@ def test_ollama_stream(monkeypatch):
     assert seen["url"] == "http://h:1/api/chat"
     assert seen["body"]["messages"][0] == {"role": "system", "content": "SYS"}
     assert seen["body"]["stream"] is True and seen["body"]["options"]["seed"] == 3
+
+
+def _sse(events):
+    return io.BytesIO(b"".join(b"data: " + json.dumps(e).encode() + b"\n\n"
+                               for e in events) + b"data: [DONE]\n\n")
+
+
+def test_openai_compat_stream_skips_reasoning(monkeypatch):
+    import urllib.request
+    ev_ = [{"choices": [{"delta": {"reasoning_content": "[nod] thinking"}}]},
+           {"choices": [{"delta": {"content": "[look:"}}]},
+           {"choices": [{"delta": {"content": "up] Oh?"},
+                         "finish_reason": "stop"}]},
+           {"choices": [], "usage": {"prompt_tokens": 9,
+                                     "completion_tokens": 4}}]
+    seen = {}
+
+    def urlopen(req, timeout=None):
+        seen["url"] = req.full_url
+        seen["auth"] = req.get_header("Authorization")
+        seen["body"] = json.loads(req.data)
+        return _sse(ev_)
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    monkeypatch.setenv("SILICONFLOW_API_KEY", "k")
+    be = dr.OpenAICompatBackend("siliconflow", "m", log=lambda s: None)
+    r = dr.ask(be, "SYS", [{"role": "user", "content": "q"}], [],
+               log=lambda s: None)
+    assert r["spoken"] == "Oh?" and [t["arg"] for t in r["tags"]] == ["up"]
+    assert seen["url"] == "https://api.siliconflow.com/v1/chat/completions"
+    assert seen["auth"] == "Bearer k" and seen["body"]["stream"] is True
+    assert seen["body"]["messages"][0] == {"role": "system", "content": "SYS"}
+    assert be.stop_reason == "stop" and be.usage["completion_tokens"] == 4
+
+
+def test_openai_compat_content_filter_is_a_refusal(monkeypatch):
+    import urllib.request
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=None:
+                        _sse([{"choices": [{"delta": {"content": "Hel"},
+                                            "finish_reason": "content_filter"}]}]))
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "k")
+    be = dr.OpenAICompatBackend("deepseek", "m", log=lambda s: None)
+    r = dr.ask(be, "SYS", [{"role": "user", "content": "q"}], [],
+               log=lambda s: None)
+    assert r["refused"] and r["spoken"] == ""
+
+
+def test_openai_compat_4xx_is_fatal_and_shows_body(monkeypatch):
+    import urllib.error
+    import urllib.request
+    calls = []
+
+    def urlopen(req, timeout=None):
+        calls.append(1)
+        raise urllib.error.HTTPError(req.full_url, 400, "Bad Request", {},
+                                     io.BytesIO(b'{"code":20015,"message":"bad"}'))
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "k")
+    be = dr.OpenAICompatBackend("deepseek", "m", log=lambda s: None)
+    with pytest.raises(RuntimeError, match="20015"):
+        list(be.stream("SYS", []))
+    assert len(calls) == 1
 
 
 def _rig(root):
