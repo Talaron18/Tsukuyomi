@@ -112,6 +112,108 @@ def chunk_base(ctx_vals: torch.Tensor, chunk: int, mode: str = "hold"
     return last[:, None] + vel[:, None] * steps[None, :, None]
 
 
+def chunk_basis(chunk: int, k: int) -> torch.Tensor:
+    """(chunk, k) orthonormal smooth basis whose functions all vanish at the
+    last context frame.
+
+    Why a basis at all: the v3 free rollouts carried wobble that was entirely
+    high frequency -- jerk 42-248x authored on Hiyori/Natori, brought to
+    0.3-1.7x by a non-causal blur with std unchanged, and made WORSE by 20
+    solver steps instead of 6. So it is the model, not the solver. Spanning
+    each parameter's chunk with k low cosines makes that wobble impossible to
+    generate rather than something to filter afterwards (the runtime's causal
+    filter costs ~160 ms of lag).
+
+    Construction: DCT-II cosines j = 1..k on the chunk+1 points n = 0..chunk
+    (n = 0 is the last context frame), each minus its own value at n = 0, then
+    restricted to n = 1..chunk and orthonormalised. Every function is 0 at the
+    context's last frame, so under the hold baseline a generated chunk starts
+    exactly where the context ends instead of stepping into it; the slope at
+    n = 1 is free, so velocity can carry over. The highest function has a
+    period of 2 (chunk+1) / k frames: 8.7 frames at k = 3, 5.2 at k = 5 for
+    chunk 12 -- the latter is already close to the wobble scale.
+
+    No random draws: building it must not shift the parameter initialisation.
+    """
+    if not 0 < k <= chunk:
+        raise ValueError(f"basis size {k} must be in 1..chunk ({chunk})")
+    n = torch.arange(chunk + 1, dtype=torch.float64)[:, None]
+    j = torch.arange(1, k + 1, dtype=torch.float64)[None]
+    f = torch.cos(math.pi * j * (n + 0.5) / (chunk + 1))
+    f = (f - f[:1])[1:]
+    q, r = torch.linalg.qr(f)
+    # QR's signs are arbitrary; fix them so the basis is reproducible.
+    q = q * torch.sign(torch.diagonal(r))[None]
+    return q.float()
+
+
+def perturb_context(ctx_vals: torch.Tensor, target: torch.Tensor,
+                    sigma: float, scale: float, mode: str = "walk",
+                    frac: float = 0.5, tail: int = 12, generator=None):
+    """Training-only: corrupt the context tail the way rollout errors look,
+    and bend the target back from the corrupted context to the true motion.
+
+    Exposure bias: training contexts are clean authored motion, rollout
+    contexts are the model's own output. With --local the head reads
+    per-parameter velocity straight off that context, and locally the free
+    rollout moved 2x and jittered 3x more than without it -- the features
+    amplify the model's own errors. Showing it corrupted contexts whose
+    targets lead back toward the data teaches it to correct them instead.
+
+    e (B,tail,P) is added to the last `tail` context frames:
+      walk    random walk, std sigma*scale at the last frame: the slow drift a
+              smooth (basis) model's errors have. The default.
+      jitter  iid per frame, std sigma*scale: the v3-style wobble.
+      mix     both, each at sigma/sqrt(2).
+    The target then follows e_chunk(n) = (e_last + v_e n) w(n), n = 1..chunk,
+    w = (1 + cos(pi n / chunk)) / 2: it continues the error's own value and
+    velocity at the seam and decays it to zero by the chunk's end. A target
+    that jumped straight back to the clean motion would teach a step -- or,
+    with a zero-slope correction, a velocity kink -- at every chunk start,
+    which is the seam artefact this is meant to remove. (For jitter v_e is
+    taken as 0: an iid error has no velocity to continue.)
+
+    Only a `frac` of each batch is corrupted so clean contexts stay in
+    distribution. sigma is in units of the residual scale. Values are clamped
+    to [-1, 1] as the rollout's are. Returns (ctx_vals, target) unchanged when
+    sigma <= 0.
+    """
+    if sigma <= 0 or frac <= 0:
+        return ctx_vals, target
+    b, t_ctx, p = ctx_vals.shape
+    k = target.shape[1]
+    tail = max(2, min(int(tail), t_ctx))
+    dev, dt = ctx_vals.device, ctx_vals.dtype
+
+    def randn(*shape):
+        return torch.randn(*shape, generator=generator,
+                           device=generator.device if generator is not None
+                           else dev).to(device=dev, dtype=dt)
+
+    amp = sigma * scale
+    walk = jit = None
+    if mode in ("walk", "mix"):
+        a = amp / (math.sqrt(2) if mode == "mix" else 1.0)
+        walk = randn(b, tail, p).cumsum(1) * (a / math.sqrt(tail))
+    if mode in ("jitter", "mix"):
+        a = amp / (math.sqrt(2) if mode == "mix" else 1.0)
+        jit = randn(b, tail, p) * a
+    if walk is None and jit is None:
+        raise ValueError(f"unknown ctx-noise mode {mode!r}")
+    e = sum(x for x in (walk, jit) if x is not None)
+    e_last = e[:, -1]
+    v_e = (walk[:, -1] - walk[:, -2]) if walk is not None else 0 * e_last
+    n = torch.arange(1, k + 1, device=dev, dtype=dt)[None, :, None]
+    w = 0.5 * (1 + torch.cos(math.pi * n / k))
+    e_chunk = (e_last[:, None] + v_e[:, None] * n) * w
+    on = (torch.rand(b, generator=generator,
+                     device=generator.device if generator is not None
+                     else dev).to(dev) < frac).to(dt)[:, None, None]
+    ctx = ctx_vals.clone()
+    ctx[:, -tail:] = (ctx[:, -tail:] + on * e).clamp(-1, 1)
+    return ctx, (target + on * e_chunk).clamp(-1, 1)
+
+
 def time_embedding(t: torch.Tensor, dim: int) -> torch.Tensor:
     half = dim // 2
     freqs = torch.exp(-math.log(10000) * torch.arange(half, device=t.device) / half)
@@ -125,7 +227,8 @@ HOLDOUT = "aidang_2,Natori,Hiyori,lafei,xuefeng"
 class FlowPrior(nn.Module):
     def __init__(self, ddim: int, state: int = 128, layers: int = 4,
                  heads: int = 4, ctx: int = 32, chunk: int = 12,
-                 cond_dim: int = 0, local_feats: bool = False):
+                 cond_dim: int = 0, local_feats: bool = False,
+                 basis: int = 0):
         super().__init__()
         self.ctx, self.chunk, self.state = ctx, chunk, state
         self.cond_dim = cond_dim
@@ -170,6 +273,33 @@ class FlowPrior(nn.Module):
         if cond_dim > 0:
             self.cond_proj = nn.Linear(cond_dim, state)
             self.cond_null = nn.Parameter(torch.randn(1, 1, state) * 0.02)
+        # Smooth chunk basis (see chunk_basis). The network is unchanged and
+        # still sees one token per chunk FRAME: the noisy coefficients are
+        # reconstructed to frames on the way in and the per-frame head output
+        # is projected back onto the basis on the way out. Frame tokens keep
+        # the state_dict identical to basis=0 (same chunk_pos, same head) and
+        # let --local's per-frame history features line up with what they
+        # describe; the projection alone guarantees the output is smooth.
+        # Non-persistent and built without RNG: nothing in the state_dict or
+        # in the parameter initialisation depends on it.
+        self.basis = int(basis)
+        if self.basis > 0:
+            self.register_buffer("B", chunk_basis(chunk, self.basis),
+                                 persistent=False)
+
+    @property
+    def n_tokens(self) -> int:
+        """Rows of the flow state: chunk frames, or basis coefficients."""
+        return self.basis or self.chunk
+
+    def to_frames(self, x):
+        """(B,n_tokens,P) flow state -> (B,chunk,P) residual frames."""
+        return torch.einsum("ck,bkp->bcp", self.B, x) if self.basis else x
+
+    def to_coef(self, y):
+        """(B,chunk,P) frames -> (B,n_tokens,P) least-squares coefficients
+        (B is orthonormal, so the projection is B^T)."""
+        return torch.einsum("ck,bcp->bkp", self.B, y) if self.basis else y
 
     def cond_token(self, cond, b, drop: float = 0.0):
         """(B,1,S) token for `cond` (B,D) or None; None -> learned null."""
@@ -195,7 +325,15 @@ class FlowPrior(nn.Module):
     def forward(self, xt, t, ctx_vals, desc, cond=None, cond_drop: float = 0.0):
         """Velocity field at (xt, t) given real context. Returns (B,K,P).
 
+        K is the chunk length, or the basis size when basis > 0: xt and the
+        returned velocity are then coefficients.
         cond: (B, cond_dim) or None; ignored when cond_dim is 0."""
+        if self.basis:
+            return self.to_coef(self._forward(self.to_frames(xt), t, ctx_vals,
+                                              desc, cond, cond_drop))
+        return self._forward(xt, t, ctx_vals, desc, cond, cond_drop)
+
+    def _forward(self, xt, t, ctx_vals, desc, cond=None, cond_drop=0.0):
         b, k, p = xt.shape
         desc = desc.unsqueeze(0) if desc.dim() == 2 else desc
         h_ctx = self.encode(ctx_vals, desc) + self.ctx_pos[:, :ctx_vals.shape[1]]
@@ -246,7 +384,7 @@ class FlowPrior(nn.Module):
         seed; without one, torch's global RNG is used and every process
         starts from the same state, so separate runs would be identical."""
         b = ctx_vals.shape[0]
-        x = torch.randn(b, self.chunk, n_params, generator=generator,
+        x = torch.randn(b, self.n_tokens, n_params, generator=generator,
                         device=generator.device if generator is not None
                         else ctx_vals.device).to(ctx_vals.device)
         dt = 1.0 / steps
@@ -254,7 +392,7 @@ class FlowPrior(nn.Module):
             t = torch.full((b,), i * dt, device=ctx_vals.device)
             x = x + self(x, t, ctx_vals, desc, cond) * dt
         base = chunk_base(ctx_vals, self.chunk, self.base_mode)
-        return (base + self.res_scale * x).clamp(-1, 1)
+        return (base + self.res_scale * self.to_frames(x)).clamp(-1, 1)
 
 
 def batches(rigs, ctx, chunk, batch, steps, rng):
@@ -293,7 +431,7 @@ def evaluate(model, rig, ctx, chunk, device, n_samples=8, steps=6):
     model.eval()
     desc = torch.from_numpy(rig["desc"]).to(device)
     best, mean, vel, div = [], [], [], []
-    hold, damped = [], []
+    hold, damped, floor = [], [], []
     for c in rig["clips"]:
         need = ctx + chunk
         for s in range(0, len(c) - need, chunk):
@@ -313,9 +451,20 @@ def evaluate(model, rig, ctx, chunk, device, n_samples=8, steps=6):
             tau = max(chunk / 3.0, 1.0)
             damp = tau * (1 - np.exp(-horizon / tau))
             damped.append(np.mean((last[None] + v[None] * damp - true) ** 2))
+            if model.basis:
+                # What a perfect model in this basis would still miss: the
+                # part of the true residual the basis cannot represent.
+                # Without it a worse best-of-8 could not be pinned on the
+                # model rather than on the basis.
+                base = chunk_base(cv, chunk, model.base_mode)
+                r = torch.from_numpy(true[None]).to(device) - base
+                proj = model.to_frames(model.to_coef(r))
+                rec = (base + proj).clamp(-1, 1).cpu().numpy()[0]
+                floor.append(float(((rec - true) ** 2).mean()))
     return {k: float(np.mean(v)) for k, v in
             (("best", best), ("mean", mean), ("velocity", vel),
-             ("hold", hold), ("damped", damped), ("diversity", div)) if v}
+             ("hold", hold), ("damped", damped), ("diversity", div),
+             ("basis_floor", floor)) if v}
 
 
 @torch.no_grad()
@@ -350,7 +499,7 @@ def rollout(model, rig, ctx, chunk, device, seconds=4.0, fps=30, steps=6):
 
 CONFIG_KEYS = ("ddim", "state", "layers", "heads", "ctx", "chunk", "cond_dim",
                "base_mode", "res_scale", "solver_steps", "holdout",
-               "local_feats")
+               "local_feats", "basis", "ctx_noise", "ctx_noise_mode")
 
 
 def save_checkpoint(path, model, cfg):
@@ -367,10 +516,11 @@ def load_checkpoint(path, device="cpu"):
     cfg.setdefault("heads", 4)
     cfg.setdefault("cond_dim", 0)
     cfg.setdefault("local_feats", False)       # checkpoints from before it
+    cfg.setdefault("basis", 0)                 # per-frame, as before it
     model = FlowPrior(cfg["ddim"], cfg["state"], cfg["layers"], cfg["heads"],
                       ctx=cfg["ctx"], chunk=cfg["chunk"],
                       cond_dim=cfg["cond_dim"],
-                      local_feats=cfg["local_feats"])
+                      local_feats=cfg["local_feats"], basis=cfg["basis"])
     model.load_state_dict(ck["state_dict"])
     model.base_mode = cfg.get("base_mode", "hold")
     model.to(device).eval()
@@ -487,6 +637,17 @@ def main(argv=None) -> int:
                          "2x and jittered 3x more -- it learns to lean on "
                          "velocity, and its own jittery output then feeds back "
                          "(exposure bias). Needs context-noise training first.")
+    ap.add_argument("--basis", type=int, default=0, metavar="K",
+                    help="represent each parameter's chunk residual by K "
+                         "smooth coefficients (0 = per frame, as before)")
+    ap.add_argument("--ctx-noise", type=float, default=0.0, metavar="SIGMA",
+                    help="training only: corrupt the context tail by SIGMA x "
+                         "the per-frame residual rms and bend the target back "
+                         "(0 = off)")
+    ap.add_argument("--ctx-noise-mode", default="walk",
+                    choices=("walk", "jitter", "mix"))
+    ap.add_argument("--ctx-noise-frac", type=float, default=0.5,
+                    help="fraction of each batch that is corrupted")
     ap.add_argument("--cond-dim", type=int, default=0,
                     help="per-chunk context vector size (0 = no slot)")
     ap.add_argument("--cond-drop", type=float, default=0.1,
@@ -530,11 +691,18 @@ def main(argv=None) -> int:
               f"arrays, the rest train the null token")
     model = FlowPrior(ddim, a.state, a.layers, a.heads, ctx=a.ctx,
                       chunk=a.chunk, cond_dim=a.cond_dim,
-                      local_feats=a.local).to(device)
+                      local_feats=a.local, basis=a.basis).to(device)
     model.base_mode = a.base
     print(f"model: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M params"
           f"  chunk={a.chunk} frames ({a.chunk / 30:.2f}s)  "
           f"solver={a.solver_steps} steps  device={device}")
+    if a.basis:
+        print(f"chunk basis: {a.basis} smooth coefficients per parameter "
+              f"instead of {a.chunk} frames")
+    if a.ctx_noise > 0:
+        print(f"context noise: {a.ctx_noise_mode} sigma {a.ctx_noise:g} x "
+              f"frame residual rms on the last {a.chunk} context frames of "
+              f"{a.ctx_noise_frac:.0%} of each batch")
 
     # Measure the residual scale before training. Guessing it would put the
     # target at the wrong magnitude relative to N(0,I), which is the whole
@@ -543,18 +711,33 @@ def main(argv=None) -> int:
     # Accumulate sum of squares rather than stacking: rigs have different
     # parameter counts, so the batches cannot be concatenated into one array.
     # Residuals are near zero mean, so RMS is the scale we want anyway.
-    tot_sq, count = 0.0, 0
+    # With a basis the flow state is the coefficients, so their RMS is the
+    # scale that puts the target at unit variance.
+    tot_sq, count, frame_sq, kept_sq, frame_n = 0.0, 0, 0.0, 0.0, 0
     for cv, x1, _d, _m, _c in batches(train, a.ctx, a.chunk, 32, 30,
                                       probe_rng):
-        r = (x1 - chunk_base(cv, a.chunk, a.base)).numpy()
-        tot_sq += float((r ** 2).sum())
-        count += r.size
+        r = (x1 - chunk_base(cv, a.chunk, a.base)).to(device)
+        with torch.no_grad():
+            c = model.to_coef(r)
+            frame_sq += float((r ** 2).sum())
+            frame_n += r.numel()
+            kept_sq += float((model.to_frames(c) ** 2).sum())
+        tot_sq += float((c ** 2).sum())
+        count += c.numel()
     scale = math.sqrt(tot_sq / count) if count else 1.0
     model.res_scale.fill_(max(scale, 1e-4))
-    print(f"residual scale (rms of chunk minus '{a.base}' baseline): {scale:.5f}")
+    print(f"residual scale (rms of chunk minus '{a.base}' baseline"
+          f"{', basis coefficients' if a.basis else ''}): {scale:.5f}")
+    captured = kept_sq / frame_sq if frame_sq else 1.0
+    # Context noise is sized in FRAME residual units either way, so one sigma
+    # means the same perturbation with and without a basis.
+    frame_rms = math.sqrt(frame_sq / frame_n) if frame_n else 1.0
+    if a.basis:
+        print(f"basis captures {captured:.1%} of the residual energy")
     log_path = a.log or (os.path.splitext(a.save)[0] + ".log.json" if a.save
                          else "flowprior_log.json")
     log = {"args": vars(a), "device": device, "res_scale": scale,
+           "basis_energy": captured,
            "train_rigs": [r["name"] for r in train], "holdout": hold,
            "epochs": [], "heldout": {}}
 
@@ -568,6 +751,8 @@ def main(argv=None) -> int:
     opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, a.epochs)
     rng = np.random.default_rng(a.seed)
+    noise_gen = torch.Generator(device=device)
+    noise_gen.manual_seed(a.seed + 1)
 
     for ep in range(a.epochs):
         model.train()
@@ -576,10 +761,13 @@ def main(argv=None) -> int:
                                                 a.batch, a.steps, rng):
             cv, x1, desc = cv.to(device), x1.to(device), desc.to(device)
             m = mask.to(device).unsqueeze(1)
+            cv, x1 = perturb_context(cv, x1, a.ctx_noise,
+                                     frame_rms, a.ctx_noise_mode,
+                                     a.ctx_noise_frac, a.chunk, noise_gen)
             # Residual from the baseline, scaled to roughly unit variance so
             # the transport from N(0,I) is short.
             base = chunk_base(cv, a.chunk, a.base)
-            x1r = (x1 - base) / model.res_scale
+            x1r = model.to_coef(x1 - base) / model.res_scale
             x0 = torch.randn_like(x1r)
             t = torch.rand(x1r.shape[0], device=device)
             xt = (1 - t)[:, None, None] * x0 + t[:, None, None] * x1r
@@ -587,7 +775,8 @@ def main(argv=None) -> int:
             if cond is not None:
                 cond = cond.to(device)
             pred = model(xt, t, cv, desc, cond, a.cond_drop)
-            loss = (((pred - target) ** 2) * m).sum() / (m.sum() * a.chunk + 1e-9)
+            loss = (((pred - target) ** 2) * m).sum() / (
+                m.sum() * pred.shape[1] + 1e-9)
             opt.zero_grad(set_to_none=True); loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
@@ -607,7 +796,8 @@ def main(argv=None) -> int:
             "ddim": ddim, "state": a.state, "layers": a.layers,
             "heads": a.heads, "ctx": a.ctx, "chunk": a.chunk,
             "cond_dim": a.cond_dim, "base_mode": a.base,
-            "local_feats": a.local,
+            "local_feats": a.local, "basis": a.basis,
+            "ctx_noise": a.ctx_noise, "ctx_noise_mode": a.ctx_noise_mode,
             "res_scale": float(model.res_scale), "solver_steps": a.solver_steps,
             "holdout": hold})
         print(f"saved -> {a.save}")
@@ -640,6 +830,9 @@ def main(argv=None) -> int:
         print(f"  best-of-8 vs {ref[0]}  {(1 - e['best'] / ref[1]) * 100:+.1f}%")
         print(f"  sample diversity  {e['diversity']:.4f}   "
               "(0 means it ignores the noise)")
+        if "basis_floor" in e:
+            print(f"  basis floor {e['basis_floor']:.5f}  (MSE of the true "
+                  "chunk projected onto the basis)")
         print(f"  free rollout  std={r['std']:.4f}  "
               f"per-frame delta={r['frame_delta']:.5f}")
         fmt = lambda v: "-" if v is None else f"{v:.2f}"  # noqa: E731
