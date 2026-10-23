@@ -191,16 +191,20 @@ def test_binding_has_no_descriptor_fallback():
     assert b["gaze_x"] == ("ParamFoo", -1.0, "override")
 
 
-def test_events_dump_and_token_replay_are_identical(tmp_path):
+def test_events_dump_and_token_replay_are_identical(tmp_path, capsys):
     """--events end to end without GL; --tokens-in reproduces --tokens."""
     from flow.runtime import main
     from l2dprobe.analyze import group_of
 
     arm = [0, 0, 1, 2.0, 1, 4.0, 0, 6.0, 0]
     swap = [0, 0, 0, 2.9, 0, 0, 3.0, 1, 0, 6.0, 1]
+    # A body sway, so that the run adapts the body to the rig's own motion.
+    body = [0, 0, 0, 1.0, 5, 0, 2.0, 5, 0, 3.0, -4, 0, 4.5, -4, 0, 6.0, 0]
     motion = {"Version": 3, "Meta": {"Duration": 6.0, "Fps": 30},
               "Curves": [
                   {"Target": "Parameter", "Id": "ParamArmL", "Segments": arm},
+                  {"Target": "Parameter", "Id": "ParamBodyAngleX",
+                   "Segments": body},
                   {"Target": "Parameter", "Id": "ParamArmSwap",
                    "Segments": swap},
                   {"Target": "PartOpacity", "Id": "PartArmB", "Segments": swap}]}
@@ -209,15 +213,15 @@ def test_events_dump_and_token_replay_are_identical(tmp_path):
     model.write_text(json.dumps({"Version": 3, "FileReferences": {
         "Moc": "x.moc3", "Motions": {"Idle": [{"File": "m.motion3.json"}]}}}))
     pids = ["ParamAngleX", "ParamEyeBallX", "ParamBrowLY", "ParamArmL",
-            "ParamArmSwap", "ParamEyeLOpen"]
+            "ParamArmSwap", "ParamEyeLOpen", "ParamBodyAngleX"]
     n = len(pids)
     rig = tmp_path / "x.npz"
     np.savez(rig, pid=np.array(pids, dtype=object),
              kind=np.array(["continuous"] * n, dtype=object),
              group=np.array([group_of(p) for p in pids], dtype=object),
-             minimum=np.array([-30, -1, -1, 0, 0, 0], np.float32),
-             maximum=np.array([30, 1, 1, 1, 1, 1], np.float32),
-             default=np.array([0, 0, 0, 0, 0, 1], np.float32),
+             minimum=np.array([-30, -1, -1, 0, 0, 0, -10], np.float32),
+             maximum=np.array([30, 1, 1, 1, 1, 1, 10], np.float32),
+             default=np.array([0, 0, 0, 0, 0, 1, 0], np.float32),
              descriptor=np.zeros((n, 4), np.float32))
     base = ["--model", str(model), "--rig", str(rig), "--events", "default",
             "--seconds", "20", "--seed", "3", "--dump-only",
@@ -225,6 +229,7 @@ def test_events_dump_and_token_replay_are_identical(tmp_path):
     tok = tmp_path / "t.json"
     assert main(base + ["--dump", str(tmp_path / "a.npz"),
                         "--tokens", str(tok)]) == 0
+    assert "body adapted to the rig's own motions" in capsys.readouterr().out
     assert main(base + ["--dump", str(tmp_path / "b.npz"),
                         "--tokens-in", str(tok)]) == 0
     a = np.load(tmp_path / "a.npz", allow_pickle=True)

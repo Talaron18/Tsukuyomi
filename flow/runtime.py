@@ -555,8 +555,12 @@ def main(argv=None) -> int:
             stats = ev.adapt(stats, own)
             for g, w in stats.get("adapted", {}).items():
                 G = stats["groups"][g]
+                O = (own or {}).get("groups", {}).get(g, {})
                 print(f"events: {g} adapted to the rig's own motions "
-                      f"(weights {w}): hold {G['hold'][0]:.2f}s "
+                      f"(weights {w}; own holds {O.get('n_hold', 0)} "
+                      f"+{O.get('n_censored', 0)} censored, "
+                      f"{O.get('n_unanimated', 0)} unanimated clips, moves "
+                      f"{O.get('n_move', 0)}): hold {G['hold'][0]:.2f}s "
                       f"move {G['move'][0]:.2f}s p_chain "
                       f"{G.get('p_chain', 0):.2f}")
         start = {r: stats["roles"][r]["center"] for r in roles}
