@@ -37,6 +37,18 @@ a directed glance moves like the idle glances around it.
              head turn left in would delay a directed nod, not mix with it).
              Blinks and untouched groups pass through unchanged.
 
+  speak      --tts edge|siliconflow|file (flow.speech): the spoken text is
+             synthesised (split at [pause] tags, the pauses inserted as
+             silence) into speech.wav, and the times above come from the
+             audio instead of the rate: word boundaries where the service
+             sends them (edge), else the phrases matched to the voiced
+             stretches an energy detector finds. The render runs the audio
+             plus --tail; a per-frame mouth-open curve from the speech level
+             goes to actions.json as "mouth", which the runtime turns into a
+             "mouth" token, so --tokens-in replays it too. demo.mp4 gets the
+             audio and the subtitles. --tts none [default] is the rate model,
+             unchanged.
+
 The runtime does realize + merge itself (`--direct actions.json`), because
 the adapted statistics, bound roles and start pose live there; the merged
 stream it writes with `--tokens` replays bit for bit with `--tokens-in`.
@@ -63,9 +75,11 @@ import numpy as np
 
 try:
     from . import events as ev
+    from . import speech as sp
 except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from flow import events as ev
+    from flow import speech as sp
 
 # The only place model names appear: one default per backend.
 DEFAULT_MODEL = {"anthropic": "claude-opus-5-5", "ollama": "gemma4:e4b",
@@ -924,31 +938,12 @@ class OpenAICompatBackend:
         self.stop_reason, self.usage = None, {}
 
     def _open(self, body):
-        import time
-        import urllib.error
-        import urllib.request
         key = os.environ.get(self.key_env)
         if not key:
             raise SystemExit(f"--backend {self.name} needs {self.key_env} "
                              "in the environment")
-        req = urllib.request.Request(
-            self.url, data=json.dumps(body).encode("utf-8"),
-            headers={"Content-Type": "application/json",
-                     "Authorization": f"Bearer {key}"})
-        last = None
-        for attempt in range(self.retries):
-            try:
-                return urllib.request.urlopen(req, timeout=self.timeout)
-            except urllib.error.HTTPError as exc:
-                detail = exc.read()[:1000].decode("utf-8", "replace")
-                last = RuntimeError(f"{exc.code} from {self.name}: {detail}")
-                if exc.code != 429 and exc.code < 500:
-                    raise last from None
-            except (urllib.error.URLError, TimeoutError) as exc:
-                last = RuntimeError(f"{self.name}: {exc}")
-            if attempt < self.retries - 1:
-                time.sleep(2 ** attempt)
-        raise last
+        return sp.post(self.url, body, key, self.name, self.timeout,
+                       self.retries)
 
     def stream(self, system, messages):
         body = {"model": self.model, "stream": True,
@@ -1077,10 +1072,38 @@ def length(acts, end, motions, tail):
     return last + tail
 
 
-def plan(a, reply, out_dir, motions, log=print):
+def make_tts(a, log=print):
+    """The --tts backend, or None for --tts none (the rate model)."""
+    kind = getattr(a, "tts", "none") or "none"
+    if kind == "none":
+        return None
+    if kind == "edge":
+        return sp.EdgeTTS(a.voice, a.tts_rate, log=log)
+    if kind == "siliconflow":
+        base, env = OPENAI_COMPAT["siliconflow"]
+        # The chat --api-base/--api-key-env are SiliconFlow's only when the
+        # chat backend is SiliconFlow: a DeepSeek base must not be used here.
+        if a.backend == "siliconflow":
+            base, env = a.api_base or base, a.api_key_env or env
+        return sp.SiliconFlowTTS(a.tts_api_base or base, a.tts_key_env or env,
+                                 a.tts_model, a.voice, a.tts_format,
+                                 a.tts_sample_rate, log=log)
+    if kind == "file":
+        if not a.tts_file:
+            raise SystemExit("--tts file needs --tts-file")
+        return sp.FileTTS(a.tts_file)
+    raise SystemExit(f"unknown --tts {kind}")
+
+
+def plan(a, reply, out_dir, motions, log=print, tts=None):
     """Write reply.txt, spoken.txt, actions.json, subs.srt/json, then plan
     tokens.json in-process (runtime --direct --dump-only). Returns (render
-    argv, seconds) or None for a refusal."""
+    argv, seconds) or None for a refusal.
+
+    tts (make_tts): speak the reply too. speech.wav is written, every tag's
+    time and the subtitles come from the audio, the render runs as long as
+    the audio plus the tail, and actions.json carries the mouth curve the
+    runtime plays (speech.mouth_track)."""
     os.makedirs(out_dir, exist_ok=True)
     if reply["refused"]:
         with open(os.path.join(out_dir, "refusal.txt"), "w",
@@ -1092,10 +1115,33 @@ def plan(a, reply, out_dir, motions, log=print):
         fh.write(reply["raw"])
     with open(os.path.join(out_dir, "spoken.txt"), "w", encoding="utf-8") as fh:
         fh.write(reply["spoken"] + "\n")
-    acts, spans, end = timeline(reply["spoken"], reply["tags"],
-                                a.cjk_rate, a.latin_rate)
+    extra = {}
+    if tts is not None and reply["spoken"]:
+        said = sp.speak(reply["spoken"], reply["tags"], tts,
+                        lambda ch: 1.0 / (a.cjk_rate if _is_cjk(ch)
+                                          else a.latin_rate), log=log)
+        acts, spans, end = said["acts"], said["spans"], said["end"]
+        sp.write_wav(os.path.join(out_dir, "speech.wav"), said["audio"],
+                     said["sr"])
+        seconds = length(acts, end, motions, a.tail)
+        extra = {"tts": {"backend": a.tts, "voice": tts.last_voice,
+                         "timing": said["method"],
+                         "voiced_end": round(said["speech_end"], 3)}}
+        if a.lipsync != "off":
+            # Sampled at the run's own frame times (runtime n_frames is
+            # int(seconds * fps) of the --seconds it is given, rounded to
+            # 2 decimals there); the runtime pads or crops to its count.
+            extra["mouth"] = dict(sp.mouth_track(
+                said["audio"], said["sr"], a.fps,
+                int(round(seconds, 2) * a.fps) + 1, a.lipsync, a.mouth_gain),
+                mode=a.lipsync)
+        log(f"speech: {end:.2f}s audio ({tts.last_voice}), tag times from "
+            f"{said['method']} -> speech.wav")
+    else:
+        acts, spans, end = timeline(reply["spoken"], reply["tags"],
+                                    a.cjk_rate, a.latin_rate)
+        seconds = length(acts, end, motions, a.tail)
     segs = subtitles(reply["spoken"], spans)
-    seconds = length(acts, end, motions, a.tail)
     with open(os.path.join(out_dir, "actions.json"), "w",
               encoding="utf-8") as fh:
         json.dump({"speech_seconds": round(end, 3), "seconds": round(seconds, 3),
@@ -1103,7 +1149,7 @@ def plan(a, reply, out_dir, motions, log=print):
                    "model_seconds": reply.get("model_seconds"),
                    "first_text_seconds": reply.get("first_text_seconds"),
                    "stop_reason": reply.get("stop_reason"),
-                   "usage": reply.get("usage")}, fh,
+                   "usage": reply.get("usage"), **extra}, fh,
                   indent=1, ensure_ascii=False)
     with open(os.path.join(out_dir, "subs.srt"), "w", encoding="utf-8") as fh:
         fh.write(srt(segs))
@@ -1139,15 +1185,38 @@ def render(cmd, out_dir, log=print):
         log(f"director: render exited {rc}")
         return rc
     vid = os.path.join(out_dir, "render", "preview.mp4")
-    subs = os.path.join(out_dir, "subs.srt")
-    if shutil.which("ffmpeg") and os.path.exists(vid) and os.path.getsize(subs):
-        dest = os.path.join(out_dir, "demo.mp4")
-        r = subprocess.run(["ffmpeg", "-y", "-i", vid, "-i", subs, "-c:v",
-                            "copy", "-c:s", "mov_text", dest],
-                           capture_output=True)
-        log(f"director: video with subtitles -> {dest}" if r.returncode == 0
-            else "director: ffmpeg could not mux subtitles; preview.mp4 kept")
+    cmd = mux_cmd(vid, os.path.join(out_dir, "speech.wav"),
+                  os.path.join(out_dir, "subs.srt"),
+                  os.path.join(out_dir, "demo.mp4"))
+    if shutil.which("ffmpeg") and os.path.exists(vid) and cmd:
+        r = subprocess.run(cmd, capture_output=True)
+        what = " and ".join(w for w, k in (("speech", "1:a"),
+                                           ("subtitles", ":s"))
+                            if any(x.endswith(k) for x in cmd))
+        log(f"director: video with {what} -> {cmd[-1]}" if r.returncode == 0
+            else f"director: ffmpeg could not mux {what}; preview.mp4 kept: "
+            + r.stderr.decode("utf-8", "replace")[-300:])
     return 0
+
+
+def mux_cmd(vid, wav, subs, dest):
+    """ffmpeg argv putting speech (AAC) and soft subtitles (mov_text) on the
+    rendered video, whichever exist; None when neither does. No -shortest:
+    the video runs the tail past the audio. The PNGs are encoded at the run
+    fps (runtime._encode -framerate), so frame f is at f / fps and the audio,
+    which starts at 0 too, stays in step."""
+    ins, maps, codecs = ["-i", vid], ["-map", "0:v"], ["-c:v", "copy"]
+    if os.path.exists(wav):
+        ins += ["-i", wav]
+        maps += ["-map", f"{len(ins) // 2 - 1}:a"]
+        codecs += ["-c:a", "aac", "-b:a", "128k"]
+    if os.path.exists(subs) and os.path.getsize(subs):
+        ins += ["-i", subs]
+        maps += ["-map", f"{len(ins) // 2 - 1}:s"]
+        codecs += ["-c:s", "mov_text"]
+    if len(ins) == 2:
+        return None
+    return ["ffmpeg", "-y"] + ins + maps + codecs + [dest]
 
 
 def main(argv=None) -> int:
@@ -1201,6 +1270,44 @@ def main(argv=None) -> int:
                     help="CJK characters spoken per second")
     ap.add_argument("--latin-rate", type=float, default=LATIN_RATE,
                     help="other characters (spaces included) per second")
+    ap.add_argument("--tts", default="none",
+                    choices=("none", "edge", "siliconflow", "file"),
+                    help="speak the reply: tag times, subtitles and the "
+                         "mouth then follow the audio (speech.wav). none "
+                         "[default]: silent, times from --cjk-rate/"
+                         "--latin-rate; edge: edge-tts (pip install "
+                         "edge-tts); siliconflow: its /audio/speech "
+                         "(SILICONFLOW_API_KEY); file: --tts-file")
+    ap.add_argument("--voice", default=None,
+                    help="TTS voice. edge default by the reply's script: "
+                         + ", ".join(f"{k} {v}" for k, v in
+                                     sp.EDGE_VOICES.items())
+                         + f"; siliconflow default {sp.SF_TTS_VOICE} (a name "
+                         "without ':' is prefixed '<tts-model>:')")
+    ap.add_argument("--tts-model", default=None, help="siliconflow TTS "
+                    f"model (default {sp.SF_TTS_MODEL}; unverified name)")
+    ap.add_argument("--tts-format", default="wav", choices=("wav", "mp3"),
+                    help="siliconflow response_format")
+    ap.add_argument("--tts-sample-rate", type=int, default=None,
+                    help="siliconflow sample_rate (not sent by default)")
+    ap.add_argument("--tts-api-base", default=None, help="siliconflow TTS "
+                    "base URL (default --api-base when --backend siliconflow, "
+                    "else https://api.siliconflow.com/v1)")
+    ap.add_argument("--tts-key-env", default=None, help="siliconflow TTS key "
+                    "variable (default SILICONFLOW_API_KEY)")
+    ap.add_argument("--tts-rate", default="+0%",
+                    help="edge speaking rate, e.g. +10%%")
+    ap.add_argument("--tts-file", default=None,
+                    help="--tts file: a wav/mp3 of the reply")
+    ap.add_argument("--lipsync", default="open",
+                    choices=("open", "vowels", "off"),
+                    help="with --tts: open [default] drives the mouth-open "
+                         "parameter from the speech level; vowels also drives "
+                         "ParamA/I/U/E/O where the rig has them (crude "
+                         "formant estimate; experimental); off: still mouth")
+    ap.add_argument("--mouth-gain", type=float, default=1.0,
+                    help="scale on the mouth opening (1: the utterance's "
+                         "loud level opens it fully)")
     ap.add_argument("--tail", type=float, default=1.5,
                     help="seconds rendered after the last speech or motion")
     ap.add_argument("--fps", type=float, default=30.0)
@@ -1246,13 +1353,14 @@ def main(argv=None) -> int:
     print(f"director: {len(labels)} gesture labels: "
           + (", ".join(sorted(labels)) or "none"))
     backend = make_backend(a)
+    tts = make_tts(a)
     messages = []
 
     def turn(text, out_dir):
         messages.append({"role": "user", "content": text})
         reply = ask(backend, system, messages, labels, offered=offered)
         print(f"director: reply: {reply['raw'].strip()}")
-        res = plan(a, reply, out_dir, motions)
+        res = plan(a, reply, out_dir, motions, tts=tts)
         if res is None:
             messages.pop()            # a refused turn is not history
             return 3

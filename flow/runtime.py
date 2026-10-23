@@ -12,8 +12,10 @@ the way the design always intended, and each for its own reason:
              motion. Whether a parameter is solver-driven is a property of the
              target rig, not of the parameter, so no training-time choice could
              be right for every rig -- masking at playback is the fix.
-  mouth      Held at default. Lip sync belongs to phoneme timing from TTS, and
-             is Block 4.
+  mouth      Held at default, unless the event stream carries a "mouth" token
+             (flow.director --tts: a sampled openness curve from the speech
+             audio, flow.speech), which drives the mouth-open parameter and,
+             in vowel mode, ParamA/I/U/E/O. Mouth form is left to the rig.
   discrete   Held at default. Part swaps cannot be interpolated.
 
 Expressive parameters that the rig's own motions use as switches -- arm and
@@ -70,14 +72,15 @@ import numpy as np
 try:
     from ..l2dprobe.analyze import group_of
     from ..l2dprobe.transforms import protected, whole_model_params
-    from ..l2dprobe.motions import (authored_motion, band_of, motion_files,
-                                    physics_params, toggle_params)
+    from ..l2dprobe.motions import (authored_motion, band_of, is_vowel,
+                                    motion_files, physics_params,
+                                    toggle_params)
 except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from l2dprobe.analyze import group_of
     from l2dprobe.transforms import protected, whole_model_params
-    from l2dprobe.motions import (authored_motion, band_of, motion_files,
-                                  physics_params, toggle_params)
+    from l2dprobe.motions import (authored_motion, band_of, is_vowel,
+                                  motion_files, physics_params, toggle_params)
 
 # Groups that are continuous by nature. Animators often park gaze or the head
 # at an extreme and hold it, which toggle_params reads as a switch -- on
@@ -214,6 +217,57 @@ class Switches:
         if self.shape == "minjerk":
             p = p * p * p * (10 - 15 * p + 6 * p * p)
         return lo + p * (hi - lo)
+
+
+def mouth_targets(pids, bands):
+    """(index of the mouth-open parameter or None, {vowel: index}). The open
+    parameter is a mouth-band id containing "open", ParamMouthOpenY first;
+    the vowels are l2dprobe.motions.is_vowel ids (ParamA ... PARAM_O)."""
+    mouth = [i for i, b in enumerate(bands) if b == "mouth"]
+    opens = sorted((i for i in mouth if "open" in pids[i].lower()),
+                   key=lambda i: (not pids[i].lower().endswith("openy"),
+                                  pids[i]))
+    vow = {pids[i].lower()[-1]: i for i in mouth if is_vowel(pids[i])}
+    return (opens[0] if opens else None), vow
+
+
+def mouth_frames(tok, pids, bands, hi, dflt, fps, n_frames):
+    """{parameter id: values per frame} from a "mouth" token: {"t", "fps",
+    "open": [...], "vowels": {"a": [...]}?}. Openness 0 is the parameter's
+    default (a rig's rest mouth is closed) and 1 its maximum. Sampled at
+    this run's frame times; outside the curve the mouth is closed. A rig
+    with no open parameter gets the openness on ParamA."""
+    op_i, vow = mouth_targets(pids, bands)
+    src = float(tok.get("fps", fps))
+    t0 = float(tok.get("t", 0.0))
+
+    def at(curve):
+        c = np.asarray(curve, np.float64)
+        if src == fps and t0 == 0.0:
+            out = np.zeros(n_frames)
+            m = min(n_frames, len(c))
+            out[:m] = c[:m]
+            return out
+        return np.interp(np.arange(n_frames) / fps - t0,
+                         np.arange(len(c)) / src, c, left=0.0, right=0.0)
+
+    out = {}
+    curves = dict(tok.get("vowels") or {})
+    if op_i is not None:
+        curves.setdefault("open", tok["open"])
+        idx = {"open": op_i, **vow}
+    elif "a" in vow:
+        curves.setdefault("a", tok["open"])
+        idx = vow
+    else:
+        return out
+    for k, c in curves.items():
+        i = idx.get(k)
+        if i is None:
+            continue
+        out[pids[i]] = (float(dflt[i])
+                        + at(c) * (float(hi[i]) - float(dflt[i])))
+    return out
 
 
 def authored_motions(model_json: str, fps: float):
@@ -711,8 +765,8 @@ def main(argv=None) -> int:
                 except ImportError:
                     from flow import director as dr
                 with open(a.direct, encoding="utf-8") as fh:
-                    acts = json.load(fh)
-                acts = acts["actions"] if isinstance(acts, dict) else acts
+                    blob = json.load(fh)
+                acts = blob["actions"] if isinstance(blob, dict) else blob
                 # Own generator: the idle stream stays what the same --seed
                 # schedules without tags, whatever the tags draw.
                 directed = dr.realize(
@@ -725,6 +779,14 @@ def main(argv=None) -> int:
                 print(f"director: {len(acts)} actions -> {len(directed)} "
                       f"tokens; {n_idle + len(directed) - len(tokens)} idle "
                       "tokens overridden")
+                if isinstance(blob, dict) and blob.get("mouth"):
+                    # After the merge (and the --no-idle filter above): the
+                    # mouth curve is no move, nothing may drop it. Read from
+                    # the JSON as written, so --tokens-in replays the same
+                    # floats.
+                    tokens.append({"t": 0.0, "type": "mouth",
+                                   "role": "mouth", "src": "director",
+                                   **blob["mouth"]})
         gen, blink_requests = ev.render(tokens, list(roles), a.seconds, a.fps,
                                         start)
         traj = np.tile(default_n.astype(np.float32), (n_frames, 1))
@@ -884,6 +946,14 @@ def main(argv=None) -> int:
         print(f"base state from {base_name}: {len(base_parts)} part "
               f"opacities, {len(base_params)} held parameters")
 
+    mouth = {}
+    mtok = next((k for k in tokens if k["type"] == "mouth"),
+                None) if events_on else None
+    if mtok is not None:
+        mouth = mouth_frames(mtok, pids, bands, hi, dflt, a.fps, n_frames)
+        print("mouth: lip sync on " + (", ".join(mouth) or
+              "nothing (the rig has no mouth-open or ParamA parameter)"))
+
     static_frames = None
     static_fade = 0
     if a.static and motions:
@@ -1036,6 +1106,8 @@ def main(argv=None) -> int:
                     v = switches(pids[i], v)
                 over[pids[i]] = v
                 applied[f, col] = (v - lo[i]) / span_x[col] * 2 - 1
+            for p, v in mouth.items():
+                over[p] = float(v[f])
             parts = base_parts
             if gesture_frames is not None:
                 # Discrete and other non-expressive parameters the gesture
@@ -1070,7 +1142,10 @@ def main(argv=None) -> int:
             pid=np.array([pids[i] for i in expressive], dtype=object),
             param_row=np.asarray(expressive, np.int32),
             fps=np.float32(a.fps), part_id=np.array(part_ids, dtype=object),
-            part_opacity=opac, mode=np.array(mode))
+            part_opacity=opac, mode=np.array(mode),
+            **({"mouth": np.stack([v for v in mouth.values()], 1).astype(
+                np.float32), "mouth_pid": np.array(list(mouth), dtype=object)}
+               if mouth else {}))
         print(f"dump -> {a.dump}  ({n_frames} frames, {len(expressive)} "
               f"expressive, {len(part_ids)} parts, mode {mode})")
         if a.dump_only:
