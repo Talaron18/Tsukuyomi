@@ -1,0 +1,270 @@
+{
+"seconds": 20.0,
+"fps": 30.0,
+"seed": 0,
+"idle_profile": "calm",
+"roles": {
+"head_x": [
+"ParamAngleX",
+1.0
+],
+"head_y": [
+"ParamAngleY",
+1.0
+],
+"head_z": [
+"ParamAngleZ",
+1.0
+],
+"body_x": [
+"ParamBodyAngleX",
+1.0
+],
+"body_z": [
+"ParamBodyAngleZ",
+1.0
+],
+"gaze_x": [
+"ParamEyeBallX",
+1.0
+],
+"gaze_y": [
+"ParamEyeBallY",
+1.0
+],
+"brow_l": [
+"ParamBrowLY",
+1.0
+],
+"brow_r": [
+"ParamBrowRY",
+1.0
+],
+"brow_lx": [
+"ParamBrowLX",
+1.0
+]
+},
+"tokens": [
+{
+"t": 0.0,
+"type": "underlay",
+"role": "loose",
+"motion": "idle.motion3.json",
+"start": 0.0,
+"duration": 20.0,
+"gain": 0.5,
+"ramp": 1.0
+},
+{
+"t": 0.2132,
+"type": "brow",
+"role": "brow",
+"target": {
+"brow_l": -0.08754,
+"brow_r": -0.04921,
+"brow_lx": 0.01012
+},
+"duration": 0.4518
+},
+{
+"t": 0.2328,
+"type": "body_shift",
+"role": "body",
+"target": {
+"body_x": 0.0037,
+"body_z": -0.16383
+},
+"duration": 0.9651
+},
+{
+"t": 0.4158,
+"type": "head_turn",
+"role": "head",
+"target": {
+"head_x": -0.12415,
+"head_y": -0.0959,
+"head_z": 0.06556
+},
+"duration": 1.4532,
+"follows": null
+},
+{
+"t": 0.7096,
+"type": "saccade",
+"role": "gaze",
+"target": {
+"gaze_x": -0.15517,
+"gaze_y": 0.08336
+},
+"duration": 0.9373,
+"hold": 0.5713
+},
+{
+"t": 1.5553,
+"type": "gesture",
+"role": "arms",
+"motion": "main_1.motion3.json",
+"start": 0.0,
+"duration": 2.2,
+"fade": 0.5
+},
+{
+"t": 1.5672,
+"type": "brow",
+"role": "brow",
+"target": {
+"brow_l": -0.02065,
+"brow_r": -0.04497,
+"brow_lx": 0.0
+},
+"duration": 0.5275
+},
+{
+"t": 1.6469,
+"type": "fixate",
+"role": "gaze",
+"duration": 0.5713
+},
+{
+"t": 2.2182,
+"type": "saccade",
+"role": "gaze",
+"target": {
+"gaze_x": 0.176,
+"gaze_y": -0.20507
+},
+"duration": 0.7062,
+"hold": 11.1903
+},
+{
+"t": 2.9244,
+"type": "fixate",
+"role": "gaze",
+"duration": 11.1903
+},
+{
+"t": 4.4201,
+"type": "body_shift",
+"role": "body",
+"target": {
+"body_x": 0.04988,
+"body_z": 0.0191
+},
+"duration": 1.0493
+},
+{
+"t": 4.4519,
+"type": "brow",
+"role": "brow",
+"target": {
+"brow_l": 0.34052,
+"brow_r": 0.29256,
+"brow_lx": 0.0
+},
+"duration": 0.618
+},
+{
+"t": 5.0698,
+"type": "brow",
+"role": "brow",
+"target": {
+"brow_l": -0.41086,
+"brow_r": -0.35417,
+"brow_lx": 0.01012
+},
+"duration": 0.4378
+},
+{
+"t": 5.5076,
+"type": "brow",
+"role": "brow",
+"target": {
+"brow_l": 0.15966,
+"brow_r": 0.19502,
+"brow_lx": 0.0
+},
+"duration": 0.7065
+},
+{
+"t": 10.8202,
+"type": "head_turn",
+"role": "head",
+"target": {
+"head_x": 0.3012,
+"head_y": 0.14443,
+"head_z": -0.35094
+},
+"duration": 1.3335,
+"follows": null
+},
+{
+"t": 14.1147,
+"type": "saccade",
+"role": "gaze",
+"target": {
+"gaze_x": -0.24973,
+"gaze_y": 0.38245
+},
+"duration": 0.4976,
+"hold": 5.3253
+},
+{
+"t": 14.6123,
+"type": "fixate",
+"role": "gaze",
+"duration": 5.3253
+},
+{
+"t": 17.5296,
+"type": "brow",
+"role": "brow",
+"target": {
+"brow_l": -0.21834,
+"brow_r": -0.21361,
+"brow_lx": 0.0
+},
+"duration": 0.7642
+},
+{
+"t": 18.2939,
+"type": "brow",
+"role": "brow",
+"target": {
+"brow_l": 0.3412,
+"brow_r": 0.30356,
+"brow_lx": 0.0
+},
+"duration": 1.0559
+},
+{
+"t": 18.8515,
+"type": "head_turn",
+"role": "head",
+"target": {
+"head_x": 0.05698,
+"head_y": 0.24518,
+"head_z": 0.02564
+},
+"duration": 1.0525,
+"follows": null
+},
+{
+"t": 19.9376,
+"type": "saccade",
+"role": "gaze",
+"target": {
+"gaze_x": 0.2671,
+"gaze_y": 0.00524
+},
+"duration": 0.71,
+"hold": 4.9038
+},
+{
+"t": 20.6476,
+"type": "fixate",
+"role": "gaze",
+"duration": 4.9038
+}
+]
+}

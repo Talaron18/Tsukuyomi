@@ -1,0 +1,56 @@
+[live2d.v3] Cubism Native, Python 3.10.20
+[live2d.v3] official: https://www.live2d.com/sdk/download/native/
+[INFO]  [Pal] Init Shader Dir: /home/main/venv/hongenv/lib/python3.11/site-packages/live2d/v3/
+[INFO]  [CSM][I]Live2D Cubism Core version: 05.01.0000 (83951616)
+
+[INFO]  [CSM][I]CubismFramework::StartUp() is complete.
+
+[INFO]  [CSM][I]CubismFramework::Initialize() is complete.
+
+[INFO]  allocate: cpp Model(at=0x17b7e620)
+[INFO]  load modelSetting: CubismWebSamples/Samples/Resources/Hiyori/Hiyori.model3.json
+[INFO]  create model: Hiyori.moc3
+Live2D Cubism SDK Core Version 5.1.0
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Hiyori/motions/Hiyori_m01.motion3.json => [Idle_0] 
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Hiyori/motions/Hiyori_m02.motion3.json => [Idle_1] 
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Hiyori/motions/Hiyori_m03.motion3.json => [Idle_2] 
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Hiyori/motions/Hiyori_m05.motion3.json => [Idle_3] 
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Hiyori/motions/Hiyori_m06.motion3.json => [Idle_4] 
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Hiyori/motions/Hiyori_m07.motion3.json => [Idle_5] 
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Hiyori/motions/Hiyori_m08.motion3.json => [Idle_6] 
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Hiyori/motions/Hiyori_m09.motion3.json => [Idle_7] 
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Hiyori/motions/Hiyori_m10.motion3.json => [Idle_8] 
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Hiyori/motions/Hiyori_m04.motion3.json => [TapBody_0] 
+[INFO]  deallocate: cpp Model(at=0x17b7e620)
+[INFO]  deallocate: PyModelObject(at=0x7fbd5b6c6030)
+[live2d] third-party wrapper (0.7.0.4), not affiliated with Live2D Inc.
+67 params: expressive 28, physics 34, autonomic 3, mouth 2, discrete 0
+seeded from clips2/Hiyori.npz
+events: switch-like role columns left to the rig's own motions: brow_lx=ParamBrowLX, brow_rx=ParamBrowRX
+  role body_x   -> ParamBodyAngleX  [id]
+  role body_y   -> ParamBodyAngleY  [id]
+  role body_z   -> ParamBodyAngleZ  [id]
+  role brow_l   -> ParamBrowLY  [id]
+  role brow_la  -> ParamBrowLAngle  [id]
+  role brow_lf  -> ParamBrowLForm  [id]
+  role brow_r   -> ParamBrowRY  [id]
+  role brow_ra  -> ParamBrowRAngle  [id]
+  role brow_rf  -> ParamBrowRForm  [id]
+  role gaze_x   -> ParamEyeBallX  [id]
+  role gaze_y   -> ParamEyeBallY  [id]
+  role head_x   -> ParamAngleX  [id]
+  role head_y   -> ParamAngleY  [id]
+  role head_z   -> ParamAngleZ  [id]
+events: body adapted to the rig's own motions (weights {'body_x': 0.909, 'body_y': 0.909, 'body_z': 0.909, 'w_hold': 0.783, 'w_move': 0.902}; own holds 1 +17 censored, 0 unanimated clips, moves 46): hold 0.45s move 0.66s p_chain 0.74
+events: idle profile calm; gestures from 9 of 10 motions (by group): Hiyori_m01* 0.0831, Hiyori_m02* 0.0822, Hiyori_m03* 0.1318, Hiyori_m04 0.0845, Hiyori_m05* 0.0631, Hiyori_m06* 0.1324, Hiyori_m07* 0.1139, Hiyori_m08* 0.1967, Hiyori_m09* 0.1145, Hiyori_m10* 0.0251  (* calm; mean speed/frame)
+events: 14 roles from ev.json; tokens blink 2, body_shift 3, brow 3, fixate 4, gesture 1, head_turn 5, saccade 4, underlay 1
+tokens -> runs/demo/rigs2/Hiyori/idle_tokens.json
+base state from Hiyori_m01.motion3.json: 2 part opacities, 10 held parameters
+events: underlay Hiyori_m01.motion3.json x0.5 during rests on 1 loose parameters: ParamHairAhoge
+events: 1 gesture segments from 10 motion files (arms will score as copying against the rig's own clips; novelty is judged on the role columns)
+snapping 4 switch-like parameters: ParamBrowLX, ParamBrowRX, ParamCheek, ParamLeg
+dump -> runs/demo/rigs2/Hiyori/idle.npz  (600 frames, 28 expressive, 2 parts, mode events seed=0)
+backend: order=sandwich, timestep=fixed 0.0333s (native), parts=24 (pose-fed)
+rendered 600 frames -> runs/demo/rigs2/Hiyori/idle/
+contact sheet -> runs/demo/rigs2/Hiyori/idle/sheet.png
+video -> runs/demo/rigs2/Hiyori/idle/preview.mp4

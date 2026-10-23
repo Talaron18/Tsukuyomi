@@ -1,0 +1,13 @@
+runs/demo/rigs2/xuefeng/idle.npz  [dump:events seed=0]  vs  clips2/xuefeng.npz
+group      n    std    |d|    p95   jerk    still g/a   period g/a
+arm       12   0.15   0.13   0.21   0.00   0.62/ 0.24   0.00/ 0.00
+body       2   0.30   0.11   0.16   0.01   0.65/ 0.59   0.00/ 0.00
+brow       4   0.00   0.00      -   0.00   1.00/ 0.94   0.00/ 0.00
+gaze       2   0.60   0.19   0.32   0.08   0.45/ 0.04   0.03/ 0.00
+head       3   0.67   0.08   0.13   0.01   0.70/ 0.00   0.00/ 0.16
+other      7   0.00   0.00      -   0.00   1.00/ 0.65   0.00/ 0.00
+OVERALL   30   0.18   0.10   0.21   0.00   0.15/ 0.00   0.00/ 0.00
+novelty  nearest-window RMS, median: gen 0.188  authored 0.000  (ratio  inf; vs own clips (leave-one-clip-out for authored); 9 role cols)
+pinned at +-1 (driven cols): gen 0.574  authored 0.536
+toggle in-between (18 switch params): gen 0.000  authored 0.005
+checks: std=FAIL  jerk=ok  toggle=ok  period=ok  face=FAIL  holds=ok  stiff=FAIL   => FAIL   (groups: arm, body, brow)

@@ -1,0 +1,33 @@
+{
+ "speech_seconds": 8.7,
+ "seconds": 10.2,
+ "actions": [
+  {
+   "t": 0.0,
+   "tag": "look",
+   "arg": "up",
+   "at": 0
+  },
+  {
+   "t": 0.9929,
+   "tag": "tilt",
+   "arg": "right",
+   "at": 10
+  },
+  {
+   "t": 4.2,
+   "tag": "look",
+   "arg": "viewer",
+   "at": 51
+  }
+ ],
+ "warnings": [],
+ "model_seconds": 1.461,
+ "first_text_seconds": 0.987,
+ "stop_reason": "stop",
+ "usage": {
+  "prompt_tokens": 546,
+  "completion_tokens": 41,
+  "prompt_cache_hit_tokens": 384
+ }
+}

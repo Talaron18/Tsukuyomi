@@ -1,0 +1,33 @@
+{
+ "speech_seconds": 8.871,
+ "seconds": 10.371,
+ "actions": [
+  {
+   "t": 0.0,
+   "tag": "look",
+   "arg": "viewer",
+   "at": 0
+  },
+  {
+   "t": 2.4,
+   "tag": "blink",
+   "arg": null,
+   "at": 19
+  },
+  {
+   "t": 6.0929,
+   "tag": "look",
+   "arg": "away",
+   "at": 59
+  }
+ ],
+ "warnings": [],
+ "model_seconds": 1.353,
+ "first_text_seconds": 0.99,
+ "stop_reason": "stop",
+ "usage": {
+  "prompt_tokens": 532,
+  "completion_tokens": 39,
+  "prompt_cache_hit_tokens": 384
+ }
+}

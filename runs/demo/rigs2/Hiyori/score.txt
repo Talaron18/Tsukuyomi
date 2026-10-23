@@ -1,0 +1,15 @@
+runs/demo/rigs2/Hiyori/idle.npz  [dump:events seed=0]  vs  clips2/Hiyori.npz
+group      n    std    |d|    p95   jerk    still g/a   period g/a
+arm        4   0.06   0.08   0.01   0.08   0.92/ 0.13   0.00/ 0.00
+body       3   0.26   0.04   0.08   0.01   0.70/ 0.03   0.00/ 0.37
+brow       8   0.44   0.44   0.90   0.05   0.75/ 0.58   0.00/ 0.00
+face       1   0.00   0.00      -   0.00   1.00/ 0.97   0.00/ 0.00
+gaze       2   0.32   0.18   0.38   0.03   0.65/ 0.18   0.01/ 0.00
+hair       1   0.80   0.59   0.50   0.37   0.00/ 0.11   0.00/ 0.36
+head       3   0.42   0.13   0.16   0.02   0.55/ 0.05   0.00/ 0.00
+other      1   0.00   0.00   0.00   0.00   1.00/ 0.89   0.00/ 0.00
+OVERALL   23   0.31   0.25   0.26   0.13   0.00/ 0.00   0.00/ 0.00
+novelty  nearest-window RMS, median: gen 0.245  authored 0.409  (ratio 0.60; vs own clips (leave-one-clip-out for authored); 10 role cols)
+pinned at +-1 (driven cols): gen 0.098  authored 0.144
+toggle in-between (4 switch params): gen 0.000  authored 0.056
+checks: std=FAIL  jerk=ok  toggle=ok  period=ok  face=FAIL  holds=ok  stiff=FAIL   => FAIL   (groups: arm, body, brow, gaze, head)

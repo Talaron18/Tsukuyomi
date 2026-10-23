@@ -1,0 +1,83 @@
+[live2d.v3] Cubism Native, Python 3.10.20
+[live2d.v3] official: https://www.live2d.com/sdk/download/native/
+[INFO]  [Pal] Init Shader Dir: /home/main/venv/hongenv/lib/python3.11/site-packages/live2d/v3/
+[INFO]  [CSM][I]Live2D Cubism Core version: 05.01.0000 (83951616)
+
+[INFO]  [CSM][I]CubismFramework::StartUp() is complete.
+
+[INFO]  [CSM][I]CubismFramework::Initialize() is complete.
+
+[INFO]  allocate: cpp Model(at=0xd6cd0f0)
+[INFO]  load modelSetting: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/xuefeng.model3.json
+[INFO]  create model: xuefeng.moc3
+Live2D Cubism SDK Core Version 5.1.0
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/complete.motion3.json => [_0] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/home.motion3.json => [_1] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/idle.motion3.json => [_2] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/login.motion3.json => [_3] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/mail.motion3.json => [_4] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/main_1.motion3.json => [_5] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/main_2.motion3.json => [_6] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/main_3.motion3.json => [_7] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/mission_complete.motion3.json => [_8] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/mission.motion3.json => [_9] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/touch_body.motion3.json => [_10] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/touch_head.motion3.json => [_11] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/touch_special.motion3.json => [_12] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/wedding.motion3.json => [_13] 
+[INFO]  deallocate: cpp Model(at=0xd6cd0f0)
+[INFO]  deallocate: PyModelObject(at=0x7f45e83bbe50)
+[live2d] third-party wrapper (0.7.0.4), not affiliated with Live2D Inc.
+48 params: expressive 36, physics 1, autonomic 1, mouth 6, discrete 4
+holding 3 whole-model parameters still: PARAM_bodyS, PARAM_moveX, PARAM_moveY
+seeded from clips2/xuefeng.npz
+events: switch-like role columns left to the rig's own motions: brow_l=ParamBrowLY, brow_lx=ParamBrowLX, brow_r=ParamBrowRY, brow_rx=ParamBrowRX
+  role body_x   -> ParamBodyAngleX  [id]
+  role body_z   -> ParamBodyAngleZ  [id]
+  role gaze_x   -> ParamEyeBallX  [id]
+  role gaze_y   -> ParamEyeBallY  [id]
+  role head_x   -> ParamAngleX  [id]
+  role head_y   -> ParamAngleY  [id]
+  role head_z   -> ParamAngleZ  [id]
+events: unbound roles (no standard id; --binding to add): body_y, brow_la, brow_lf, brow_ra, brow_rf
+events: body adapted to the rig's own motions (weights {'body_x': 0.933, 'body_z': 0.933, 'w_hold': 0.844, 'w_move': 0.828}; own holds 9 +18 censored, 3 unanimated clips, moves 24): hold 1.68s move 0.61s p_chain 0.26
+events: rendering 11 tokens from runs/demo/rigs2/xuefeng/say/tokens.json
+events: 7 roles from ev.json; tokens blink 2, body_shift 1, fixate 2, head_turn 3, saccade 2, underlay 1
+base state from idle.motion3.json: 0 part opacities, 39 held parameters
+events: underlay idle.motion3.json x0.5 during rests on 0 loose parameters: none
+events: 0 gesture segments from 14 motion files (arms will score as copying against the rig's own clips; novelty is judged on the role columns)
+snapping 18 switch-like parameters: PARAM_FXeye, PARAM_FXhand, PARAM_Hand_L1, PARAM_Hand_L2, PARAM_Hand_L3, PARAM_Hand_R1, PARAM_Hand_R2, PARAM_Hand_R3, PARAM_hand_L7, PARAM_shangxia, ParamBrowLX, ParamBrowLY, ParamBrowRX, ParamBrowRY, ParamHl4, ParamHl5, ParamHr4, ParamHr5
+backend: order=sandwich, timestep=fixed 0.0333s (native), parts=13
+rendered 276 frames -> runs/demo/rigs2/xuefeng/say/render/
+contact sheet -> runs/demo/rigs2/xuefeng/say/render/sheet.png
+video -> runs/demo/rigs2/xuefeng/say/render/preview.mp4
+director: not offered on this rig: brow:* (no brow roles), lean:* (no body_y role)
+director: 14 gesture labels: complete, home, idle, login, mail, main_1, main_2, main_3, mission, mission_complete, touch_body, touch_head, touch_special, wedding
+deepseek: stop stop; usage {'prompt_tokens': 481, 'completion_tokens': 44, 'prompt_cache_hit_tokens': 256}
+director: model 1.3s, first text after 0.9s
+director: reply: [tilt:right] Miss you? [look:away] As if I had time to think about that. [look:viewer] But fine, you're back, so I guess I'll allow it.
+director: 96 spoken characters, 7.71s speech, 3 actions, 3 subtitles; rendering 9.21s
+48 params: expressive 36, physics 1, autonomic 1, mouth 6, discrete 4
+holding 3 whole-model parameters still: PARAM_bodyS, PARAM_moveX, PARAM_moveY
+seeded from clips2/xuefeng.npz
+events: switch-like role columns left to the rig's own motions: brow_l=ParamBrowLY, brow_lx=ParamBrowLX, brow_r=ParamBrowRY, brow_rx=ParamBrowRX
+  role body_x   -> ParamBodyAngleX  [id]
+  role body_z   -> ParamBodyAngleZ  [id]
+  role gaze_x   -> ParamEyeBallX  [id]
+  role gaze_y   -> ParamEyeBallY  [id]
+  role head_x   -> ParamAngleX  [id]
+  role head_y   -> ParamAngleY  [id]
+  role head_z   -> ParamAngleZ  [id]
+events: unbound roles (no standard id; --binding to add): body_y, brow_la, brow_lf, brow_ra, brow_rf
+events: body adapted to the rig's own motions (weights {'body_x': 0.933, 'body_z': 0.933, 'w_hold': 0.844, 'w_move': 0.828}; own holds 9 +18 censored, 3 unanimated clips, moves 24): hold 1.68s move 0.61s p_chain 0.26
+events: idle profile calm; gestures from 5 of 14 motions (by label): complete 0.1316, home* 0.1316, idle* 0.0629, login 0.1248, mail 0.1316, main_1* 0.1112, main_2* 0.1389, main_3* 0.1316, mission 0.1350, mission_complete 0.1316, touch_body 0.1350, touch_head 0.1565, touch_special 0.1698, wedding 0.0629  (* calm; mean speed/frame)
+director: 3 actions -> 7 tokens; 8 idle tokens overridden
+events: 7 roles from ev.json; tokens blink 2, body_shift 1, fixate 2, head_turn 3, saccade 2, underlay 1
+tokens -> runs/demo/rigs2/xuefeng/say/tokens.json
+base state from idle.motion3.json: 0 part opacities, 39 held parameters
+events: underlay idle.motion3.json x0.5 during rests on 0 loose parameters: none
+events: 0 gesture segments from 14 motion files (arms will score as copying against the rig's own clips; novelty is judged on the role columns)
+snapping 18 switch-like parameters: PARAM_FXeye, PARAM_FXhand, PARAM_Hand_L1, PARAM_Hand_L2, PARAM_Hand_L3, PARAM_Hand_R1, PARAM_Hand_R2, PARAM_Hand_R3, PARAM_hand_L7, PARAM_shangxia, ParamBrowLX, ParamBrowLY, ParamBrowRX, ParamBrowRY, ParamHl4, ParamHl5, ParamHr4, ParamHr5
+dump -> runs/demo/rigs2/xuefeng/say/plan.npz  (276 frames, 36 expressive, 0 parts, mode events seed=0)
+director: /home/main/venv/hongenv/bin/python -m flow.runtime --model 'live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/xuefeng.model3.json' --rig rigs/xuefeng.npz --events ev.json --probe-dir out --fps 30.0 --seed 0 --seconds 9.21 --clips clips2/xuefeng.npz --tokens-in runs/demo/rigs2/xuefeng/say/tokens.json --size 512 --out runs/demo/rigs2/xuefeng/say/render
+director: video with subtitles -> runs/demo/rigs2/xuefeng/say/demo.mp4
