@@ -123,6 +123,14 @@ SHAKE_STROKE = 0.25
 # otherwise for the group's fitted hold median.
 MIN_HOLD = 1.0
 GESTURE_MAX = 8.0       # seconds of a directed motion at most
+# After a directed gesture the arms go back to the idle loop, as Azur Lane
+# returns to its idle after a touch motion: the settle motion (runtime's
+# calm_library, the idle the base state comes from) from its first frame for
+# this long. Without it the player held the gesture's last frame until the
+# next idle gesture -- mid-pose for a motion cut at GESTURE_MAX (aidang_2's
+# touch_special runs past 9.8 s), and under the calm idle profile the next
+# one can be 15-40 s away.
+SETTLE = 2.0
 
 # Speaking rate. Japanese TTS speaks ~7-8 morae/s, Mandarin ~4-5 syllables/s:
 # 6 CJK characters/s sits between. English at ~150 words/min is ~14
@@ -469,14 +477,17 @@ def left_out_text(out):
     return ", ".join(parts)
 
 
-def realize(actions, st, roles, motions, rng, start=None):
+def realize(actions, st, roles, motions, rng, start=None, settle=None):
     """Event tokens for timed actions (timeline()), on the bound `roles` only.
 
     st: the run's statistics (load_stats, adapted). motions: {motion name:
     seconds}. Each directed token carries "src": "director" and, for moves,
     "hold": how long its target is kept before the idle may move the group
     again. Within a group the directed moves run one after another, as
-    events.render would play them anyway.
+    events.render would play them anyway. settle: a motion name; each
+    directed gesture is then followed by SETTLE seconds of it from its first
+    frame (also "src": "director"), unless another directed gesture starts
+    first. No rng is drawn for it.
     """
     bound = set(roles)
     have = {g: [r for r in rs if r in bound] for g, rs in ev.GROUPS.items()}
@@ -591,6 +602,18 @@ def realize(actions, st, roles, motions, rng, start=None):
                         "motion": name, "start": 0.0, "duration": round(d, 4),
                         "fade": st["gesture"]["fade"], "src": "director"})
             busy["arms"] = t + d
+    if settle in motions:
+        ges = [k for k in out if k["type"] == "gesture"]
+        for k, nxt in zip(ges, ges[1:] + [None]):
+            end = round(float(k["t"]) + float(k["duration"]), 4)
+            if nxt is not None and float(nxt["t"]) < end + SETTLE:
+                continue
+            out.append({"t": end, "type": "gesture", "role": "arms",
+                        "motion": settle, "start": 0.0,
+                        "duration": round(min(float(motions[settle]),
+                                              SETTLE), 4),
+                        "fade": st["gesture"]["fade"], "src": "director",
+                        "settle": True})
     return out
 
 
@@ -1036,6 +1059,8 @@ def runtime_args(a, seconds):
         out.append("--no-snap")
     if a.no_idle:
         out.append("--no-idle")
+    if a.idle_profile != "calm":
+        out += ["--idle-profile", a.idle_profile]
     return out
 
 
@@ -1140,6 +1165,11 @@ def main(argv=None) -> int:
     ap.add_argument("--no-idle", action="store_true",
                     help="blinks only besides the tags: for checking what "
                          "each tag does")
+    ap.add_argument("--idle-profile", default="calm",
+                    choices=("calm", "authored"),
+                    help="the idle between and under the tags (flow.runtime "
+                         "--idle-profile); authored: as before the calm "
+                         "profile")
     ap.add_argument("--say", default=None, help="the user's message")
     ap.add_argument("--persona", default=None, help="who the character is "
                     "(first line of the system prompt)")

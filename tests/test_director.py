@@ -189,6 +189,38 @@ def test_directed_gesture_takes_the_arms():
     assert any(k["t"] >= 9.0 for k in ges)              # idle resumes after
 
 
+def test_directed_performance_plays_and_settles_back_to_the_idle():
+    """The calm idle never plays touch_head; a tag still does, then the
+    arms go back to the idle loop unless another tag's gesture comes."""
+    st = _st()
+    motions = {"touch_head.motion3.json": 12.0, "idle.motion3.json": 11.0,
+               "login.motion3.json": 5.0}
+    acts = [{"t": 1.0, "tag": "gesture", "arg": "touch_head"},
+            {"t": 20.0, "tag": "gesture", "arg": "login"},
+            {"t": 26.0, "tag": "gesture", "arg": "touch_head"}]
+    plain = dr.realize(acts, st, [], motions, np.random.default_rng(0))
+    assert not any(k.get("settle") for k in plain)        # settle=None: as was
+    toks = dr.realize(acts, st, [], motions, np.random.default_rng(0),
+                      settle="idle.motion3.json")
+    ges = sorted((k for k in toks if k["type"] == "gesture"),
+                 key=lambda k: k["t"])
+    assert [(k["motion"], k.get("settle", False)) for k in ges] == [
+        ("touch_head.motion3.json", False), ("idle.motion3.json", True),
+        ("login.motion3.json", False),          # login ends at 25 < 26 + 2
+        ("touch_head.motion3.json", False), ("idle.motion3.json", True)]
+    assert ges[0]["duration"] == dr.GESTURE_MAX
+    assert ges[1]["t"] == 1.0 + dr.GESTURE_MAX and ges[1]["start"] == 0.0
+    assert ges[1]["duration"] == dr.SETTLE
+    assert all(k["src"] == "director" for k in ges)
+    assert [k for k in toks if not k.get("settle")] == plain
+    # The idle under it gives way as before (merge is unchanged).
+    idle = [{"t": 9.5, "type": "gesture", "role": "arms",
+             "motion": "idle.motion3.json", "start": 3.0, "duration": 4.0,
+             "fade": 0.5}]
+    merged = dr.merge(idle, toks)
+    assert not [k for k in merged if "src" not in k and k["type"] == "gesture"]
+
+
 class _FakeStream:
     def __init__(self, chunks, stop):
         self.chunks, self.stop = chunks, stop
@@ -413,9 +445,15 @@ def test_file_backend_end_to_end_replays_bit_for_bit(tmp_path, capsys):
     mine = [k for k in toks if k.get("src") == "director"]
     assert {k["type"] for k in mine} >= {"saccade", "head_turn", "brow",
                                          "gesture"}
-    assert [k["motion"] for k in mine if k["type"] == "gesture"] == [
-        "home.motion3.json"]
+    assert [k["motion"] for k in mine if k["type"] == "gesture"
+            and not k.get("settle")] == ["home.motion3.json"]
+    # ... and then back to the idle loop (director.SETTLE).
+    settle = [k for k in mine if k.get("settle")]
+    assert len(settle) == 1 and settle[0]["start"] == 0.0
     assert any(k.get("src") is None for k in toks)      # the idle is there
+    # The calm idle plays home (a calm label), never m, which only a tag may.
+    assert {k["motion"] for k in toks if k["type"] == "gesture"
+            and k.get("src") is None} <= {"home.motion3.json"}
     # The printed render command, as a dump-only replay.
     cmd = [ln for ln in log.splitlines() if "--tokens-in" in ln][0]
     import shlex

@@ -105,6 +105,41 @@ Against the rig's own clips the arm part WILL score as copying -- expected.
 Novelty is measured on the role columns, and the claim of new motion rests
 on the event sequencing and targets there.
 
+Idle profile (stats["idle"], runtime --idle-profile)
+----------------------------------------------------
+Everything above is fitted to what riggers author, and riggers author
+performances: Azur Lane ships login, touch_*, mission_complete, wedding ...
+(12 labels shared by 40 rigs, only idle/main/home of them calm), and even
+the Cubism samples' "Idle" groups are continuous sways, not people standing
+(body_x std 0.51 over Hiyori's nine Idle motions against 0.22 for its
+TapBody one; Mark, all Idle, chains 88% of its body moves). Scheduled
+as is on aidang_2 (server, seed 0, 38 s): a body shift every 0.5-1.5 s with
+body_x targets over -0.98..+0.43, and a gesture back to back every ~3-5 s,
+touch_head, touch_special, complete, login, touch_body among them -- "non
+human". Fitting on idle-labelled motions only would not fix the body (the
+Idle groups sway as much) and leaves most rigs a handful of clips, so the
+idle is a profile on top of the fit, applied by `idle_view` to a copy that
+only `schedule` sees:
+
+  body      holds of at least IDLE["body_hold"] (median 5 s), each shift
+            ending in a hold (no chaining), moves of at least 1.5 s, and
+            targets at IDLE["body_spread"] (0.4) of the fitted spread and
+            range about the unchanged centre. 5 s lies among the training
+            rigs that shift and then rest (lafei_4 2.7 s, huangjiafangzhou_3
+            6.9 s, huonululu_5 33 s; see adapt) rather than the sway two
+            thirds of them author (0.16-0.54 s).
+  gestures  only the rig's calm motions (calm_motions: idle/main/home by
+            file label, else the model's "Idle" group, else the calmer half
+            by mean speed), one after a rest of median 15 s: onsets about
+            every 10-40 s. The performances stay for [gesture:...] tags.
+  face      head, gaze and brow keep the fitted statistics: they already
+            hold as often as authored (scorer's holds/face checks), and the
+            head std on aidang_2 is 0.73 of authored against a 0.5 floor.
+
+Directors' moves (flow.director) use the fitted statistics, not the view, so
+a directed look or lean still reaches as far as the rig authors. The profile
+"authored" is the scheduler as it was before, rng draw for rng draw.
+
 Blinks are not fitted (eye-open is the autonomic band and not in the clips):
 a saccade larger than BLINK_AMP requests a blink with probability P_BLINK,
 fed to runtime.Autonomic, which keeps its own Poisson blinks and breath.
@@ -117,6 +152,7 @@ import glob
 import json
 import math
 import os
+import re
 import sys
 
 import numpy as np
@@ -185,6 +221,32 @@ DEFAULTS = {
                 "fade": 0.5, "calm_of": 1, "flip_cost": 0.5},
     "rigs": [], "n_clips": 0, "per_rig": {},
 }
+# The idle profile (see the module docstring). Hand-set, not fitted: the
+# clips are performances. Not part of a fit's output; load_stats adds it
+# under "idle" (a stats file may override keys), so an ev.json fitted
+# before this needs no refit.
+IDLE = {
+    "profile": "calm",          # "authored": the fitted scheduler as is
+    "body_spread": 0.4,         # x fitted body spread, range and amplitude
+    "body_hold": [5.0, 0.6],    # floor on the hold median (s) / its sigma
+    "body_move": 1.5,           # floor on the move median (s): a slow shift
+    "body_p_chain": 0.0,        # every shift ends in a hold
+    # Floor on the body targets' persistence (_rho). The fitted swing
+    # (rho at its -0.6 clip on the pool) alternates sides at every shift;
+    # with 5 s holds that is a metronome: body periodic peak 0.77 on Hiyori
+    # seed 3 (check 0.6). At 0 each shift lands anywhere about the centre.
+    "body_rho_min": 0.0,
+    # Gesture overrides: a calm segment (seg as fitted) after a rest of
+    # median 15 s (90%: 6.6-34 s), and the first one after a lead-in rather
+    # than at t = 0 (the base state is already the idle's first frame).
+    "gesture": {"rest": [15.0, 0.5], "p_rest": 1.0, "lead": [6.0, 0.6]},
+}
+# Motion file labels (basename, lower case, no extension or _<n> suffix)
+# that are calm enough to play unprompted. Azur Lane's idle is the loop the
+# game plays while the character stands, main_<n> and home its main-screen
+# lines; everything else it ships (login, touch_*, mission*, complete,
+# mail, wedding) is a reaction to a tap or an event.
+CALM_LABELS = ("idle", "main", "home")
 
 
 # ---------------------------------------------------------------- binding
@@ -713,14 +775,90 @@ def adapt(st, own, groups=ADAPT_GROUPS, prior_events=PRIOR_EVENTS,
 
 def load_stats(path):
     base = json.loads(json.dumps(DEFAULTS))
+    base["idle"] = json.loads(json.dumps(IDLE))
     if not path or path == "default":
         return base
     with open(path, encoding="utf-8") as fh:
         st = json.load(fh)
-    for k in ("groups", "roles", "brow_loading", "gesture", "head_follow"):
+    for k in ("groups", "roles", "brow_loading", "gesture", "head_follow",
+              "idle"):
         base[k].update(st.get(k, {}))
         st[k] = base[k]
     return {**base, **st}
+
+
+# ------------------------------------------------------------ idle profile
+
+def motion_label(name):
+    """"main_2.motion3.json" -> "main": basename, lower case, without the
+    extension and a trailing _<n> (Azur Lane numbers its main lines)."""
+    b = os.path.basename(str(name)).lower()
+    for ext in (".motion3.json", ".json"):
+        if b.endswith(ext):
+            b = b[:-len(ext)]
+            break
+    return re.sub(r"_\d+$", "", b)
+
+
+def calm_motions(names, groups=None, energy=None, labels=CALM_LABELS):
+    """(calm names, how): the motions an idle may play unprompted.
+
+    names: motion file basenames. groups: {name: model3 motion group}.
+    energy: {name: mean normalised per-frame speed}. By label first (an
+    Azur Lane rig loads all its motions into one unnamed group, so its file
+    names are what says which is the idle), then by the model's "Idle" group
+    (Cubism samples: TapBody holds the reactions), then the calmer half by
+    energy, then all of them -- an idle with no gesture at all would hold
+    the arms for good.
+    """
+    names = list(names)
+    got = [n for n in names if motion_label(n) in labels
+           or "idle" in motion_label(n)]
+    if got:
+        return got, "label"
+    got = [n for n in names if str((groups or {}).get(n, "")).lower()
+           == "idle"]
+    if got:
+        return got, "group"
+    if energy and all(n in energy for n in names) and len(names) > 1:
+        med = float(np.median([energy[n] for n in names]))
+        return [n for n in names if energy[n] <= med], "energy"
+    return names, "all"
+
+
+def idle_view(st):
+    """The statistics `schedule` plans the idle with: `st` itself under the
+    "authored" profile, else a copy with the calm body and gesture timing of
+    stats["idle"] (module docstring). Roles' centres are not touched, so a
+    run starts where it did, and directed moves keep the fitted ranges."""
+    P = st.get("idle") or IDLE
+    if P.get("profile", "calm") != "calm":
+        return st
+    st = json.loads(json.dumps(st))
+    f = float(P.get("body_spread", 1.0))
+    for r in GROUPS["body"]:
+        R = st["roles"][r]
+        c = R["center"]
+        R["std"] *= f
+        R["lo"], R["hi"] = c + f * (R["lo"] - c), c + f * (R["hi"] - c)
+    G = st["groups"]["body"]
+    # Amplitudes shrink with the spread: _rho sets the targets' persistence
+    # from amp_rms^2 / std^2, and shrinking the spread alone sent rho to its
+    # -0.6 clip (a swing from side to side at every shift); and _move_dur
+    # scales duration by amp / median amp.
+    G["amp"] = [G["amp"][0] * f, G["amp"][1]]
+    G["amp_rms"] = G.get("amp_rms", 0.0) * f
+    h = P.get("body_hold")
+    if h:
+        G["hold"] = [max(G["hold"][0], h[0]), h[1]]
+    if P.get("body_move"):
+        G["move"] = [max(G["move"][0], P["body_move"]), G["move"][1]]
+    if P.get("body_p_chain") is not None:
+        G["p_chain"] = min(G.get("p_chain", 0.0), P["body_p_chain"])
+    if P.get("body_rho_min") is not None:
+        G["rho_min"] = P["body_rho_min"]
+    st["gesture"].update(P.get("gesture", {}))
+    return st
 
 
 # ------------------------------------------------------------ event layer
@@ -754,7 +892,9 @@ def _rho(st, g, cols):
     # Authored heads and bodies step further than independent draws would
     # (Mark, Rice: rms step 1.2x sqrt(2 sum std^2)): they swing from one side
     # to the other. That is a negative rho, kept down to -0.6.
-    return float(np.clip(1 - a2 / (2 * var), -0.6, 0.95))
+    # A group may raise the floor (idle_view's calm body).
+    return float(np.clip(1 - a2 / (2 * var),
+                         st["groups"][g].get("rho_min", -0.6), 0.95))
 
 
 def _ar_target(st, cols, pos, rho, rng, dev=None, scale=1.0):
@@ -777,7 +917,10 @@ def schedule(st, roles, seconds, rng, gestures=None, start=None):
     roles: role names that are bound (others get no tokens).
     gestures: [(name, n_seconds)] of the rig's motions, or None.
     start: {role: value} initial positions (default the centres).
+    Planned with idle_view(st): the calm idle profile unless stats["idle"]
+    says "authored".
     """
+    st = idle_view(st)
     roles = [r for r in roles if r in ALL_ROLES]
     have = {g: [r for r in rs if r in roles] for g, rs in GROUPS.items()}
     pos = {r: (start or {}).get(r, st["roles"][r]["center"]) for r in roles}
@@ -956,6 +1099,10 @@ def schedule_gestures(st, gestures, seconds, rng):
     out, t, last, cur_state = [], 0.0, None, None
     if not lib:
         return out
+    if G.get("lead"):
+        # Calm profile: the run opens at rest (the base state is the idle's
+        # first frame), not with a gesture at t = 0.
+        t = _lognormal(rng, G["lead"])
     while t < seconds:
         pool = [g for g in lib if g["name"] != last] or lib
         cands = []

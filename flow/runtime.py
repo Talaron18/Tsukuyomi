@@ -34,7 +34,9 @@ Expressive sources, one per run:
                          head, body and brow roles as fixate/saccade/hold
                          events, arms as cross-faded segments of the rig's
                          own motion files; --tokens dumps the event stream,
-                         --direct merges flow.director's timed action tags
+                         --direct merges flow.director's timed action tags;
+                         --idle-profile calm (default) rests the body and
+                         plays only calm motions, rarely (events.idle_view)
   --behaviors stats.json hand-made baseline (flow.behaviors) driving only the
                          head/body/gaze/brow roles; other expressive
                          parameters are held at the idle's first frame and
@@ -374,6 +376,45 @@ def bind_events(events, model_json, pids, allowed, lo, hi, motions, fps,
     return stats, roles, sw_roles
 
 
+def motion_groups(model_json):
+    """{motion basename: model3 motion group} ("Idle", "TapBody", ...)."""
+    try:
+        with open(model_json, encoding="utf-8") as fh:
+            groups = json.load(fh).get("FileReferences", {}).get("Motions",
+                                                                 {})
+    except Exception:  # noqa: BLE001
+        return {}
+    return {os.path.basename(e["File"]): g for g, es in groups.items()
+            for e in es if isinstance(e, dict) and e.get("File")}
+
+
+def calm_library(gest, model_json, log=print):
+    """(calm gesture_library entries, settle motion name) for the calm idle
+    profile: the motions events.calm_motions picks, logged with every
+    motion's mean speed (normalised units per frame over the parameters a
+    gesture writes), the only view the log gives of a rig's motions. The
+    settle motion is the one a directed gesture returns to: the idle loop
+    the base state was taken from where there is one."""
+    try:
+        from . import events as ev
+    except ImportError:
+        from flow import events as ev
+    energy = {g["name"]: float(np.mean(g["vel"])) for g in gest if "vel" in g}
+    names, how = ev.calm_motions([g["name"] for g in gest],
+                                 motion_groups(model_json), energy)
+    calm = [g for g in gest if g["name"] in names]
+    log(f"events: idle profile calm; gestures from {len(calm)} of "
+        f"{len(gest)} motions (by {how}): "
+        + ", ".join(f"{g['name'].replace('.motion3.json', '')}"
+                    f"{'*' if g['name'] in names else ''} "
+                    f"{energy.get(g['name'], float('nan')):.4f}"
+                    for g in gest)
+        + "  (* calm; mean speed/frame)")
+    settle = next((n for n in names if "idle" in n.lower()), names[0]
+                  if names else None)
+    return calm, settle
+
+
 def event_roles(model_json, rig, events, clips=None, binding=None, fps=30.0,
                 no_snap=False, pool_only=False, log=print):
     """bind_events for a rig on disk, as main does it for --events: what
@@ -415,6 +456,14 @@ def main(argv=None) -> int:
                     help="--events: use the pooled statistics as fitted, "
                          "without adapting the body to the rig's own motion "
                          "files (events.adapt)")
+    ap.add_argument("--idle-profile", default="calm",
+                    choices=("calm", "authored"),
+                    help="--events: how the scheduled idle moves. calm "
+                         "[default]: long body holds, small sway, a calm "
+                         "motion (idle/main/home, or the model's Idle group) "
+                         "every ~10-40 s (events.idle_view); authored: the "
+                         "fitted statistics as is, every motion file back "
+                         "to back (the scheduler before the calm profile)")
     ap.add_argument("--tokens", default=None, metavar="OUT.json",
                     help="--events: write the scheduled event tokens here")
     ap.add_argument("--tokens-in", default=None, metavar="IN.json",
@@ -623,7 +672,9 @@ def main(argv=None) -> int:
         stats, roles, sw_roles = bind_events(
             a.events, a.model, pids, [pids[i] for i in expressive], lo, hi,
             motions, a.fps, a.binding, a.no_snap, a.events_pool_only)
+        stats["idle"]["profile"] = a.idle_profile
         start = {r: stats["roles"][r]["center"] for r in roles}
+        settle = None
         if a.tokens_in:
             with open(a.tokens_in, encoding="utf-8") as fh:
                 blob = json.load(fh)
@@ -641,6 +692,8 @@ def main(argv=None) -> int:
                 motions, lambda p: p in pid_index0 and gkeep0(p),
                 dict(zip(pids, lo.tolist())), dict(zip(pids, hi.tolist())),
                 sw, a.fps)
+            if a.idle_profile == "calm" and gest:
+                gest, settle = calm_library(gest, a.model)
             tokens = ev.schedule(stats, list(roles), a.seconds, rng, gest,
                                  start)
             if a.no_idle:
@@ -658,7 +711,8 @@ def main(argv=None) -> int:
                 directed = dr.realize(
                     acts, stats, list(roles),
                     {n: m["frames"] / a.fps for n, m in motions},
-                    np.random.default_rng([a.seed, 1]), start)
+                    np.random.default_rng([a.seed, 1]), start,
+                    settle=settle)
                 n_idle = len(tokens)
                 tokens = dr.merge(tokens, directed)
                 print(f"director: {len(acts)} actions -> {len(directed)} "
@@ -682,6 +736,8 @@ def main(argv=None) -> int:
             with open(a.tokens, "w", encoding="utf-8") as fh:
                 json.dump({"seconds": a.seconds, "fps": a.fps,
                            "seed": a.seed,
+                           "idle_profile": (None if a.tokens_in
+                                            else a.idle_profile),
                            "roles": {r: [p, sg] for r, (p, sg, _)
                                      in roles.items()},
                            "tokens": tokens}, fh, indent=0)

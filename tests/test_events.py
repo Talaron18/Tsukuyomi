@@ -302,7 +302,9 @@ def test_events_leave_switch_brows_to_the_rigs_motions(tmp_path):
     assert main(["--model", str(model), "--rig", str(rig), "--events",
                  "default", "--seconds", "60", "--seed", "1", "--dump-only",
                  "--probe-dir", str(tmp_path), "--dump", str(out),
-                 "--tokens", str(tok)]) == 0
+                 "--tokens", str(tok),
+                 # every motion back to back, so m0 surely plays its brow
+                 "--idle-profile", "authored"]) == 0
     a = np.load(out, allow_pickle=True)
     b = a["traj"][:, list(a["pid"]).index("ParamBrowLY")]
     assert "brow_l" not in json.loads(tok.read_text())["roles"]
@@ -346,6 +348,8 @@ def test_motion_clips_match_the_clips_file():
 def test_adapt_moves_the_body_toward_the_rigs_own_motions():
     rng = np.random.default_rng(0)
     pool = ev.load_stats("default")
+    # Adaptation as fitted: the calm idle profile would floor the holds.
+    pool["idle"]["profile"] = "authored"
     # A pool whose body never rests (the median training rig) ...
     pool["groups"]["body"].update(hold=[0.3, 0.5], move=[0.6, 0.3],
                                   p_chain=0.7, amp_rms=0.5)
@@ -375,3 +379,80 @@ def test_adapt_moves_the_body_toward_the_rigs_own_motions():
     # Nothing of its own (no motion keys the body): the pool as it was.
     none = ev.adapt(pool, ev.fit_clips(iter([])))
     assert none["groups"] == pool["groups"]
+
+
+AL_NAMES = ("complete", "home", "idle", "login", "mail", "main_1", "main_2",
+            "main_3", "mission_complete", "mission", "touch_body",
+            "touch_head", "touch_special", "wedding")
+
+
+def test_calm_motions_by_label_group_then_energy():
+    al = [n + ".motion3.json" for n in AL_NAMES]
+    names, how = ev.calm_motions(al, {n: "" for n in al})
+    assert how == "label"
+    assert sorted(ev.motion_label(n) for n in names) == [
+        "home", "idle", "main", "main", "main"]
+    cub = ["m01.motion3.json", "m02.motion3.json", "m04.motion3.json"]
+    names, how = ev.calm_motions(cub, {"m01.motion3.json": "Idle",
+                                       "m02.motion3.json": "Idle",
+                                       "m04.motion3.json": "TapBody"})
+    assert (names, how) == (cub[:2], "group")
+    names, how = ev.calm_motions(cub, {}, {cub[0]: 0.3, cub[1]: 0.1,
+                                           cub[2]: 0.2})
+    assert (sorted(names), how) == (sorted(cub[1:]), "energy")
+    assert ev.calm_motions(cub[:1]) == (cub[:1], "all")
+
+
+def test_idle_view_calms_the_body_only_and_authored_is_untouched():
+    st = ev.load_stats("default")
+    st["groups"]["body"].update(hold=[0.16, 1.0], move=[1.07, 0.5],
+                                p_chain=0.5)
+    keep = json.loads(json.dumps(st))
+    v = ev.idle_view(st)
+    assert st == keep                                     # not mutated
+    B = v["groups"]["body"]
+    assert B["hold"] == [5.0, 0.6] and B["move"][0] == 1.5
+    assert B["p_chain"] == 0.0 and B["rho_min"] == 0.0
+    for r in ev.GROUPS["body"]:
+        R, R0 = v["roles"][r], st["roles"][r]
+        assert R["center"] == R0["center"]
+        assert R["std"] == pytest.approx(0.4 * R0["std"])
+        assert R["hi"] - R["lo"] == pytest.approx(0.4 * (R0["hi"] - R0["lo"]))
+    for g in ("gaze", "head", "brow"):
+        assert v["groups"][g] == st["groups"][g]
+    assert v["gesture"]["rest"] == [15.0, 0.5] and v["gesture"]["lead"]
+    st["idle"]["profile"] = "authored"
+    assert ev.idle_view(st) is st
+
+
+def test_calm_idle_rests_and_plays_only_calm_motions():
+    """aidang_2 on the server, 38 s: a body shift every 0.5-1.5 s and a
+    gesture every ~3-5 s, touch_*/login/complete among them."""
+    al = [n + ".motion3.json" for n in AL_NAMES]
+    lib = [{"name": n, "seconds": 10.0} for n in al]
+    calm, _ = ev.calm_motions(al)
+    roles = ["head_x", "head_y", "head_z", "body_x", "body_y", "brow_l"]
+    rates, gaps, motions, busy, before_rates = [], [], set(), [], []
+    st = ev.load_stats("default")
+    # The body as the server adapted it to aidang_2's own motions.
+    st["groups"]["body"].update(hold=[0.16, 1.0], move=[1.07, 0.5],
+                                p_chain=0.5)
+    old = json.loads(json.dumps(st))
+    old["idle"]["profile"] = "authored"
+    for seed in range(8):
+        toks = ev.schedule(st, roles, 120.0, np.random.default_rng(seed),
+                           [g for g in lib if g["name"] in calm])
+        ges = [k for k in toks if k["type"] == "gesture"]
+        motions |= {k["motion"] for k in ges}
+        gaps += list(np.diff([k["t"] for k in ges]))
+        busy.append(sum(k["duration"] for k in ges) / 120.0)
+        rates.append(sum(k["type"] == "body_shift" for k in toks) / 2.0)
+        before = ev.schedule(old, roles, 120.0, np.random.default_rng(seed),
+                             lib)
+        before_rates.append(sum(k["type"] == "body_shift"
+                                for k in before) / 2.0)
+    assert motions and motions <= set(calm)
+    assert 10.0 <= np.median(gaps) <= 40.0 and min(gaps) > 4.0
+    assert np.mean(busy) < 0.4
+    assert np.mean(rates) <= 12.0                       # shifts per minute
+    assert np.mean(before_rates) > 3 * np.mean(rates)
