@@ -78,8 +78,20 @@ NEVER_SNAP = ("gaze", "head", "body")
 
 
 def snappable(pid: str, rig_group: str) -> bool:
+    """Whether a switch-like parameter may be snapped to its two states.
+
+    Arm and hand rotations are continuous too, even when animators park them:
+    aidang_2 snapped ParamArmForeLDAngel, ParamArmUpperLDAngel and others
+    ("Angel" is the rig's spelling), and its arms moved 0.28x authored frame
+    to frame; unsnapped they reached 0.48x. Arm swaps (…T, …Switch) stay
+    snappable -- unsnapped, switch params sat in between 42% of the time.
+    """
+    low = pid.lower()
+    arm = rig_group == "arm" or group_of(pid) == "arm"
+    rotation = any(k in low for k in ("angle", "angel", "rotat"))
     return (rig_group not in NEVER_SNAP
-            and group_of(pid) not in NEVER_SNAP)
+            and group_of(pid) not in NEVER_SNAP
+            and not (arm and rotation))
 
 
 def protected_from_hold(pid: str, rig_group: str) -> bool:
@@ -286,6 +298,9 @@ def main(argv=None) -> int:
     ap.add_argument("--binding", default=None, metavar="FILE.json",
                     help="--behaviors role binding override: "
                          '{"head_x": "ParamFoo"} or {"head_x": ["ParamFoo", -1]}')
+    ap.add_argument("--static-fade", type=float, default=0.5,
+                    help="--static: seconds to cross-fade from one motion "
+                         "file into the next (Live2D fades too); 0 cuts")
     ap.add_argument("--smooth", type=float, default=0.08,
                     help="flow checkpoint: seconds of causal smoothing on the "
                          "generated motion (~2x this in lag); 0 disables")
@@ -613,6 +628,7 @@ def main(argv=None) -> int:
               f"opacities, {len(base_params)} held parameters")
 
     static_frames = None
+    static_fade = 0
     if a.static and motions:
         # Replay the motion files themselves, every curve in the rig's own
         # units. The clips hold only the expressive band, normalised, so a
@@ -620,6 +636,10 @@ def main(argv=None) -> int:
         # parameter the probe never kept -- the arm switches among them.
         seq = [(m, t) for _, m in motions for t in range(m["frames"])]
         static_frames = [seq[f % len(seq)] for f in range(n_frames)]
+        # Live2D fades one motion into the next instead of cutting. Without
+        # it every file boundary popped to a new pose: 2-44 jumps per 20 s
+        # preview on the server, read as blinking.
+        static_fade = int(round(a.static_fade * a.fps))
         print(f"STATIC: replaying {len(motions)} motion files curve for curve "
               f"({len(seq) / a.fps:.1f}s incl. part opacities)")
     elif a.static:
@@ -659,14 +679,28 @@ def main(argv=None) -> int:
     segment = np.zeros(n_frames, np.int32)
     span_x = np.maximum(hi[expressive] - lo[expressive], 1e-6)
     seg_id = -1
+    fade_from = None
+    pid_index = {p: i for i, p in enumerate(pids)}
     for f in range(n_frames):
         if static_frames is not None:
             m, t = static_frames[f]
             if t == 0:
                 seg_id += 1
+                fade_from = (frames[-1] if frames else None)
             segment[f] = max(seg_id, 0)
             over = {p: float(v[t]) for p, v in m["params"].items()}
             parts = {p: float(v[t]) for p, v in m["parts"].items()}
+            if static_fade > 0 and fade_from is not None and t < static_fade:
+                w = 0.5 - 0.5 * np.cos(np.pi * (t + 1) / (static_fade + 1))
+                po, pp = fade_from
+                # A parameter the new motion leaves alone returns to its
+                # default once the fade ends, so fade toward that rather than
+                # hold it and drop at the end. Parts keep their opacity.
+                for p, v in po.items():
+                    over[p] = (1 - w) * v + w * over.get(
+                        p, float(dflt[pid_index[p]]) if p in pid_index else v)
+                for p, v in (pp or {}).items():
+                    parts[p] = (1 - w) * v + w * parts.get(p, v)
             for col, i in enumerate(expressive):
                 if pids[i] in over:
                     applied[f, col] = (over[pids[i]] - lo[i]) / span_x[col] * 2 - 1

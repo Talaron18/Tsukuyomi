@@ -165,3 +165,12 @@ def test_smooth_causal_uses_only_the_past_and_cuts_jitter():
     y2 = smooth_causal(x2.astype(np.float32), 0.08, 30.0)
     assert np.array_equal(y[:200], y2[:200])               # past unaffected
     assert smooth_causal(x, 0, 30.0) is x
+
+
+def test_arm_rotations_are_not_snapped_but_arm_swaps_are():
+    from flow.runtime import snappable
+    for pid in ("ParamArmForeLDAngel", "ParamArmUpperLDAngel",
+                "ParamHandRAngle", "ParamArmRotate"):
+        assert not snappable(pid, "arm"), pid
+    for pid in ("ParamArmL2Hand1T", "ParamHandLDChangePa"):
+        assert snappable(pid, "arm"), pid
