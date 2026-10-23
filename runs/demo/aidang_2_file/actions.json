@@ -1,0 +1,43 @@
+{
+ "speech_seconds": 4.029,
+ "seconds": 6.821,
+ "actions": [
+  {
+   "t": 0.0,
+   "tag": "look",
+   "arg": "left",
+   "at": 0
+  },
+  {
+   "t": 0.7071,
+   "tag": "look",
+   "arg": "up",
+   "at": 6
+  },
+  {
+   "t": 1.2714,
+   "tag": "tilt",
+   "arg": "right",
+   "at": 10
+  },
+  {
+   "t": 1.9786,
+   "tag": "lean",
+   "arg": "in",
+   "at": 16
+  },
+  {
+   "t": 2.6857,
+   "tag": "nod",
+   "arg": null,
+   "at": 22
+  },
+  {
+   "t": 3.3214,
+   "tag": "brow",
+   "arg": "up",
+   "at": 27
+  }
+ ],
+ "warnings": []
+}
