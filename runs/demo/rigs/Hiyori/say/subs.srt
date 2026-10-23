@@ -1,0 +1,12 @@
+1
+00:00:00,000 --> 00:00:00,500
+Oh!
+
+2
+00:00:00,564 --> 00:00:01,279
+You're back!
+
+3
+00:00:01,700 --> 00:00:05,057
+I was starting to think you'd forgotten about me.
+
