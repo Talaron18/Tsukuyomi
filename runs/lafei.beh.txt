@@ -4,8 +4,8 @@ arm        9   0.00   0.00   0.00   0.00   1.00/ 0.09   0.00/ 0.00
 body       2   0.89   0.25   0.28   0.09   0.53/ 0.32   0.00/ 0.00
 gaze       2   0.73   0.49   0.89   0.19   0.32/ 0.06   0.19/ 0.43
 head       3   0.56   0.29   0.43   0.42   0.12/ 0.00   0.29/ 0.00
-other      9   0.00   0.00   0.00   0.00   1.00/ 0.12   0.00/ 0.00
-OVERALL   25   0.18   0.22   0.41   0.03   0.05/ 0.00   0.00/ 0.00
+other      5   0.00   0.00   0.00   0.00   1.00/ 0.15   0.00/ 0.00
+OVERALL   21   0.19   0.22   0.41   0.03   0.05/ 0.00   0.00/ 0.00
 novelty  nearest-window RMS, median: gen 0.114  authored 0.163  (ratio 0.70; vs 31 reference rigs; 9 role cols)
 diversity  mean pairwise RMS over 3 runs, first 10s: 0.169
 toggle in-between (16 switch params): gen 0.000  authored 0.038

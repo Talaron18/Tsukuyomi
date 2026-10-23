@@ -1,0 +1,15 @@
+runs/aidang_2.beh.0.npz  [dump:behaviors seed=0]  vs  clips2/aidang_2.npz
+group      n    std    |d|    p95   jerk    still g/a   period g/a
+arm       36   0.00   0.00   0.00   0.00   1.00/ 0.00   0.00/ 0.88
+body       2   0.44   0.16   0.30   0.03   0.58/ 0.00   0.15/ 0.00
+brow       5   0.13   0.09   0.10   0.13   0.75/ 0.65   0.00/ 0.00
+gaze       3   0.55   2.29   5.53   1.05   0.32/ 0.85   0.19/ 0.00
+hair       7   0.00   0.00   0.00   0.00   1.00/ 0.00   0.00/ 0.97
+head       3   0.41   0.32   0.43   0.52   0.12/ 0.00   0.29/ 0.00
+other     37   0.01   0.00   0.00   0.00   0.67/ 0.00   0.09/ 0.31
+OVERALL   93   0.03   0.02   0.04   0.00   0.05/ 0.00   0.13/ 0.82
+novelty  nearest-window RMS, median: gen 0.116  authored 0.260  (ratio 0.45; vs 31 reference rigs; 9 role cols)
+diversity  mean pairwise RMS over 3 runs, first 10s: 0.191
+toggle in-between (37 switch params): gen 0.037  authored 0.068
+checks: std=FAIL  jerk=ok  toggle=ok  period=ok   => FAIL
+-> runs/aidang_2.beh.json

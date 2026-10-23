@@ -7,7 +7,7 @@ gaze       2   0.88   0.75   0.70   0.69   0.60/ 0.55   0.00/ 0.00
 head       4   0.96   0.90   0.93   0.75   0.03/ 0.05   0.00/ 0.00
 other     10   1.04   0.96   1.13   1.10   0.66/ 0.66   0.00/ 0.00
 OVERALL   46   0.96   0.93   0.94   1.00   0.03/ 0.05   0.00/ 0.00
-novelty  nearest-window RMS, median: gen 0.126  authored 0.136  (ratio 0.92; vs 34 reference rigs; 10 role cols)
+novelty  nearest-window RMS, median: gen 0.128  authored 0.133  (ratio 0.96; vs 31 reference rigs; 10 role cols)
 diversity  mean pairwise RMS over 3 runs, first 10s: 0.000
 toggle in-between (21 switch params): gen 0.057  authored 0.053
 checks: std=ok  jerk=ok  toggle=ok  period=ok   => PASS
