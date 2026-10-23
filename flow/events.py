@@ -73,6 +73,20 @@ next one (p_chain) or ends in a hold.
              with the nearest head move; P(brow change | large saccade);
              body-on-head slope; brow loadings on the brow heights.
 
+The rig's own motion files (runtime, --events)
+----------------------------------------------
+Two things are taken from the motion files the rig ships, which the
+gestures replay anyway; --events-pool-only turns the second off.
+
+  switches   a role column the rig's motions use as a switch (xuefeng's
+             brows, aidang_2's eyeballs) is not event-driven; the gesture
+             layer plays it (drop_switch_roles).
+  body       body hold, move and amplitude statistics and the body roles'
+             centre, spread and range are shrunk from the pool toward the
+             rig's own (fit_clips on motion_clips; adapt): the training rigs
+             split into bodies that sway all the time and bodies that shift
+             and then rest, and the rig-median pool is a sway.
+
 Gestures
 --------
 Arm parameters are rig-specific (pinyin names, ...T switches) and cannot be
@@ -140,6 +154,11 @@ STILL_EPS = 0.002       # = flow.score.STILL_EPS (not imported: score imports us
 MIN_HOLD = 3            # frames of velocity below STILL_EPS to call a hold
 DIP = 0.5               # sub-movement split: speed minimum below DIP x peaks
 MIN_EVENTS = 3          # complete events a rig needs to count for a statistic
+# Adaptation to the rig's own motion files (adapt): which groups, and how
+# many events / clips of the rig's own count as much as the pool.
+ADAPT_GROUPS = ("body",)
+PRIOR_EVENTS = 5
+PRIOR_CLIPS = 1
 BLINK_AMP = 0.25        # saccade amplitude (normalised) that may bring a blink
 P_BLINK = 0.5
 
@@ -357,8 +376,33 @@ def _clip_iter(path):
         yield fps, have
 
 
+def motion_clips(motions, roles, lo, hi, fps):
+    """The rig's own motion files as fit_clips input: per motion, {role:
+    normalised curve} for the bound roles it keys -- the same values
+    l2dprobe.motions.build writes into the clips, with the binding's sign.
+
+    motions: [(name, authored_motion dict)] in the rig's units. roles:
+    {role: (pid, sign, source)}. lo/hi: {pid: range}.
+    """
+    for _, m in motions:
+        have = {}
+        for r, (p, sg, _) in roles.items():
+            if r in ALL_ROLES and p in m["params"] and hi.get(p, 0) > lo.get(p, 0):
+                v = (np.asarray(m["params"][p], np.float64) - lo[p]) \
+                    / (hi[p] - lo[p]) * 2 - 1
+                have[r] = (sg * np.clip(v, -1, 1)).astype(np.float32)
+        if have and int(m["frames"]) >= 4:
+            yield float(fps), have
+
+
 def fit_rig(path):
     """Per-rig statistics, or None when the rig binds no role by ID."""
+    return fit_clips(_clip_iter(path))
+
+
+def fit_clips(clips):
+    """Per-rig statistics from (fps, {role: (T,) normalised}) clips, or None
+    when no clip keys a role."""
     hold = {g: ([], []) for g in GROUPS}
     unanimated = {g: 0 for g in GROUPS}
     move = {g: [] for g in GROUPS}         # (dur, amp, peak)
@@ -370,7 +414,7 @@ def fit_rig(path):
     brow_sacc = {"n": 0, "hit": 0}
     n_clips = 0
     fps = 30.0
-    for fps, have in _clip_iter(path):
+    for fps, have in clips:
         if not have:
             continue
         n_clips += 1
@@ -481,7 +525,7 @@ def fit_rig(path):
             out["roles"][r] = {"center": c, "std": float(v.std()),
                                "lo": float(np.percentile(w, 2)),
                                "hi": float(np.percentile(w, 98)),
-                               "n": int(len(v))}
+                               "n": int(len(v)), "n_clips": len(vs)}
     if follow["n"] >= MIN_EVENTS:
         hf = {"p": follow["hit"] / follow["n"], "n": follow["n"],
               "lag": (float(np.median(follow["lag"])) if follow["lag"]
@@ -598,6 +642,72 @@ def fit(clip_files, holdout=()):
     st = pool(per_rig)
     st["holdout"] = sorted(holdout)
     st["skipped_no_roles"] = skipped
+    return st
+
+
+def _blend(own, pool, w, log=False):
+    if own is None:
+        return pool
+    if log:
+        return float(math.exp(w * math.log(max(own, 1e-6))
+                              + (1 - w) * math.log(max(pool, 1e-6))))
+    return float(w * own + (1 - w) * pool)
+
+
+def adapt(st, own, groups=ADAPT_GROUPS, prior_events=PRIOR_EVENTS,
+          prior_clips=PRIOR_CLIPS, role_groups=None):
+    """Pooled statistics shrunk toward the rig's own (fit_clips of its motion
+    files, motion_clips), for `groups` only. Returns a new dict; `st` is not
+    changed. Each statistic moves to the rig's own value by n / (n + prior),
+    n the rig's own events (holds, complete or censored, for the hold time;
+    moves for the rest) or, for a role's centre, spread and range, the clips
+    keying it. `role_groups` (default `groups`) are the groups whose role
+    ranges adapt.
+
+    Why the body. The training rigs split in two: about two thirds move the
+    body all the time (per-rig hold medians 0.16-0.54 s, holds that are the
+    turnarounds of a sway) and the rest shift and then rest (lafei_4 2.7 s,
+    huangjiafangzhou_3 6.9 s, huonululu_5 33 s). The median over rigs is a
+    constant mover, and no single pooled body can serve both: at the pooled
+    body spread, a body that rests in 30% of 1 s windows (xuefeng rests in
+    59%) moves at most ~0.4x as much per frame as Hiyori's, which never rests.
+    Which kind a rig is shows in its own motion files, which ship with it and
+    which the gestures already replay. Gaze, head and brow keep the pool:
+    fitted on themselves, their move timing failed the face jerk check on
+    three of five sample rigs.
+    """
+    st = json.loads(json.dumps(st))
+    if not own:
+        return st
+    log = {}
+    if role_groups is None:
+        role_groups = groups
+    for g in role_groups:
+        log.setdefault(g, {})
+        for r in GROUPS[g]:
+            R, Ro = st["roles"].get(r), own.get("roles", {}).get(r)
+            if not R or not Ro:
+                continue
+            wc = Ro["n_clips"] / (Ro["n_clips"] + prior_clips)
+            for k in ("center", "std", "lo", "hi"):
+                R[k] = _blend(Ro[k], R[k], wc)
+            log[g][r] = round(wc, 3)
+    for g in groups:
+        O, P = own.get("groups", {}).get(g), st["groups"].get(g)
+        if not O or not P:
+            continue
+        nh = O["n_hold"] + O["n_censored"]
+        wh = nh / (nh + prior_events)
+        wm = O["n_move"] / (O["n_move"] + prior_events)
+        for k, w in (("hold", wh), ("move", wm), ("amp", wm)):
+            if O.get(k):
+                P[k] = [_blend(O[k][0], P[k][0], w, log=True),
+                        _blend(O[k][1], P[k][1], w)]
+        for k in ("amp_rms", "p_chain", "dur_amp_slope"):
+            if O.get(k) is not None and k in P:
+                P[k] = _blend(O[k], P[k], wm)
+        log.setdefault(g, {}).update(w_hold=round(wh, 3), w_move=round(wm, 3))
+    st["adapted"] = log
     return st
 
 
@@ -1025,7 +1135,8 @@ def report(st):
         G = st["groups"][g]
         lines.append(f"  {g:<5} pooled hold {f(G['hold'])} (median s / sigma)"
                      f"  move {f(G['move'])}  amp {f(G['amp'])}  "
-                     f"dur~amp^{G['dur_amp_slope']:.2f}  from "
+                     f"dur~amp^{G['dur_amp_slope']:.2f}  amp_rms "
+                     f"{f(G.get('amp_rms'))}  p_chain {f(G.get('p_chain'))}  from "
                      f"{', '.join(st.get('sources', {}).get(g + '.hold', [])) or 'defaults'}")
         for n, p in sorted(st["per_rig"].items()):
             pg = p["groups"].get(g)
@@ -1036,7 +1147,8 @@ def report(st):
                 f"censored, {pg.get('n_unanimated', 0)} unanimated)  hold {f(pg['hold'])}  KM median "
                 f"{f(pg['hold_km_median'])}  naive {f(pg['hold_naive_median'])}"
                 f"  moves {pg['n_move']:>3} dur {f(pg['move'])} amp "
-                f"{f(pg['amp'])} peak {f(pg['peak_vel'])}/s")
+                f"{f(pg['amp'])} peak {f(pg['peak_vel'])}/s amp_rms "
+                f"{f(pg.get('amp_rms'))} p_chain {f(pg.get('p_chain'))}")
     hf = st["head_follow"]
     lines.append(f"  head follows gaze: p {hf['p']:.2f}  lag {hf['lag']:.2f}s "
                  f"(fitted {f(hf.get('lag_fitted'))})  gain {f(hf['gain'])} (fitted "

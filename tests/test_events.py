@@ -298,3 +298,68 @@ def test_events_leave_switch_brows_to_the_rigs_motions(tmp_path):
                    json.loads(tok.read_text())["tokens"])
     assert b.std() > 0.3                              # it does change...
     assert (np.abs(np.abs(b) - 1) < 0.1).mean() > 0.8  # ...between states
+
+
+def _body_clip(rng, hold_s, n=300):
+    """Body sways (head-free): moves of 0.6 s, holds of hold_s (0 = none)."""
+    seq, v = [], 0.0
+    while sum(len(s) for s in seq) < n:
+        nv = float(rng.uniform(-0.6, 0.6))
+        seq += [_move(v, nv, 18)]
+        if hold_s:
+            seq.append(np.full(int(hold_s * FPS), nv))
+        v = nv
+    x = np.concatenate(seq)[:n]
+    return np.stack([x, 0.5 * x], 1)
+
+
+def _still(x):
+    """flow.score's still fraction of one (T, k) clip."""
+    from flow.score import stillness
+    return stillness([(x, np.ones_like(x, bool))], range(x.shape[1]), FPS)
+
+
+def test_motion_clips_match_the_clips_file():
+    """The runtime's own-motion clips are the clips' values, signed."""
+    m = {"frames": 4, "params": {"ParamBodyAngleX": np.array([0., 5, 10, 5]),
+                                 "ParamFoo": np.zeros(4)}, "parts": {}}
+    roles = {"body_x": ("ParamBodyAngleX", -1.0, "override")}
+    (fps, have), = ev.motion_clips([("a", m)], roles,
+                                   {"ParamBodyAngleX": -10.0},
+                                   {"ParamBodyAngleX": 10.0}, FPS)
+    np.testing.assert_allclose(have["body_x"], [0.0, -0.5, -1.0, -0.5])
+    assert fps == FPS and set(have) == {"body_x"}
+
+
+def test_adapt_moves_the_body_toward_the_rigs_own_motions():
+    rng = np.random.default_rng(0)
+    pool = ev.load_stats("default")
+    # A pool whose body never rests (the median training rig) ...
+    pool["groups"]["body"].update(hold=[0.3, 0.5], move=[0.6, 0.3],
+                                  p_chain=0.7, amp_rms=0.5)
+    for r in ("body_x", "body_z"):
+        pool["roles"][r].update(std=0.3, lo=-0.75, hi=0.75)
+    # ... and a rig whose own motions shift and then rest for ~2 s.
+    own = ev.fit_clips((FPS, {"body_x": c[:, 0], "body_z": c[:, 1]})
+                       for c in [_body_clip(rng, 2.0) for _ in range(6)])
+    st = ev.adapt(pool, own)
+    assert pool["groups"]["body"]["hold"][0] == 0.3       # not mutated
+    assert st["groups"]["body"]["hold"][0] > 1.0
+    assert st["groups"]["body"]["p_chain"] < 0.3
+    assert st["roles"]["body_x"]["std"] == pytest.approx(
+        own["roles"]["body_x"]["std"], rel=0.2)
+    for g in ("gaze", "head", "brow"):                   # pool kept
+        assert st["groups"][g] == pool["groups"][g]
+    assert st["roles"]["gaze_x"] == pool["roles"]["gaze_x"]
+    assert set(st["adapted"]) == {"body"}
+
+    def still(s):
+        tr = [ev.generate(s, ["body_x", "body_z"], 60, FPS,
+                          np.random.default_rng(k))[0] for k in range(3)]
+        return np.mean([_still(np.stack([t["body_x"], t["body_z"]], 1))
+                        for t in tr])
+    authored = np.mean([_still(_body_clip(rng, 2.0, 600)) for _ in range(3)])
+    assert still(pool) < 0.5 * authored <= still(st)
+    # Nothing of its own (no motion keys the body): the pool as it was.
+    none = ev.adapt(pool, ev.fit_clips(iter([])))
+    assert none["groups"] == pool["groups"]

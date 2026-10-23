@@ -308,6 +308,10 @@ def main(argv=None) -> int:
                     help="event-based motion (flow.events) with these fitted "
                          "statistics, or 'default'. Roles bind by standard "
                          "ID or --binding only (no descriptor fallback)")
+    ap.add_argument("--events-pool-only", action="store_true",
+                    help="--events: use the pooled statistics as fitted, "
+                         "without adapting the body to the rig's own motion "
+                         "files (events.adapt)")
     ap.add_argument("--tokens", default=None, metavar="OUT.json",
                     help="--events: write the scheduled event tokens here")
     ap.add_argument("--tokens-in", default=None, metavar="IN.json",
@@ -541,6 +545,20 @@ def main(argv=None) -> int:
         if missing:
             print(f"events: unbound roles (no standard id; --binding to add): "
                   f"{', '.join(missing)}")
+        if not a.events_pool_only:
+            # Body statistics shrunk toward the rig's own motion files (the
+            # files the gestures replay): see events.adapt. Done before the
+            # start pose so that --tokens-in replays bit for bit.
+            own = ev.fit_clips(ev.motion_clips(
+                motions, roles, dict(zip(pids, lo.tolist())),
+                dict(zip(pids, hi.tolist())), a.fps))
+            stats = ev.adapt(stats, own)
+            for g, w in stats.get("adapted", {}).items():
+                G = stats["groups"][g]
+                print(f"events: {g} adapted to the rig's own motions "
+                      f"(weights {w}): hold {G['hold'][0]:.2f}s "
+                      f"move {G['move'][0]:.2f}s p_chain "
+                      f"{G.get('p_chain', 0):.2f}")
         start = {r: stats["roles"][r]["center"] for r in roles}
         if a.tokens_in:
             with open(a.tokens_in, encoding="utf-8") as fh:
