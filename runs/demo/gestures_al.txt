@@ -1,0 +1,28 @@
+]633;E;for R in aidang_2 lafei;6d2fdb76-94e7-40b1-8d32-3707804e73b2]633;Cdirector: gesture complete [measured]: both arms swing back and forth; hands swing back and forth; a part appears; 8.0 s
+director: gesture home [measured]: both arms swing back and forth; hands swing back and forth; a part appears; 8.0 s
+director: gesture idle [measured]: eyes swing back and forth; body swings back and forth; 8.0 s, calm
+director: gesture login [measured]: both arms swing back and forth; hands swing back and forth; a part appears; 8.0 s
+director: gesture mail [measured]: both arms swing back and forth; hands swing back and forth; a part appears; 8.0 s
+director: gesture main_1 [measured]: eyes swing back and forth; hands swing back and forth; a part appears; 8.0 s
+director: gesture main_2 [measured]: eyes swing back and forth; hands swing back and forth; a part appears; 8.0 s
+director: gesture main_3 [measured]: both arms swing back and forth; eyes swing back and forth; a part appears; 8.0 s
+director: gesture mission [measured]: both arms swing back and forth; hands swing back and forth; a part appears; 8.0 s
+director: gesture mission_complete [measured]: both arms swing back and forth; hands swing back and forth; a part appears; 8.0 s
+director: gesture touch_body [measured]: arms swing back and forth; both hands swing back and forth; a part appears; 8.0 s
+director: gesture touch_head [measured]: arms and hands swing back and forth; eyes swing back and forth; 2.9 s
+director: gesture touch_special [measured]: both arms swing back and forth; eyes swing back and forth; a part appears; 8.0 s, lively
+director: gesture wedding [measured]: hands swing back and forth; both arms swing back and forth; a part appears; 8.0 s, calm
+director: gesture complete [measured]: right arm swings back and forth; unclear parts move; 6.5 s
+director: gesture home [measured]: right arm swings back and forth; unclear parts move; 6.5 s
+director: gesture idle [measured]: eyes move; unclear parts move; 8.0 s, calm
+director: gesture login [measured]: right arm moves widely; unclear parts move; 5.4 s
+director: gesture mail [measured]: right arm swings back and forth; unclear parts move; 6.5 s
+director: gesture main_1 [measured]: unclear parts move; 2.2 s, lively
+director: gesture main_2 [measured]: both hands move widely; 5.6 s, lively
+director: gesture main_3 [measured]: right arm moves; both hands move; 3.0 s
+director: gesture mission [measured]: right arm swings back and forth; unclear parts move; 6.5 s
+director: gesture mission_complete [measured]: right arm swings back and forth; unclear parts move; 6.5 s
+director: gesture touch_body [measured]: both arms move widely; an effect plays; 2.7 s, lively
+director: gesture touch_head [measured]: right arm swings back and forth; unclear parts move; 6.5 s
+director: gesture touch_special [measured]: an effect plays; hands move widely; 6.1 s
+director: gesture wedding [measured]: eyes move; unclear parts move; 8.0 s, calm
