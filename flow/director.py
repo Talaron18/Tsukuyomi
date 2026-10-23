@@ -887,9 +887,11 @@ class OpenAICompatBackend:
     """
 
     def __init__(self, name, model, api_base=None, key_env=None,
-                 max_tokens=2048, timeout=120, retries=4, log=print):
+                 max_tokens=2048, timeout=120, retries=4, log=print,
+                 thinking=None):
         base, env = OPENAI_COMPAT[name]
         self.name, self.model, self.max_tokens = name, model, max_tokens
+        self.thinking = thinking
         self.url = (api_base or base).rstrip("/") + "/chat/completions"
         self.key_env = key_env or env
         self.timeout, self.retries, self.log = timeout, retries, log
@@ -926,6 +928,12 @@ class OpenAICompatBackend:
         body = {"model": self.model, "stream": True,
                 "max_tokens": self.max_tokens,
                 "messages": [{"role": "system", "content": system}] + messages}
+        if self.thinking == "off":
+            # Opt-in only: on SiliconFlow the reasoning models waited 15-19 s
+            # before their first spoken word (DeepSeek-chat 0.6 s), but
+            # GLM-5.3-Flash 400s on this ("model always thinks") and the
+            # thinking parameters once broke every request there (RegionFlow).
+            body["enable_thinking"] = False
         self.stop_reason, self.usage = None, {}
         with self._open(body) as fh:
             for line in fh:
@@ -965,7 +973,7 @@ def make_backend(a, log=print):
         return OllamaBackend(model, a.ollama_url, a.seed, log=log)
     if a.backend in OPENAI_COMPAT:
         return OpenAICompatBackend(a.backend, model, a.api_base, a.api_key_env,
-                                   a.max_tokens, log=log)
+                                   a.max_tokens, log=log, thinking=a.thinking)
     if a.backend == "file":
         if not a.reply_file:
             raise SystemExit("--backend file needs --reply-file")
@@ -1145,6 +1153,10 @@ def main(argv=None) -> int:
                          "count their thinking: Qwen3.6 spent 2048 on it "
                          "and said nothing]")
     ap.add_argument("--ollama-url", default="http://localhost:11434")
+    ap.add_argument("--thinking", default=None, choices=("off",),
+                    help="siliconflow/deepseek: send enable_thinking=false "
+                         "(cuts the wait before the first word on models "
+                         "that support it; some reject it with a 400)")
     ap.add_argument("--api-base", default=None, help="siliconflow/deepseek: "
                     "override the base URL (e.g. https://api.siliconflow.cn/v1)")
     ap.add_argument("--api-key-env", default=None, help="siliconflow/deepseek: "

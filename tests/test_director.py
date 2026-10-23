@@ -534,3 +534,22 @@ def test_main_prompt_follows_the_rigs_bound_roles(tmp_path, capsys):
     assert "not offered on this rig: tilt:* (no head_z role)" in cap.err
     assert "[tilt:" not in cap.out and "[look:up]" in cap.out
     assert cap.out.startswith("You are a friendly")
+
+
+def test_openai_compat_thinking_off_is_opt_in(monkeypatch):
+    import urllib.request
+    bodies = []
+
+    def urlopen(req, timeout=None):
+        bodies.append(json.loads(req.data))
+        return _sse([{"choices": [{"delta": {"content": "Hi."},
+                                   "finish_reason": "stop"}]}])
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    monkeypatch.setenv("SILICONFLOW_API_KEY", "k")
+    for thinking in (None, "off"):
+        be = dr.OpenAICompatBackend("siliconflow", "m", log=lambda s: None,
+                                    thinking=thinking)
+        list(be.stream("SYS", []))
+    assert "enable_thinking" not in bodies[0]
+    assert bodies[1]["enable_thinking"] is False

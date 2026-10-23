@@ -16,9 +16,10 @@
 #   RIGS     rigs for the signs step [aidang_2 Hiyori Natori lafei xuefeng]
 #   LLM_RIG  rig for the llms step [aidang_2]
 #   LLMS     backend:model pairs, space separated; model may contain '/'
-#            [siliconflow:Qwen/Qwen3.6-35B-A3B siliconflow:zai-org/GLM-5.3-Flash
-#             siliconflow:moonshotai/Kimi-K3 deepseek:deepseek-chat
-#             ollama:gemma4:e4b ollama:gemma4:e2b]
+#            [Qwen3.6-35B-A3B, GLM-5.3-Flash, Kimi-K3, gemma-4-12B-it and
+#             gemma-4-26B-A4B-it on siliconflow, deepseek-chat; see the line
+#             below]. A "@nothink" suffix runs the model with --thinking off.
+#            ollama:gemma4:e4b works too once `ollama serve` is up.
 #            Pairs whose key is not set (SILICONFLOW_API_KEY, DEEPSEEK_API_KEY,
 #            ANTHROPIC_API_KEY) are skipped; a failing pair does not stop
 #            the rest.
@@ -37,7 +38,7 @@ export PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}"
 
 RIGS=${RIGS:-"aidang_2 Hiyori Natori lafei xuefeng"}
 LLM_RIG=${LLM_RIG:-aidang_2}
-LLMS=${LLMS:-"siliconflow:Qwen/Qwen3.6-35B-A3B siliconflow:zai-org/GLM-5.3-Flash siliconflow:moonshotai/Kimi-K3 deepseek:deepseek-chat ollama:gemma4:e4b ollama:gemma4:e2b"}
+LLMS=${LLMS:-"siliconflow:Qwen/Qwen3.6-35B-A3B siliconflow:Qwen/Qwen3.6-35B-A3B@nothink siliconflow:zai-org/GLM-5.3-Flash siliconflow:moonshotai/Kimi-K3 siliconflow:moonshotai/Kimi-K3@nothink siliconflow:google/gemma-4-12B-it siliconflow:google/gemma-4-26B-A4B-it deepseek:deepseek-chat"}
 PERSONA=${PERSONA:-"Atago, a gentle, teasing heavy cruiser from Azur Lane."}
 MODELS=${MODELS:-live2d-models:CubismWebSamples}
 EVENTS=${EVENTS:-ev.json}
@@ -100,6 +101,8 @@ fi
 if has llms; then
     for pair in $LLMS; do
         backend=${pair%%:*}; model=${pair#*:}
+        # "@nothink": the same model with --thinking off.
+        think=(); [[ $model == *@nothink ]] && { model=${model%@nothink}; think=(--thinking off); }
         case $backend in
             siliconflow) key=SILICONFLOW_API_KEY ;;
             deepseek)    key=DEEPSEEK_API_KEY ;;
@@ -113,7 +116,7 @@ if has llms; then
         for i in "${!SAYS[@]}"; do
             d="$OUT/llms/$tag/$i"
             t0=$(date +%s.%N)
-            if run "$LLM_RIG" "$d" --backend "$backend" --model "$model" \
+            if run "$LLM_RIG" "$d" --backend "$backend" --model "$model" "${think[@]}" \
                     --say "${SAYS[$i]}"; then
                 python -c "import sys; print(float(sys.argv[2]) - float(sys.argv[1]))" \
                     "$t0" "$(date +%s.%N)" > "$d/wall_seconds.txt"
