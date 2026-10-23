@@ -34,11 +34,31 @@ played (capped at director.GESTURE_MAX) and the energy relative to the rig's
 other motions. Where nothing visible moves the line says so, and parts the
 hints cannot place are reported as "unclear".
 
+Absolute lines were useless on Azur Lane rigs (runs/demo/gestures_al.txt):
+their clips loop with the arms and hands swaying throughout and run to the
+8 s cap, so 11 of aidang_2's 14 lines were the same "both arms swing back
+and forth; hands swing back and forth; a part appears; 8.0 s", and lafei
+ships one clip under six labels. So, per rig (describe_rig):
+
+  - motions that play the same (identical files, or curves within DUP_TOL
+    frame by frame) form one group; the prompt gives the group one line
+    listing all its labels (director.gesture_lines), any of which parses;
+  - each line keeps only what sets the gesture apart from the rig's typical
+    one over its distinct motions (distinctive): features most of them show
+    are dropped, a part moving notably more or less than usual, a rarer
+    part, switch, effect or shown part, an unusual length and the energy
+    stay; nothing left means the label alone (touch_head says more than a
+    measured line could), except for numbered labels (hiyori_m01), which
+    keep their full line;
+  - switch parameters (rig_switches: eye open/close, pose swaps) are never
+    called motion: "switches arm pose", "eyes change", "cheeks blush".
+
 An optional per-rig file overrides or hides lines; see load_overrides.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -80,6 +100,39 @@ LIVELY_X = 1.5
 # for part swaps: ~10 words. Slight moves are left out when anything larger
 # is there (Hiyori m07's brows at 0.27 next to both arms at 1.0).
 MAX_PHRASES = 2
+
+# Distinctive, not absolute. Azur Lane clips loop with the arms and hands
+# swaying the whole time and a part shown, so on aidang_2 11 of 14 lines
+# read "both arms swing back and forth; hands swing back and forth; a part
+# appears; 8.0 s" (runs/demo/gestures_al.txt). With at least MIN_RIG
+# distinct motions a line keeps only what sets the gesture apart from the
+# rig's typical one: a feature at least COMMON of them show is dropped
+# (aidang_2's sway and shown part: 10-12 of 14; Natori's arm switches, the
+# most common Cubism feature that still tells clips apart, 5 of 8; Hiyori's
+# arms move in all 10, so only how they move is said).
+MIN_RIG = 3
+COMMON = 0.7
+# A commonly moving part still counts when this gesture moves it at least
+# BIG_X (or at most SMALL_X) times the rig's median amplitude for it, and
+# by at least REL_MIN normalised units.
+BIG_X = 1.5
+SMALL_X = 0.5
+REL_MIN = 0.3
+# Length against the rig's median over its distinct motions: lafei's main_1
+# (2.2 s) and aidang_2's touch_head (2.9 s) against clips that run to the
+# 8 s cap; Hiyori's m07-m09 (1.6-2.1 s) against her 4.4 s median.
+SHORT_X = 0.6
+LONG_X = 1.6
+# Two motions play the same when their frame counts differ by at most
+# DUP_FRAMES and every played parameter stays within DUP_TOL (normalised,
+# [-1, 1] over its range: 0.05 is 2.5% of it) and every part opacity
+# within DUP_PART, frame by frame. Identical files always do. The closest
+# distinct clips on the Cubism samples are 1.0 apart (Natori mtn_05/07) and
+# 1.15 (Hiyori m01/m09) over the frames both play, 20x the tolerance, which
+# leaves room for re-exported copies with rounded keys.
+DUP_FRAMES = 2
+DUP_TOL = 0.05
+DUP_PART = 0.1
 
 _SIDE_RE = re.compile(r"(?:^|[_a-z0-9])([LR])(?=[A-Z0-9_]|$)")
 _SIDE_WORD = re.compile(r"(left|right)", re.I)
@@ -168,48 +221,67 @@ def reversals(x, step=OSC_STEP):
     return n
 
 
+def _norm(v, p, lo, hi):
+    """Values of parameter p in normalised units ([-1, 1] over its range)."""
+    s = (hi[p] - lo[p]) / 2.0
+    return (np.asarray(v, float) - lo[p]) / s - 1.0
+
+
 def measure(m, keep, lo, hi, rest, base_parts=None, groups=None,
-            role_of=None):
-    """{part key: (amplitude, reversals)} over the parameters a gesture
-    plays, plus part swaps against the rest opacities.
+            role_of=None, switches=None):
+    """What one gesture plays: (moves, swaps, flips).
 
     m: authored_motion dict. keep(pid): runtime's gesture keep. lo/hi/rest:
     {pid: value} in the rig's units (rest: the base pose, else default).
-    Part keys are (part, side). Swaps come back as ("swap", part id) with
-    +1 (shown) or -1 (hidden).
+    switches: {pid: (a, b)} the two authored states of switch parameters
+    (rig_switches); those are never measured as motion.
+
+    moves: {(part, side): (amplitude, reversals)} over the continuous
+    parameters. swaps: {part id: +1 shown / -1 hidden} against the rest
+    opacities. flips: {(part, side): +1 / -1} for switches the gesture
+    throws away from their rest state (+1 toward the higher state).
     """
-    out = {}
-    for p, v in m["params"].items():
+    switches = switches or {}
+    out, flips = {}, {}
+    for p, v in sorted(m["params"].items()):
         if not keep(p) or p not in lo or hi[p] <= lo[p]:
             continue
-        v = np.asarray(v, float)
-        s = (hi[p] - lo[p]) / 2.0
-        n = (v - lo[p]) / s - 1.0
-        if np.ptp(n) < MOVE_MIN:
-            continue
-        r = (rest.get(p, v[0]) - lo[p]) / s - 1.0
-        amp = float(np.max(np.abs(n - r)))
-        amp = max(amp, float(np.ptp(n)) / 2.0)
         part = part_of(p, (groups or {}).get(p, ""), role_of)
         if part in IGNORED:
             continue
+        side = side_of(p) if part in SIDED else ""
+        if p in switches:
+            a, b = sorted(switches[p])
+            v = np.asarray(v, float)
+            r = rest.get(p, v[0])
+            up = np.abs(v - b) < np.abs(v - a)
+            r_up = abs(r - b) < abs(r - a)
+            if np.any(up != r_up):
+                flips[(part, side)] = -1 if r_up else 1
+            continue
+        n = _norm(v, p, lo, hi)
+        if np.ptp(n) < MOVE_MIN:
+            continue
+        r = _norm(rest.get(p, v[0]), p, lo, hi)
+        amp = float(np.max(np.abs(n - r)))
+        amp = max(amp, float(np.ptp(n)) / 2.0)
         if part == "cheeks":
             # Only a rise reads as a blush.
             amp = float(np.max(n - r))
             if amp < MOVE_MIN:
                 continue
-        key = (part, side_of(p) if part in SIDED else "")
+        key = (part, side)
         a0, k0 = out.get(key, (0.0, 0))
         out[key] = (max(a0, amp), max(k0, reversals(n)))
     swaps = {}
-    for p, v in m.get("parts", {}).items():
+    for p, v in sorted(m.get("parts", {}).items()):
         v = np.asarray(v, float)
         r = float((base_parts or {}).get(p, v[0]))
         if np.max(v) - r >= 0.5:
             swaps[p] = 1
         elif r - np.min(v) >= 0.5:
             swaps[p] = -1
-    return out, swaps
+    return out, swaps, flips
 
 
 def _amp_word(a):
@@ -218,114 +290,362 @@ def _amp_word(a):
 
 PLURAL = {"glasses", "arms", "hands", "shoulders", "legs", "brows", "eyes", "cheeks",
           "tears"}
+POSE_PARTS = {"arm", "hand", "legs"}
 
 
-def phrase(meas, swaps):
-    """Body-part phrases for one motion (measure()'s output), the largest
-    movement first, at most MAX_PHRASES plus one for part swaps."""
-    items, sided = [], {}
-    for (part, side), ak in meas.items():
-        if part in SIDED:
-            sided.setdefault(part, {})[side] = ak
+def atoms(meas, swaps, flips):
+    """{atom: (amplitude, reversals)}: the features one gesture shows, the
+    unit a rig's prevalence is counted in. ("m", part, side) a continuous
+    part moves; ("o", part, side) it goes back and forth; ("s", part, side)
+    a switch is thrown (an arm or hand part swap folds into the arm's
+    switch, so "switches arm pose" never comes twice); ("appear",) /
+    ("hide",) another part swap."""
+    out = {}
+    for (part, side), (a, k) in meas.items():
+        out[("m", part, side)] = (a, k)
+        if k >= OSC_MIN:
+            out[("o", part, side)] = (a, k)
+    for (part, side), d in flips.items():
+        if part == "cheeks" and d < 0:
+            continue                      # a blush fading is not shown
+        out[("s", part, side)] = (1.0, 0)
+    for p, d in swaps.items():
+        low = p.lower()
+        if "arm" in low or "hand" in low:
+            out[("s", "arm", side_of(p))] = (1.0, 0)
         else:
-            items.append((part, part, ak[0], ak[1]))
+            out[("appear",) if d > 0 else ("hide",)] = (1.0, 0)
+    return out
+
+
+def _subject(part, sides):
+    """("both ", "arms") for a sided part's sides, ("", part) otherwise."""
+    if part not in SIDED:
+        return "", part
+    if {"L", "R"} <= sides:
+        return "both ", SIDED[part]
+    if sides in ({"L"}, {"R"}):
+        return ("left " if "L" in sides else "right "), part
+    return "", SIDED[part]
+
+
+# Phrase order: the most telling first. Back and forth, then a part moving
+# more than the rig's other gestures, then plain moves, then parts the
+# others move that this one keeps still.
+_RANK = {"osc": 0, "big": 1, "move": 2, "small": 3, "still": 4}
+
+
+def phrases(entries, switch_atoms):
+    """Phrases for one gesture. entries: [(kind, part, side, amp, k)] with
+    kind in _RANK; switch_atoms: the atoms() keys of thrown switches and
+    part swaps. At most MAX_PHRASES part phrases, then switch phrases, then
+    parts kept still while room is left, MAX_PHRASES + 1 in all."""
+    grouped = {}
+    for kind, part, side, a, k in entries:
+        g = grouped.setdefault((kind, part), [set(), 0.0, 0])
+        g[0].add(side)
+        g[1], g[2] = max(g[1], a), max(g[2], k)
     subj = {}
-    for part, by in sided.items():
-        a = max(x[0] for x in by.values())
-        k = max(x[1] for x in by.values())
-        if {"L", "R"} <= set(by):
-            pre, word = "both ", SIDED[part]
-        elif set(by) in ({"L"}, {"R"}):
-            pre, word = ("left " if "L" in by else "right "), part
-        else:
-            pre, word = "", SIDED[part]
-        subj[part] = (pre, word, a, k)
+    for (kind, part), (sides, a, k) in sorted(grouped.items()):
+        subj[(kind, part)] = _subject(part, sides) + (a, k)
     # Arms and hands on the same side(s) are one phrase: "both arms and
     # hands swing back and forth" (Hiyori m03), not two.
-    if "arm" in subj and "hand" in subj and subj["arm"][0] == subj["hand"][0]:
-        pa, wa, aa, ka = subj.pop("arm")
-        _, wh, ah, kh = subj.pop("hand")
-        subj["arm"] = (pa, f"{wa} and {wh}", max(aa, ah), max(ka, kh))
-    for part, (pre, word, a, k) in subj.items():
-        items.append((part, pre + word, a, k))
-    # Back and forth first (the most telling), then by amplitude; ties by
-    # name so the line is byte-stable.
-    items.sort(key=lambda x: (x[3] < OSC_MIN, -round(x[2], 3), x[1]))
-    if any(a >= SMALL or k >= OSC_MIN for _, _, a, k in items):
-        items = [x for x in items if x[2] >= SMALL or x[3] >= OSC_MIN]
-    out, unclear = [], 0
-    for part, subj, a, k in items:
+    for kind in _RANK:
+        ar, hd = subj.get((kind, "arm")), subj.get((kind, "hand"))
+        if ar and hd and ar[0] == hd[0]:
+            del subj[(kind, "hand")]
+            subj[(kind, "arm")] = (ar[0], f"{ar[1]} and {hd[1]}",
+                                   max(ar[2], hd[2]), max(ar[3], hd[3]))
+    items = sorted(((_RANK[kind], -round(a, 3), pre + word, kind, part)
+                    for (kind, part), (pre, word, a, k) in subj.items()))
+    # Slight moves are left out when anything larger is there (Hiyori m07's
+    # brows at 0.27 next to both arms at 1.0).
+    if any(kind != "move" or -na >= SMALL for _, na, _, kind, _ in items):
+        items = [x for x in items if x[3] != "move" or -x[1] >= SMALL]
+    out, still, unclear = [], [], False
+    for _, na, s, kind, part in items:
+        a = -na
         if not part:
-            unclear += 1
+            unclear = unclear or kind in ("osc", "move", "big")
             continue
-        if part == "cheeks":
+        plural = " and " in s or s.split()[-1] in PLURAL
+        if part == "cheeks" and kind in ("osc", "move", "big"):
             out.append("cheeks blush")
-        elif part == "effect":
+        elif part == "effect" and kind in ("osc", "move", "big"):
             out.append("an effect plays")
+        elif kind == "osc":
+            out.append(f"{s} {'swing' if plural else 'swings'} back and forth")
+        elif kind == "move":
+            out.append(f"{s} {'move' if plural else 'moves'}" + _amp_word(a))
+        elif kind == "big":
+            out.append(f"{s} {'move' if plural else 'moves'} more than "
+                       "in the other gestures")
+        elif kind == "small":
+            out.append(f"{s} barely {'move' if plural else 'moves'}")
         else:
-            plural = " and " in subj or subj.split()[-1] in PLURAL
-            if k >= OSC_MIN:
-                out.append(f"{subj} {'swing' if plural else 'swings'} "
-                           "back and forth")
-            else:
-                out.append(f"{subj} {'move' if plural else 'moves'}"
-                           + _amp_word(a))
+            still.append(f"{s} {'stay' if plural else 'stays'} still")
     if unclear:
         out.append("unclear parts move")
     out = out[:MAX_PHRASES]
-    if swaps:
-        ids = " ".join(sorted(swaps)).lower()
-        if "arm" in ids or "hand" in ids:
-            out.append("switches arm pose")
-        elif any(s > 0 for s in swaps.values()):
-            out.append("a part appears")
+    sw = []
+    sides = {}
+    for at in sorted(switch_atoms):
+        if at[0] == "s":
+            sides.setdefault(at[1], set()).add(at[2])
+    if "arm" in sides and "hand" in sides:
+        sides["arm"] |= sides.pop("hand")
+    for part in sorted(sides, key=lambda p: (p not in POSE_PARTS, p)):
+        if part in POSE_PARTS:
+            pre, _ = _subject(part, sides[part])
+            pre = "" if pre == "both " else pre
+            word = {"legs": "leg"}.get(part, part)
+            sw.append(f"switches {pre}{word} pose")
+        elif part == "cheeks":
+            sw.append("cheeks blush")
+        elif part == "effect":
+            sw.append("an effect plays")
+        elif part:
+            pl = part in PLURAL
+            sw.append(f"{part} {'change' if pl else 'changes'}")
         else:
-            out.append("a part hides")
+            sw.append("a part switches")
+    if ("appear",) in switch_atoms:
+        sw.append("a part appears")
+    if ("hide",) in switch_atoms:
+        sw.append("a part hides")
+    # A part kept still is the weakest thing to say: only where room is
+    # left (Hiyori m05, Natori mtn_00: nothing else sets them apart).
+    return (out + sw + still[:max(MAX_PHRASES - len(out) - len(sw), 0)]
+            )[:MAX_PHRASES + 1]
+
+
+def _cut(motions, fps, max_seconds):
+    """The motions as a directed gesture plays them: cut at max_seconds
+    (director.GESTURE_MAX)."""
+    if max_seconds is None:
+        return list(motions)
+    T = max(int(round(max_seconds * fps)), 2)
+    return [(n, {"params": {p: v[:T] for p, v in m["params"].items()},
+                 "parts": {p: v[:T] for p, v in m["parts"].items()},
+                 "frames": min(int(m["frames"]), T)})
+            for n, m in motions]
+
+
+def _same(a, b, keep, lo, hi, rest, base_parts):
+    """Whether two (cut) motions play the same: frame counts within
+    DUP_FRAMES and every played parameter within DUP_TOL (normalised) and
+    every part opacity within DUP_PART, frame by frame. A parameter one of
+    them does not key is compared against its rest value. No time
+    stretching: a slower copy is a different gesture."""
+    if abs(int(a["frames"]) - int(b["frames"])) > DUP_FRAMES:
+        return False
+    T = min(int(a["frames"]), int(b["frames"]))
+    for p in sorted(set(a["params"]) | set(b["params"])):
+        if not keep(p) or p not in lo or hi[p] <= lo[p]:
+            continue
+        r = rest.get(p, lo[p])
+        va = np.asarray(a["params"].get(p, np.full(T, r)), float)[:T]
+        vb = np.asarray(b["params"].get(p, np.full(T, r)), float)[:T]
+        if np.max(np.abs(_norm(va, p, lo, hi) - _norm(vb, p, lo, hi))) > DUP_TOL:
+            return False
+    for p in sorted(set(a["parts"]) | set(b["parts"])):
+        r = (base_parts or {}).get(p)
+        if r is None and (p not in a["parts"] or p not in b["parts"]):
+            continue
+        va = np.asarray(a["parts"].get(p, np.full(T, r)), float)[:T]
+        vb = np.asarray(b["parts"].get(p, np.full(T, r)), float)[:T]
+        if np.max(np.abs(va - vb)) > DUP_PART:
+            return False
+    return True
+
+
+def same_motions(motions, keep, lo, hi, rest, base_parts=None, hashes=None,
+                 fps=30.0, max_seconds=None):
+    """{motion name: the name of its group}: motions that play the same
+    gesture, by identical file (hashes: {name: digest}) or by _same over
+    what plays (cut at max_seconds). The group is named by its smallest
+    member, so the result is the same whatever order the motions come in.
+    lafei ships one 6.5 s clip under complete, home, mail, mission,
+    mission_complete and touch_head; offered as six gestures, the model
+    would think it is choosing between them."""
+    ms = dict(_cut(motions, fps, max_seconds))
+    names = sorted(ms)
+    parent = {n: n for n in names}
+
+    def root(n):
+        while parent[n] != n:
+            n = parent[n]
+        return n
+
+    for i, x in enumerate(names):
+        for y in names[i + 1:]:
+            if root(x) == root(y):
+                continue
+            hx, hy = (hashes or {}).get(x), (hashes or {}).get(y)
+            if (hx is not None and hx == hy) or _same(
+                    ms[x], ms[y], keep, lo, hi, rest, base_parts):
+                rx, ry = root(x), root(y)
+                parent[max(rx, ry)] = min(rx, ry)
+    return {n: root(n) for n in names}
+
+
+def label_of(name):
+    """The director's gesture label for a motion name (director.
+    gesture_labels): basename without .motion3.json, lowercased."""
+    b = os.path.basename(name)
+    return re.sub(r"\.motion3\.json$", "", b, flags=re.I).lower()
+
+
+def opaque_labels(names):
+    """Labels that say nothing about their motion: numbered series (the
+    letters left once digits and separators go are shared with another
+    label: hiyori_m01..m10, mtn_00..07, lafei's main_1..3) or three letters
+    or fewer. For these a line is never left empty."""
+    stems = {}
+    for n in names:
+        lab = label_of(n)
+        stems.setdefault(re.sub(r"[\d_\-\s.]+", "", lab), []).append(lab)
+    out = set()
+    for stem, labs in stems.items():
+        if len(labs) > 1 or len(stem) <= 3:
+            out.update(labs)
     return out
 
 
-def describe_motions(motions, keep, lo, hi, rest, base_parts=None,
-                     groups=None, role_of=None, fps=30.0, max_seconds=None):
-    """{motion name: description} for (name, authored_motion) pairs.
+def describe_rig(motions, keep, lo, hi, rest, base_parts=None, groups=None,
+                 role_of=None, fps=30.0, max_seconds=None, switches=None,
+                 hashes=None):
+    """({motion name: description}, {motion name: group name}).
 
     Measured over what plays: a directed gesture is cut at max_seconds
     (director.GESTURE_MAX), so the frames after it are dropped first.
-    Deterministic: the same motions and rig give the same lines, whatever
-    their order."""
-    if max_seconds is not None:
-        T = max(int(round(max_seconds * fps)), 2)
-        motions = [(n, {"params": {p: v[:T] for p, v in m["params"].items()},
-                        "parts": {p: v[:T] for p, v in m["parts"].items()},
-                        "frames": min(int(m["frames"]), T)})
-                   for n, m in motions]
-    energy = {}
+    Motions that play the same are grouped (same_motions) and each group
+    counts once in the rig's statistics. With at least MIN_RIG distinct
+    motions a line says what sets the gesture apart from the rig's others
+    (distinctive()); an empty line ("") means nothing does, and the label
+    alone is the better description -- except for opaque labels
+    (opaque_labels), which keep their full measured line. Deterministic:
+    the same motions and rig give the same lines, whatever their order."""
+    switches = switches or {}
+    motions = sorted(_cut(motions, fps, max_seconds), key=lambda x: x[0])
+    same = same_motions(motions, keep, lo, hi, rest, base_parts, hashes)
+    reps = sorted(set(same.values()))
+
     def ekeep(p):
-        return keep(p) and part_of(p, (groups or {}).get(p, ""),
-                                   role_of) not in IGNORED
+        return (keep(p) and p not in switches
+                and part_of(p, (groups or {}).get(p, ""), role_of)
+                not in IGNORED)
 
     lib = ev.gesture_library(motions, ekeep, lo, hi, {}, fps)
-    for g in lib:
-        energy[g["name"]] = float(np.mean(g["vel"]))
-    vals = sorted(e for e in energy.values() if e > 0)
-    med = float(np.median(vals)) if vals else 0.0
-    out = {}
+    energy = {g["name"]: float(np.mean(g["vel"])) for g in lib}
+    vals = sorted(energy[n] for n in reps if energy.get(n, 0) > 0)
+    med_e = float(np.median(vals)) if vals else 0.0
+    secs = {n: m["frames"] / fps for n, m in motions}
+    med_s = float(np.median([secs[n] for n in reps])) if reps else 0.0
+    feats = {}
     for name, m in motions:
-        meas, swaps = measure(m, keep, lo, hi, rest, base_parts, groups,
-                              role_of)
-        bits = phrase(meas, swaps)
-        sec = m["frames"] / fps
-        e = energy.get(name, 0.0)
-        if not bits:
+        meas, swaps, flips = measure(m, keep, lo, hi, rest, base_parts,
+                                     groups, role_of, switches)
+        feats[name] = (meas, atoms(meas, swaps, flips))
+    rig = rig_stats([feats[n][1] for n in reps])
+    opaque = opaque_labels([n for n, _ in motions])
+    out = {}
+    for name, _m in motions:
+        meas, at = feats[name]
+        sec = secs[name]
+        if not at:
             out[name] = f"little visible motion; {sec:.1f} s"
             continue
+        e = energy.get(name, 0.0)
         mood = ""
-        if med > 0:
-            if e <= CALM_X * med:
+        if med_e > 0:
+            if e <= CALM_X * med_e:
                 mood = ", calm"
-            elif e >= LIVELY_X * med:
+            elif e >= LIVELY_X * med_e:
                 mood = ", lively"
-        out[name] = "; ".join(bits) + f"; {sec:.1f} s{mood}"
-    return out
+        full = phrases(*absolute(at))
+        if len(reps) < MIN_RIG:
+            out[name] = "; ".join(full + [f"{sec:.1f} s{mood}"])
+            continue
+        bits = phrases(*distinctive(at, rig))
+        length = ""
+        if med_s > 0 and sec <= SHORT_X * med_s:
+            length = ", short"
+        elif med_s > 0 and sec >= LONG_X * med_s:
+            length = ", long"
+        if not bits and label_of(name) in opaque:
+            bits = full
+        if bits or length or mood:
+            out[name] = "; ".join(bits + [f"{sec:.1f} s{length}{mood}"])
+        else:
+            out[name] = ""
+    return out, same
+
+
+def describe_motions(motions, keep, lo, hi, rest, base_parts=None,
+                     groups=None, role_of=None, fps=30.0, max_seconds=None,
+                     switches=None, hashes=None):
+    """{motion name: description}: describe_rig without the groups."""
+    return describe_rig(motions, keep, lo, hi, rest, base_parts, groups,
+                        role_of, fps, max_seconds, switches, hashes)[0]
+
+
+def rig_stats(atom_sets):
+    """The rig's typical gesture over its distinct motions: {atom: fraction
+    of them that show it} and {("m", part, side): median amplitude where
+    it moves}."""
+    n = max(len(atom_sets), 1)
+    count, amps = {}, {}
+    for at in atom_sets:
+        for k, (a, _) in at.items():
+            count[k] = count.get(k, 0) + 1
+            if k[0] == "m":
+                amps.setdefault(k, []).append(a)
+    return ({k: c / n for k, c in count.items()},
+            {k: float(np.median(v)) for k, v in amps.items()})
+
+
+def absolute(at):
+    """(entries, switch atoms) for phrases(): everything the gesture shows."""
+    entries = []
+    for k, (a, r) in sorted(at.items()):
+        if k[0] == "m":
+            kind = "osc" if ("o",) + k[1:] in at else "move"
+            entries.append((kind, k[1], k[2], a, r))
+    return entries, {k for k in at if k[0] in ("s", "appear", "hide")}
+
+
+def distinctive(at, rig):
+    """(entries, switch atoms) for phrases(): only what sets the gesture
+    apart from the rig's typical one (rig_stats). A feature at least
+    COMMON of the rig's distinct motions show is dropped -- aidang_2's arm
+    and hand sway and its shown part are in 11-12 of 14 clips -- unless
+    this gesture moves that part notably more (BIG_X) or less (SMALL_X)
+    than the rig's median; a part the rig commonly moves and this gesture
+    does not is said to stay still."""
+    prev, med = rig
+    entries = []
+    for k, (a, r) in sorted(at.items()):
+        if k[0] != "m":
+            continue
+        _, part, side = k
+        o = ("o", part, side)
+        common = prev.get(k, 0) >= COMMON
+        if o in at and (not common or prev.get(o, 0) < COMMON):
+            entries.append(("osc", part, side, a, r))
+        elif not common:
+            entries.append(("move", part, side, a, r))
+        elif a >= BIG_X * med[k] and a - med[k] >= REL_MIN:
+            entries.append(("big", part, side, a, r))
+        elif a <= SMALL_X * med[k] and med[k] - a >= REL_MIN:
+            entries.append(("small", part, side, a, r))
+    for k, f in sorted(prev.items()):
+        if (k[0] == "m" and f >= COMMON and k not in at
+                and k[1] not in ("", "effect", "cheeks")):
+            entries.append(("still", k[1], k[2], med[k], 0))
+    sw = {k for k in at if k[0] in ("s", "appear", "hide")
+          and prev.get(k, 0) < COMMON}
+    return entries, sw
 
 
 # ---------------------------------------------------------------- overrides
@@ -381,20 +701,24 @@ def apply_overrides(labels, measured, overrides):
 
 def rig_descriptions(model_json, rig, roles, clips=None, fps=30.0,
                      max_seconds=None, probe_dir="out", log=print):
-    """{motion name: description} for a rig on disk, measured on what the
+    """({motion name: description}, {motion name: group name}) for a rig
+    on disk (describe_rig), measured on what the
     runtime's GesturePlayer will play: its expressive columns (rig_columns,
     following --clips as the runtime does) minus the bound `roles`
     ({role: (pid, sign, source)}, runtime.event_roles), through base_keep,
     minus the whole-model transforms it holds still (runtime.held_params:
     PARAM_bodyS, PARAM_moveX/Y on aidang_2, which would read as "body
     moves"), from the base pose base_state takes (the idle's first
-    frame)."""
+    frame). Switches are rig_switches'; identical motion files are one
+    group whatever their curves."""
     try:
         from .runtime import (authored_motions, base_keep, base_state,
                               held_params, rig_columns)
+        from ..l2dprobe.motions import motion_files
     except ImportError:
         from flow.runtime import (authored_motions, base_keep, base_state,
                                   held_params, rig_columns)
+        from l2dprobe.motions import motion_files
     col = rig_columns(rig, model_json, clips, log=lambda s: None)
     pids = col["pids"]
     expressive = {pids[i] for i in col["expressive"]}
@@ -418,5 +742,38 @@ def rig_descriptions(model_json, rig, roles, clips=None, fps=30.0,
     std = {sid.lower(): r for r, sid in ev.ALL_ROLES.items()}
     role_of = {p: std[p.lower().replace("_", "")] for p in pids
                if p.lower().replace("_", "") in std}
-    return describe_motions(motions, keep, lo, hi, rest, base_parts, groups,
-                            role_of, fps, max_seconds)
+    switches = rig_switches(model_json, pids, col["groups"], fps,
+                            role_of)
+    hashes = {}
+    for path in motion_files(model_json):
+        with open(path, "rb") as fh:
+            hashes[os.path.basename(path)] = hashlib.sha1(fh.read()).hexdigest()
+    return describe_rig(motions, keep, lo, hi, rest, base_parts, groups,
+                        role_of, fps, max_seconds, switches, hashes)
+
+
+def rig_switches(model_json, pids, groups, fps=30.0, role_of=None):
+    """{pid: (a, b)}: the parameters a gesture throws between two held
+    states rather than moves, which a line must never call motion. The
+    runtime's switch test (motions.toggle_params) and its snap rule
+    (runtime.snappable: arm and hand rotations an animator parks stay
+    continuous), plus the eyes: the runtime never snaps gaze (snapping froze
+    aidang_2's eyes), but on Azur Lane rigs the eyes are open/close and
+    look switches held at their extremes, which read as "eyes swing back
+    and forth" in 7 of aidang_2's 14 lines."""
+    try:
+        from .runtime import snappable
+        from ..l2dprobe.motions import toggle_params
+    except ImportError:
+        from flow.runtime import snappable
+        from l2dprobe.motions import toggle_params
+    found = toggle_params(model_json, fps)
+    group = dict(zip(pids, groups))
+    out = {}
+    for p in pids:
+        if p not in found:
+            continue
+        if (snappable(p, group.get(p, ""))
+                or part_of(p, group.get(p, ""), role_of) == "eyes"):
+            out[p] = (found[p][1], found[p][2])
+    return out

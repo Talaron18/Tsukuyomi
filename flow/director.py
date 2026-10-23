@@ -806,11 +806,17 @@ def _tag_key(name, arg):
     return f"{name}:{arg}" if isinstance(VOCAB.get(name), tuple) else name
 
 
-def gesture_lines(labels, descriptions=None):
+def gesture_lines(labels, descriptions=None, same=None):
     """The prompt's [gesture:NAME] entry. With descriptions ({label: text},
-    flow.gestures): one line per label, sorted, so the model picks by what
+    flow.gestures): one line per gesture, sorted, so the model picks by what
     moves rather than by an opaque file name (DeepSeek announced "a big
-    wave" with Hiyori's hiyori_m02, one wide arm-and-hand move). Without:
+    wave" with Hiyori's hiyori_m02, one wide arm-and-hand move). An empty
+    text leaves the bare label: nothing measured sets that gesture apart,
+    and its name says more (Azur Lane's touch_head, wedding). `same`
+    ({label: group}, gestures.same_motions): labels of one motion with the
+    same text share a line, "complete / home / mail: same motion; ...", so
+    the model does not think it is choosing between them (lafei ships one
+    clip under six names); any of them still parses. Without descriptions:
     the labels inline, as before."""
     if not labels:
         return ""
@@ -821,19 +827,28 @@ def gesture_lines(labels, descriptions=None):
     # "motions", not "full-body motions": on the Cubism samples a directed
     # gesture moves the arms only (the head and body stay with the tags).
     out = ("[gesture:NAME]  play one of your own motions, at most one per "
-           "reply. NAME one of these (what each one shows; choose by that, "
-           "not by the name):\n")
+           "reply. NAME one of these (after it, what sets that one apart "
+           "from the others; where nothing is said, go by the name; "
+           "\"a / b: same motion\" means any of those names plays it):\n")
+    lines = {}
     for lab in sorted(labels):
-        d = descriptions.get(lab)
-        out += f"  {lab}" + (f": {d}" if d else "") + "\n"
+        d = (descriptions or {}).get(lab) or ""
+        key = ((same or {}).get(lab, ("", lab)), d)
+        lines.setdefault(key, []).append(lab)
+    for (_, d), labs in sorted(lines.items(), key=lambda x: x[1][0]):
+        if len(labs) > 1:
+            d = "same motion" + (f"; {d}" if d else "")
+        out += "  " + " / ".join(labs) + (f": {d}" if d else "") + "\n"
     return out
 
 
-def system_prompt(persona, labels, offered=None, descriptions=None):
+def system_prompt(persona, labels, offered=None, descriptions=None,
+                  same=None):
     """Byte-stable for a given persona and rig (no clock, no turn count), so
     the prompt cache hits on every turn. `offered`: the tag keys this rig
     can show (offer()); None offers them all. `descriptions`: {label:
-    text} for the gesture lines (gesture_lines)."""
+    text} for the gesture lines, `same` ({label: group}) to merge labels
+    of one motion (gesture_lines)."""
     ok = set(all_tags() if offered is None else offered)
     tags = ""
     for keys, what in TAG_LINES:
@@ -841,7 +856,7 @@ def system_prompt(persona, labels, offered=None, descriptions=None):
         if have:
             tags += " ".join(f"[{k}]" for k in have) + f"  {what}\n"
     tags += "[pause:0.5]  stay silent for that many seconds (0.2 to 3)\n"
-    g = gesture_lines(labels, descriptions)
+    g = gesture_lines(labels, descriptions, same)
     vary = [what for keys, what in VARY if any(k in ok for k in keys)]
     vary = ("Vary them: " + ", ".join(vary) + ". ") if vary else "Vary them. "
     ex = [e for e in EXAMPLES if all(k in ok for k in _EX_TAG.findall(e))]
@@ -1495,20 +1510,28 @@ def main(argv=None) -> int:
         ap.error(f"--gestures {a.gestures}: no such file")
     gpath = a.gestures or gz.override_path(a.rig)
     over = gz.load_overrides(gpath)
-    measured = gz.rig_descriptions(a.model_json, a.rig, roles, a.clips,
-                                   a.fps, GESTURE_MAX, a.probe_dir)
+    measured, groups = gz.rig_descriptions(a.model_json, a.rig, roles,
+                                           a.clips, a.fps, GESTURE_MAX,
+                                           a.probe_dir)
     all_labels = labels
     labels, descriptions = gz.apply_overrides(labels, measured, over)
+    same = {lab: groups.get(n, n) for lab, n in labels.items()}
     if over:
         print(f"director: gesture overrides from {gpath}", file=info)
     for lab in sorted(all_labels):
         o = over.get(lab, {})
         src = ("hidden" if o.get("hide") else
                "override" if o.get("desc") else "measured")
+        g = groups.get(all_labels[lab], all_labels[lab])
+        mates = sorted(x for x, n in all_labels.items()
+                       if x != lab and groups.get(n, n) == g)
+        if mates:
+            src += ", same motion as " + " / ".join(mates)
+        text = (descriptions.get(lab) if lab in labels
+                else measured.get(all_labels[lab]))
         print(f"director: gesture {lab} [{src}]: "
-              + (descriptions.get(lab) or measured.get(all_labels[lab], "")),
-              file=info)
-    system = system_prompt(a.persona, labels, offered, descriptions)
+              + (text or "(label only)"), file=info)
+    system = system_prompt(a.persona, labels, offered, descriptions, same)
     if a.print_system:
         print(system)
         return 0
