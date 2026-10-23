@@ -19,6 +19,11 @@ a directed glance moves like the idle glances around it.
              a speaking rate (characters per second, separate for CJK and
              Latin script), plus punctuation and [pause:x] silences. The
              same clock gives the subtitles.
+  offer      offer(): only tags that would move something on this rig are
+             in the prompt (no [lean:in] where the body already sits at
+             that side, no [brow:*] without brow roles), from the roles
+             and adapted statistics the runtime binds (runtime.event_roles).
+             A vocabulary tag not offered is dropped by the parser.
   realize    realize(): each tag -> one or more tokens on the roles the rig
              binds (aidang_2 binds no gaze -- its eyeballs are switches --
              so [look:*] turns the head only). Amplitudes are fractions of
@@ -155,11 +160,15 @@ class TagParser:
     tag collapsed), `tags` the accepted tags as {"tag", "arg", "at"} with
     `at` the character offset in `spoken` where they sit, `warnings` what was
     dropped. feed()/close() also return the tags completed by that call, the
-    hook for acting on them as they arrive.
+    hook for acting on them as they arrive. `offered` (offer()'s tag keys,
+    None for all): a tag in the vocabulary that this rig was not offered is
+    dropped like an unknown one -- a model may still write one it saw in an
+    earlier turn or in its training.
     """
 
-    def __init__(self, gestures=()):
+    def __init__(self, gestures=(), offered=None):
         self.gestures = {g.lower() for g in gestures}
+        self.offered = None if offered is None else set(offered)
         self.spoken = ""
         self.tags = []
         self.warnings = []
@@ -208,6 +217,11 @@ class TagParser:
         elif arg not in allowed:
             self.warnings.append(f"[{inner}]: '{name}' takes "
                                  f"{'/'.join(allowed)}; dropped")
+            return None
+        if (self.offered is not None
+                and _tag_key(name, arg) not in self.offered):
+            self.warnings.append(f"[{inner}] is not offered on this rig; "
+                                 "dropped")
             return None
         tag = {"tag": name, "arg": arg, "at": len(self.spoken)}
         self.tags.append(tag)
@@ -264,8 +278,8 @@ class TagParser:
         return []
 
 
-def parse(text, gestures=()):
-    p = TagParser(gestures)
+def parse(text, gestures=(), offered=None):
+    p = TagParser(gestures, offered)
     p.feed(text)
     p.close()
     return p
@@ -356,6 +370,100 @@ def _toward(st, r, side, frac):
 
 def _hold(st, g):
     return max(float(st["groups"][g]["hold"][0]), MIN_HOLD)
+
+
+# A lean is offered only when its target lies at least this far from the
+# body_y centre, toward that side, in normalised role units ([-1, 1] over
+# the authored range: 0.1 is 5% of it, 1 degree on the usual +-10 degree
+# ParamBodyAngleY). aidang_2's own motions keep BodyAngleY near its max:
+# adapted centre 0.932 (its start pose in the server's --no-idle plan),
+# p98 0.976, so lean:in went 0.932 -> 0.963, +0.031, and showed nothing
+# although every model tried it. Hiyori's lean:in reaches +0.65 and
+# Natori's, the smallest of the sample rigs, +0.22 (adapted p98 0.32),
+# twice this. Signed: adapt() blends centre and p98 separately, and a p98
+# blended below the centre must not pass as room.
+LEAN_MIN_REACH = 0.1
+
+
+def _usable(st, roles, r):
+    """Bound, and with an authored range to move in: Natori's BrowLX/RX are
+    bound but fitted with lo = hi = 0, so nothing directed on them shows."""
+    R = st["roles"].get(r)
+    return r in roles and R is not None and R["hi"] - R["lo"] > 1e-6
+
+
+def offer(st, roles):
+    """(offered, left_out): the tag keys (all_tags()) realize() would move
+    something visible for on this rig, and [(key, reason)] for the rest,
+    both in VOCAB order.
+
+    st: the run's statistics, adapted as the runtime adapts them
+    (runtime.event_roles); roles: the bound role names. Blink, pause and
+    gesture are always offered (gesture's motions are checked per tag by the
+    parser).
+    """
+    u = {r: _usable(st, roles, r) for r in ev.ALL_ROLES}
+    need = {
+        "look:left": ("gaze_x", "head_x"), "look:right": ("gaze_x", "head_x"),
+        "look:up": ("gaze_y", "head_y"), "look:down": ("gaze_y", "head_y"),
+        "look:viewer": ("gaze_x", "gaze_y", "head_x", "head_y"),
+        "look:away": ("gaze_x", "head_x"),
+        "nod": ("head_y",), "shake": ("head_x",),
+        "tilt:left": ("head_z",), "tilt:right": ("head_z",),
+        "brow:up": ev.GROUPS["brow"], "brow:down": ev.GROUPS["brow"],
+        "brow:furrow": ev.GROUPS["brow"],
+        "lean:in": ("body_y",), "lean:back": ("body_y",),
+    }
+    why = {"look:left": "no gaze_x or head_x role",
+           "look:up": "no gaze_y or head_y role",
+           "look:viewer": "no gaze or head roles",
+           "nod": "no head_y role", "shake": "no head_x role",
+           "tilt:left": "no head_z role", "brow:up": "no brow roles",
+           "lean:in": "no body_y role"}
+    why.update({"look:right": why["look:left"], "look:down": why["look:up"],
+                "look:away": why["look:left"], "tilt:right": why["tilt:left"],
+                "brow:down": why["brow:up"], "brow:furrow": why["brow:up"],
+                "lean:back": why["lean:in"]})
+    if not any(u[r] for r in need["look:viewer"]):
+        # One reason for all of them, so the log says look:* once.
+        why.update({k: why["look:viewer"] for k in need if k[:5] == "look:"})
+    offered, out = [], []
+    for k in all_tags():
+        if k not in need:
+            offered.append(k)
+            continue
+        if not any(u[r] for r in need[k]):
+            out.append((k, why[k]))
+            continue
+        if k.startswith("lean:"):
+            s = SIGN["lean_in"] * (1 if k == "lean:in" else -1)
+            c = st["roles"]["body_y"]["center"]
+            reach = s * (_toward(st, "body_y", s, FRAC["lean"]) - c)
+            if reach < LEAN_MIN_REACH:
+                out.append((k, f"body_y centre {c:.2f}, no room: the lean "
+                               f"moves {reach:+.3f}"))
+                continue
+        offered.append(k)
+    return tuple(offered), out
+
+
+def left_out_text(out):
+    """"lean:in (body_y centre 0.98, no room ...), brow:* (no brow roles)":
+    a tag whose arguments are all left out for one reason is named once."""
+    parts, seen = [], set()
+    for k, why in out:
+        name = k.split(":")[0]
+        if name in seen:
+            continue
+        args = VOCAB[name]
+        same = [x for x in out if x[0].split(":")[0] == name]
+        if (isinstance(args, tuple) and len(same) == len(args) > 1
+                and len({w for _, w in same}) == 1):
+            parts.append(f"{name}:* ({why})")
+            seen.add(name)
+        else:
+            parts.append(f"{k} ({why})")
+    return ", ".join(parts)
 
 
 def realize(actions, st, roles, motions, rng, start=None):
@@ -562,50 +670,99 @@ in square brackets, at the moment in your speech where the action happens. \
 Tags are silent; they are never read out.
 
 Action tags (use only these, exactly as written):
-[look:left] [look:right] [look:up] [look:down]  glance that way (screen \
-directions)
-[look:viewer]  look back at the user
-[look:away]  look aside: shy, thinking, evasive
-[nod]  one nod: yes, agreement, listening
-[shake]  shake the head: no, disbelief
-[tilt:left] [tilt:right]  tilt the head: curious, playful, puzzled
-[brow:up]  raise the brows: surprise, interest
-[brow:down]  lower the brows: serious, sad
-[brow:furrow]  knit the brows: annoyed, doubtful
-[blink]  a deliberate blink
-[lean:in]  lean toward the user: eager, intimate
-[lean:back]  lean away: surprised, wary
-[pause:0.5]  stay silent for that many seconds (0.2 to 3)
-{gestures}
+{tags}{gestures}
 Rules:
 - Use one or two tags per sentence, chosen for what that sentence means. \
 Put a tag right before the words it goes with, often mid-sentence, not only \
 at the start.
-- Vary them: a nod on agreement, brows on surprise or doubt, a glance away \
-when shy or thinking, a lean when it gets personal. Do not open every reply \
-the same way.
+- {vary}Do not open every reply the same way.
 - No other markup: no asterisk actions, no parentheses stage directions, no \
 emoji, no lists, no narration.
 - Never explain or mention the tags.
 
 Examples of placement (not of content; never copy them):
-Hmm, [look:up] let me think... [nod] Yes, that works for me.
-[brow:up] Really? You did all that [lean:in] just for me?
-That's not [shake] what I meant at all. [look:away] Forget it.
-"""
+{examples}"""
+
+# One prompt line per entry: the tags it shows (those the rig offers of
+# them) and what they mean. In VOCAB order, so the prompt is byte-stable.
+TAG_LINES = (
+    (("look:left", "look:right", "look:up", "look:down"),
+     "glance that way (screen directions)"),
+    (("look:viewer",), "look back at the user"),
+    (("look:away",), "look aside: shy, thinking, evasive"),
+    (("nod",), "one nod: yes, agreement, listening"),
+    (("shake",), "shake the head: no, disbelief"),
+    (("tilt:left", "tilt:right"), "tilt the head: curious, playful, puzzled"),
+    (("brow:up",), "raise the brows: surprise, interest"),
+    (("brow:down",), "lower the brows: serious, sad"),
+    (("brow:furrow",), "knit the brows: annoyed, doubtful"),
+    (("blink",), "a deliberate blink"),
+    (("lean:in",), "lean toward the user: eager, intimate"),
+    (("lean:back",), "lean away: surprised, wary"),
+)
+# "Vary them" suggestions, each kept only when one of its tags is offered:
+# a rule naming a lean on a rig that cannot lean asks for a tag that is
+# then dropped.
+VARY = (
+    (("nod",), "a nod on agreement"),
+    (("brow:up", "brow:down", "brow:furrow"), "brows on surprise or doubt"),
+    (("look:away",), "a glance away when shy or thinking"),
+    (("lean:in", "lean:back"), "a lean when it gets personal"),
+)
+# Examples are kept only when every tag in them is offered. The language
+# models copy the examples' tags most of all (every model used [lean:in] in
+# 5-6 of 6 replies), so an example may only show what the rig can do. The
+# last one uses tags every rig has and stands in when none of the others
+# survive.
+EXAMPLES = (
+    "Hmm, [look:up] let me think... [nod] Yes, that works for me.",
+    "[brow:up] Really? You did all that [lean:in] just for me?",
+    "That's not [shake] what I meant at all. [look:away] Forget it.",
+)
+FALLBACK_EXAMPLE = "Oh... [pause:0.5] [blink] I didn't expect that."
+_EX_TAG = re.compile(r"\[([a-z]+(?::[a-z]+)?)")
 
 
-def system_prompt(persona, labels):
+def all_tags():
+    """Every tag key in VOCAB order: "name:arg", or "name" for a tag with
+    no argument or a free one (gesture, pause)."""
+    out = []
+    for name, allowed in VOCAB.items():
+        if isinstance(allowed, tuple):
+            out += [f"{name}:{x}" for x in allowed]
+        else:
+            out.append(name)
+    return tuple(out)
+
+
+def _tag_key(name, arg):
+    return f"{name}:{arg}" if isinstance(VOCAB.get(name), tuple) else name
+
+
+def system_prompt(persona, labels, offered=None):
     """Byte-stable for a given persona and rig (no clock, no turn count), so
-    the prompt cache hits on every turn."""
+    the prompt cache hits on every turn. `offered`: the tag keys this rig
+    can show (offer()); None offers them all."""
+    ok = set(all_tags() if offered is None else offered)
+    tags = ""
+    for keys, what in TAG_LINES:
+        have = [k for k in keys if k in ok]
+        if have:
+            tags += " ".join(f"[{k}]" for k in have) + f"  {what}\n"
+    tags += "[pause:0.5]  stay silent for that many seconds (0.2 to 3)\n"
     if labels:
         g = ("[gesture:NAME]  play one of your own full-body motions, NAME one "
              "of: " + ", ".join(sorted(labels)) + ". Each lasts several "
              "seconds; use at most one per reply.\n")
     else:
         g = ""
+    vary = [what for keys, what in VARY if any(k in ok for k in keys)]
+    vary = ("Vary them: " + ", ".join(vary) + ". ") if vary else "Vary them. "
+    ex = [e for e in EXAMPLES if all(k in ok for k in _EX_TAG.findall(e))]
+    examples = "\n".join(ex or [FALLBACK_EXAMPLE]) + "\n"
     persona = (persona or "a friendly, expressive character.").strip()
-    return SYSTEM_TEMPLATE.format(persona=persona, gestures=g)
+    return SYSTEM_TEMPLATE.format(persona=persona, tags=tags, gestures=g,
+                                  vary=vary, examples=examples)
 
 
 # ---------------------------------------------------------------- backends
@@ -821,12 +978,13 @@ def make_backend(a, log=print):
 
 # ------------------------------------------------------------------- turns
 
-def ask(backend, system, messages, gestures, log=print):
+def ask(backend, system, messages, gestures, log=print, offered=None):
     """Stream one reply through the parser. Returns a dict: raw tagged text,
     spoken text, tags, warnings, stop_reason, usage, refused. A refusal
-    yields no spoken text and no tags, whatever streamed before it."""
+    yields no spoken text and no tags, whatever streamed before it.
+    `offered`: the tags the prompt offered (TagParser)."""
     import time
-    p = TagParser(gestures)
+    p = TagParser(gestures, offered)
     raw = []
     t0 = time.monotonic()
     first = None
@@ -1019,12 +1177,22 @@ def main(argv=None) -> int:
     except ImportError:
         from l2dprobe.motions import motion_files
     try:
-        from .runtime import authored_motions
+        from .runtime import authored_motions, event_roles
     except ImportError:
-        from flow.runtime import authored_motions
+        from flow.runtime import authored_motions, event_roles
     names = [os.path.basename(p) for p in motion_files(a.model_json)]
     labels = gesture_labels(names)
-    system = system_prompt(a.persona, labels)
+    # The roles and adapted statistics the runtime will plan with, bound the
+    # same way (its log lines come again when plan() runs it), so the prompt
+    # offers only tags that move something on this rig.
+    st, roles, _ = event_roles(a.model_json, a.rig, a.events, a.clips,
+                               a.binding, a.fps, a.no_snap,
+                               a.events_pool_only, log=lambda s: None)
+    offered, out = offer(st, roles)
+    if out:
+        print("director: not offered on this rig: " + left_out_text(out),
+              file=sys.stderr if a.print_system else sys.stdout)
+    system = system_prompt(a.persona, labels, offered)
     if a.print_system:
         print(system)
         return 0
@@ -1037,7 +1205,7 @@ def main(argv=None) -> int:
 
     def turn(text, out_dir):
         messages.append({"role": "user", "content": text})
-        reply = ask(backend, system, messages, labels)
+        reply = ask(backend, system, messages, labels, offered=offered)
         print(f"director: reply: {reply['raw'].strip()}")
         res = plan(a, reply, out_dir, motions)
         if res is None:

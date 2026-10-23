@@ -283,6 +283,108 @@ def denorm(n: np.ndarray, lo: np.ndarray, hi: np.ndarray) -> np.ndarray:
     return lo + (np.clip(n, -1, 1) + 1) * 0.5 * (hi - lo)
 
 
+def rig_columns(rig, model_json, clips=None, log=print):
+    """The rig file's columns and bands, and which rows are expressive.
+
+    Split out of main so flow.director binds exactly the roles the runtime
+    will (its prompt offers only tags the rig can show) without a GL backend.
+    `expressive` is empty when the rig has none; the clips are then not read.
+    """
+    z = np.load(rig, allow_pickle=True)
+    pids = [str(x) for x in z["pid"]]
+    kinds = [str(x) for x in z["kind"]]
+    groups = [str(x) for x in z["group"]]
+    phys, has_phys = physics_params(model_json)
+    bands = [band_of(p, k, g, phys) for p, k, g in zip(pids, kinds, groups)]
+    expressive = [i for i, b in enumerate(bands) if b == "expressive"]
+    log(f"{len(pids)} params: "
+        + ", ".join(f"{b} {bands.count(b)}" for b in
+                    ("expressive", "physics", "autonomic", "mouth", "discrete")))
+    if expressive and clips and os.path.exists(clips):
+        # Clips record which rig rows they hold. Built under older band rules
+        # (vowels counted as expressive until recently) their columns no longer
+        # match, and seeding or anchoring from them would misalign every
+        # parameter. Their rows are what any checkpoint trained on them saw, so
+        # they win; parameters now banded otherwise are just not written.
+        rows = np.load(clips, allow_pickle=True)["param_row"].astype(int)
+        if list(rows) != expressive:
+            gone = [pids[i] for i in rows if bands[i] != "expressive"]
+            log(f"clips use {len(rows)} columns, current bands give "
+                f"{len(expressive)}; following the clips"
+                + (f", not writing {', '.join(gone)}" if gone else "")
+                + ". Regenerate clips with l2dprobe.motions to align.")
+            expressive = [int(i) for i in rows]
+    return {"pids": pids, "kinds": kinds, "groups": groups,
+            "lo": z["minimum"].astype(np.float32),
+            "hi": z["maximum"].astype(np.float32),
+            "default": z["default"].astype(np.float32),
+            "descriptor": z["descriptor"].astype(np.float32),
+            "phys": phys, "has_phys": has_phys, "bands": bands,
+            "expressive": expressive}
+
+
+def bind_events(events, model_json, pids, allowed, lo, hi, motions, fps,
+                binding=None, no_snap=False, pool_only=False, log=print):
+    """(stats, roles, switch roles) for an --events run: the fitted
+    statistics, adapted to the rig's own motions unless pool_only, and the
+    roles bound on the `allowed` (expressive) pids. `motions` as
+    authored_motions; lo/hi the rig's ranges, indexed like pids.
+
+    Shared with flow.director, which needs the same bound roles and adapted
+    centres before it writes the prompt."""
+    try:
+        from . import events as ev
+    except ImportError:
+        from flow import events as ev
+    stats = ev.load_stats(events)
+    roles = ev.bind(pids, allowed, ev.load_binding(binding))
+    # Role columns the rig's own motions use as switches go to the
+    # gesture layer (see events.drop_switch_roles); --no-snap keeps them.
+    roles, sw_roles = ev.drop_switch_roles(
+        roles, {} if no_snap else toggle_params(model_json, fps))
+    if sw_roles:
+        log("events: switch-like role columns left to the rig's own "
+            "motions: " + ", ".join(f"{r}={v[0]}" for r, v
+                                    in sorted(sw_roles.items())))
+    for r, (p, sg, src) in sorted(roles.items()):
+        log(f"  role {r:<8} -> {p}{'' if sg > 0 else ' (sign -1)'}  "
+            f"[{src}]")
+    missing = sorted(set(ev.ALL_ROLES) - set(roles) - set(sw_roles))
+    if missing:
+        log(f"events: unbound roles (no standard id; --binding to add): "
+            f"{', '.join(missing)}")
+    if not pool_only:
+        # Body statistics shrunk toward the rig's own motion files (the
+        # files the gestures replay): see events.adapt. Done before the
+        # start pose so that --tokens-in replays bit for bit.
+        own = ev.fit_clips(ev.motion_clips(
+            motions, roles, dict(zip(pids, lo.tolist())),
+            dict(zip(pids, hi.tolist())), fps))
+        stats = ev.adapt(stats, own)
+        for g, w in stats.get("adapted", {}).items():
+            G = stats["groups"][g]
+            O = (own or {}).get("groups", {}).get(g, {})
+            log(f"events: {g} adapted to the rig's own motions "
+                f"(weights {w}; own holds {O.get('n_hold', 0)} "
+                f"+{O.get('n_censored', 0)} censored, "
+                f"{O.get('n_unanimated', 0)} unanimated clips, moves "
+                f"{O.get('n_move', 0)}): hold {G['hold'][0]:.2f}s "
+                f"move {G['move'][0]:.2f}s p_chain "
+                f"{G.get('p_chain', 0):.2f}")
+    return stats, roles, sw_roles
+
+
+def event_roles(model_json, rig, events, clips=None, binding=None, fps=30.0,
+                no_snap=False, pool_only=False, log=print):
+    """bind_events for a rig on disk, as main does it for --events: what
+    flow.director calls to know which roles a run will have."""
+    col = rig_columns(rig, model_json, clips, log)
+    pids, ex = col["pids"], col["expressive"]
+    return bind_events(events, model_json, pids, [pids[i] for i in ex],
+                       col["lo"], col["hi"], authored_motions(model_json, fps),
+                       fps, binding, no_snap, pool_only, log)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True, help=".model3.json")
@@ -414,37 +516,15 @@ def main(argv=None) -> int:
                        + (argv if argv is not None else sys.argv[1:]))
 
     rng = np.random.default_rng(a.seed)
-    z = np.load(a.rig, allow_pickle=True)
-    pids = [str(x) for x in z["pid"]]
-    kinds = [str(x) for x in z["kind"]]
-    groups = [str(x) for x in z["group"]]
-    lo, hi = z["minimum"].astype(np.float32), z["maximum"].astype(np.float32)
-    dflt = z["default"].astype(np.float32)
-    desc_all = z["descriptor"].astype(np.float32)
-
-    phys, has_phys = physics_params(a.model)
-    bands = [band_of(p, k, g, phys) for p, k, g in zip(pids, kinds, groups)]
-    expressive = [i for i, b in enumerate(bands) if b == "expressive"]
-    print(f"{len(pids)} params: "
-          + ", ".join(f"{b} {bands.count(b)}" for b in
-                      ("expressive", "physics", "autonomic", "mouth", "discrete")))
+    col = rig_columns(a.rig, a.model, a.clips)
+    pids, kinds, groups = col["pids"], col["kinds"], col["groups"]
+    lo, hi, dflt = col["lo"], col["hi"], col["default"]
+    desc_all = col["descriptor"]
+    phys, has_phys = col["phys"], col["has_phys"]
+    bands, expressive = col["bands"], col["expressive"]
     if not expressive:
         print("no expressive parameters", file=sys.stderr)
         return 1
-    if a.clips and os.path.exists(a.clips):
-        # Clips record which rig rows they hold. Built under older band rules
-        # (vowels counted as expressive until recently) their columns no longer
-        # match, and seeding or anchoring from them would misalign every
-        # parameter. Their rows are what any checkpoint trained on them saw, so
-        # they win; parameters now banded otherwise are just not written.
-        rows = np.load(a.clips, allow_pickle=True)["param_row"].astype(int)
-        if list(rows) != expressive:
-            gone = [pids[i] for i in rows if bands[i] != "expressive"]
-            print(f"clips use {len(rows)} columns, current bands give "
-                  f"{len(expressive)}; following the clips"
-                  + (f", not writing {', '.join(gone)}" if gone else "")
-                  + ". Regenerate clips with l2dprobe.motions to align.")
-            expressive = [int(i) for i in rows]
 
     # Whole-model transforms (ParamAllX, PARAM_moveY, zongtiZ ...) are for
     # staging. Driven freely they carried characters off the canvas, so they
@@ -540,42 +620,9 @@ def main(argv=None) -> int:
             from . import events as ev
         except ImportError:
             from flow import events as ev
-        stats = ev.load_stats(a.events)
-        roles = ev.bind(pids, [pids[i] for i in expressive],
-                        ev.load_binding(a.binding))
-        # Role columns the rig's own motions use as switches go to the
-        # gesture layer (see events.drop_switch_roles); --no-snap keeps them.
-        roles, sw_roles = ev.drop_switch_roles(
-            roles, {} if a.no_snap else toggle_params(a.model, a.fps))
-        if sw_roles:
-            print("events: switch-like role columns left to the rig's own "
-                  "motions: " + ", ".join(f"{r}={v[0]}" for r, v
-                                          in sorted(sw_roles.items())))
-        for r, (p, sg, src) in sorted(roles.items()):
-            print(f"  role {r:<8} -> {p}{'' if sg > 0 else ' (sign -1)'}  "
-                  f"[{src}]")
-        missing = sorted(set(ev.ALL_ROLES) - set(roles) - set(sw_roles))
-        if missing:
-            print(f"events: unbound roles (no standard id; --binding to add): "
-                  f"{', '.join(missing)}")
-        if not a.events_pool_only:
-            # Body statistics shrunk toward the rig's own motion files (the
-            # files the gestures replay): see events.adapt. Done before the
-            # start pose so that --tokens-in replays bit for bit.
-            own = ev.fit_clips(ev.motion_clips(
-                motions, roles, dict(zip(pids, lo.tolist())),
-                dict(zip(pids, hi.tolist())), a.fps))
-            stats = ev.adapt(stats, own)
-            for g, w in stats.get("adapted", {}).items():
-                G = stats["groups"][g]
-                O = (own or {}).get("groups", {}).get(g, {})
-                print(f"events: {g} adapted to the rig's own motions "
-                      f"(weights {w}; own holds {O.get('n_hold', 0)} "
-                      f"+{O.get('n_censored', 0)} censored, "
-                      f"{O.get('n_unanimated', 0)} unanimated clips, moves "
-                      f"{O.get('n_move', 0)}): hold {G['hold'][0]:.2f}s "
-                      f"move {G['move'][0]:.2f}s p_chain "
-                      f"{G.get('p_chain', 0):.2f}")
+        stats, roles, sw_roles = bind_events(
+            a.events, a.model, pids, [pids[i] for i in expressive], lo, hi,
+            motions, a.fps, a.binding, a.no_snap, a.events_pool_only)
         start = {r: stats["roles"][r]["center"] for r in roles}
         if a.tokens_in:
             with open(a.tokens_in, encoding="utf-8") as fh:

@@ -451,3 +451,86 @@ def test_no_idle_keeps_only_blinks_and_the_tags(tmp_path):
     assert any(k.get("src") == "director" for k in toks)
     assert all(k.get("src") == "director" or k["type"] == "blink"
                for k in toks)
+
+
+def _stats_like(body_y=None):
+    st = _st()
+    if body_y is not None:
+        st["roles"]["body_y"].update(body_y)
+    return st
+
+
+def test_offer_leaves_out_tags_the_rig_cannot_show():
+    st = _st()
+    everything, out = dr.offer(st, list(ev.ALL_ROLES))
+    assert everything == dr.all_tags() and out == []
+    labels = {"home": "home.motion3.json"}
+    assert dr.system_prompt("A.", labels, everything) == dr.system_prompt(
+        "A.", labels)
+    # aidang_2 (server run): body_y adapted centre 0.932, p98 0.976 --
+    # lean:in went to 0.963, +0.031. lean:back still reaches -0.36. Gaze is
+    # a switch there: looks turn the head.
+    aidang = _stats_like({"center": 0.932, "lo": -0.912, "hi": 0.976})
+    roles = [r for r in ev.ALL_ROLES if not r.startswith("gaze")]
+    offered, out = dr.offer(aidang, roles)
+    assert [k for k, _ in out] == ["lean:in"]
+    assert {"lean:back", "look:left", "look:away", "nod"} <= set(offered)
+    msg = dr.left_out_text(out)
+    assert msg.startswith("lean:in (body_y centre 0.93, no room")
+    assert "+0.031" in msg
+    # A p98 blended below the centre is no room either (the check is signed).
+    below = _stats_like({"center": 0.9, "lo": -0.9, "hi": 0.5})
+    assert "lean:in" not in dr.offer(below, roles)[0]
+    # Natori: the smallest lean of the sample rigs (adapted p98 0.32) stays.
+    natori = _stats_like({"center": 0.003, "lo": -0.398, "hi": 0.323})
+    assert "lean:in" in dr.offer(natori, list(ev.ALL_ROLES))[0]
+    # lafei: no body_y bound. xuefeng: no brows either (switches).
+    lafei = [r for r in ev.ALL_ROLES if r != "body_y"]
+    assert dr.left_out_text(dr.offer(st, lafei)[1]) == \
+        "lean:* (no body_y role)"
+    xuefeng = [r for r in lafei if ev.GROUP_OF[r] != "brow"]
+    offered, out = dr.offer(st, xuefeng)
+    assert dr.left_out_text(out) == "brow:* (no brow roles), " \
+        "lean:* (no body_y role)"
+    # A bound brow with no fitted range (Natori's BrowLX/RX) is no brow.
+    flat = _st()
+    flat["roles"]["brow_lx"].update(lo=0.0, hi=0.0, std=0.0)
+    assert "brow:up" not in dr.offer(flat, ["head_x", "brow_lx"])[0]
+    # The prompt never shows a tag that is left out, in the list, the rules
+    # or the examples; it is byte-stable whatever order the keys come in.
+    p = dr.system_prompt("A.", labels, offered)
+    assert p == dr.system_prompt("A.", labels, tuple(reversed(offered)))
+    for k, _ in out:
+        assert f"[{k}]" not in p
+    assert "brow" not in p and "lean" not in p
+    assert "[look:away] Forget it." in p and "[nod]" in p
+    # Only blink and pause left: the stand-in example.
+    bare, out = dr.offer(st, [])
+    assert set(bare) == {"blink", "pause", "gesture"}
+    p = dr.system_prompt("A.", {}, bare)
+    assert dr.FALLBACK_EXAMPLE in p and "[nod]" not in p
+    assert "look:*" in dr.left_out_text(out)
+
+
+def test_parser_drops_tags_not_offered():
+    offered, _ = dr.offer(_st(), [r for r in ev.ALL_ROLES if r != "body_y"])
+    p = dr.parse("[lean:in] Hi [nod] there [pause:0.3][lean:back] you "
+                 "[gesture:m]", gestures=["m"], offered=offered)
+    assert p.spoken == "Hi there you"
+    assert [t["tag"] for t in p.tags] == ["nod", "pause", "gesture"]
+    assert sum("not offered" in w for w in p.warnings) == 2
+    # Without `offered` the whole vocabulary parses, as before.
+    assert len(dr.parse("[lean:in] Hi").tags) == 1
+
+
+def test_main_prompt_follows_the_rigs_bound_roles(tmp_path, capsys):
+    """The fake rig has no ParamAngleZ or ParamEyeBallY: no tilt; looks up
+    and down still turn the head."""
+    model, rig = _rig(tmp_path / "x")
+    assert dr.main(["--model-json", str(model), "--rig", str(rig),
+                    "--out", str(tmp_path / "o"), "--probe-dir",
+                    str(tmp_path), "--print-system"]) == 0
+    cap = capsys.readouterr()
+    assert "not offered on this rig: tilt:* (no head_z role)" in cap.err
+    assert "[tilt:" not in cap.out and "[look:up]" in cap.out
+    assert cap.out.startswith("You are a friendly")
