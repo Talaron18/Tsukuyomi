@@ -33,7 +33,8 @@ Expressive sources, one per run:
   --events stats.json    event scheduler (flow.events, fitted --fit): gaze,
                          head, body and brow roles as fixate/saccade/hold
                          events, arms as cross-faded segments of the rig's
-                         own motion files; --tokens dumps the event stream
+                         own motion files; --tokens dumps the event stream,
+                         --direct merges flow.director's timed action tags
   --behaviors stats.json hand-made baseline (flow.behaviors) driving only the
                          head/body/gaze/brow roles; other expressive
                          parameters are held at the idle's first frame and
@@ -317,6 +318,11 @@ def main(argv=None) -> int:
     ap.add_argument("--tokens-in", default=None, metavar="IN.json",
                     help="--events: render these event tokens instead of "
                          "scheduling (a --tokens file, or a list of tokens)")
+    ap.add_argument("--direct", default=None, metavar="ACTIONS.json",
+                    help="--events: merge these timed action tags (written "
+                         "by flow.director) into the scheduled idle tokens; "
+                         "a directed move overrides the idle on the role "
+                         "groups it touches for as long as it lasts")
     ap.add_argument("--binding", default=None, metavar="FILE.json",
                     help="--behaviors/--events role binding override: "
                          '{"head_x": "ParamFoo"} or {"head_x": ["ParamFoo", -1]}')
@@ -395,6 +401,9 @@ def main(argv=None) -> int:
                  "--behaviors or --events")
     if a.events and a.behaviors:
         ap.error("--events and --behaviors are separate sources; pick one")
+    if a.direct and (a.tokens_in or not a.events):
+        ap.error("--direct merges into a scheduled --events run; a "
+                 "--tokens-in stream is already merged")
     if not a.dump_only:
         _, ensure_display = _backend()
         ensure_display(["-m", f"{__package__ or 'flow'}.runtime"]
@@ -583,6 +592,25 @@ def main(argv=None) -> int:
                 sw, a.fps)
             tokens = ev.schedule(stats, list(roles), a.seconds, rng, gest,
                                  start)
+            if a.direct:
+                try:
+                    from . import director as dr
+                except ImportError:
+                    from flow import director as dr
+                with open(a.direct, encoding="utf-8") as fh:
+                    acts = json.load(fh)
+                acts = acts["actions"] if isinstance(acts, dict) else acts
+                # Own generator: the idle stream stays what the same --seed
+                # schedules without tags, whatever the tags draw.
+                directed = dr.realize(
+                    acts, stats, list(roles),
+                    {n: m["frames"] / a.fps for n, m in motions},
+                    np.random.default_rng([a.seed, 1]), start)
+                n_idle = len(tokens)
+                tokens = dr.merge(tokens, directed)
+                print(f"director: {len(acts)} actions -> {len(directed)} "
+                      f"tokens; {n_idle + len(directed) - len(tokens)} idle "
+                      "tokens overridden")
         gen, blink_requests = ev.render(tokens, list(roles), a.seconds, a.fps,
                                         start)
         traj = np.tile(default_n.astype(np.float32), (n_frames, 1))

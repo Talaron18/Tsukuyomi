@@ -128,6 +128,9 @@ def test_schedule_is_aperiodic_and_holds_are_still():
         assert all(0 <= t < 60 for t in blinks)
         assert {k["type"] for k in toks} >= {"saccade", "head_turn",
                                              "body_shift", "brow"}
+        for k in toks:            # "follows" indexes the sorted stream
+            if k["type"] == "head_turn" and k.get("follows") is not None:
+                assert toks[k["follows"]]["type"] == "saccade"
     a = ev.generate(st, ["gaze_x"], 20, FPS, np.random.default_rng(0))[0]
     b = ev.generate(st, ["gaze_x"], 20, FPS, np.random.default_rng(1))[0]
     assert np.abs(a["gaze_x"] - b["gaze_x"]).mean() > 1e-3

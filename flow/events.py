@@ -867,7 +867,15 @@ def schedule(st, roles, seconds, rng, gestures=None, start=None):
             _brow(st, have["brow"], t, rng, move, nxt, rho, dwell, bstate)
     if gestures:
         toks.extend(schedule_gestures(st, gestures, seconds, rng))
-    toks.sort(key=lambda k: (k["t"], k["type"]))
+    # "follows" was the saccade's index at emission; renumber it for the
+    # sorted list (left as is, a third of them pointed at blinks and brows).
+    order = sorted(range(len(toks)), key=lambda i: (toks[i]["t"],
+                                                    toks[i]["type"]))
+    new = {i: j for j, i in enumerate(order)}
+    toks = [toks[i] for i in order]
+    for k in toks:
+        if k.get("follows") is not None:
+            k["follows"] = new[k["follows"]]
     return toks
 
 

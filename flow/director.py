@@ -1,0 +1,947 @@
+#!/usr/bin/env python3
+"""
+Director: a language model writes the character's spoken reply with inline
+action tags; the tags become event tokens (flow.events' format), merged into
+the fitted idle stream and rendered by flow.runtime.
+
+Stage 1 of the VLA-style character. The language model never sees parameters
+or numbers: it picks from a small fixed vocabulary of tags and places them in
+its own sentence, which is the only timing it is good at. Everything metric --
+how far a look goes, how long a move takes, how long a pose is held -- comes
+from the rig's fitted statistics (the same `--events` file the idle uses), so
+a directed glance moves like the idle glances around it.
+
+  reply      "Oh, [brow:up] really? [look:away] I hadn't noticed. [nod]"
+  parse      TagParser, incremental: fed streamed chunks, a tag may split
+             across them. Unknown or malformed tags are dropped with a
+             warning and never spoken.
+  time       timeline(): a tag's time is where it sits in the spoken text at
+             a speaking rate (characters per second, separate for CJK and
+             Latin script), plus punctuation and [pause:x] silences. The
+             same clock gives the subtitles.
+  realize    realize(): each tag -> one or more tokens on the roles the rig
+             binds (aidang_2 binds no gaze -- its eyeballs are switches --
+             so [look:*] turns the head only). Amplitudes are fractions of
+             the role's authored range on that side (the fitted p2/p98),
+             move durations the fitted main sequence (events._move_dur),
+             holds the fitted hold medians.
+  merge      merge(): the fitted scheduler keeps producing idle moves; a
+             directed move takes over the role group it touches for its
+             move plus hold, and idle moves overlapping that window are
+             dropped (events.render never retargets mid-flight, so an idle
+             head turn left in would delay a directed nod, not mix with it).
+             Blinks and untouched groups pass through unchanged.
+
+The runtime does realize + merge itself (`--direct actions.json`), because
+the adapted statistics, bound roles and start pose live there; the merged
+stream it writes with `--tokens` replays bit for bit with `--tokens-in`.
+
+Usage (see --help):
+    python -m flow.director --model-json M --rig rigs/R.npz --events ev.json \\
+        --say "hello" --backend anthropic --out runs/demo/R [--render]
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+import unicodedata
+
+import numpy as np
+
+try:
+    from . import events as ev
+except ImportError:
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from flow import events as ev
+
+# The only place model names appear: one default per backend.
+DEFAULT_MODEL = {"anthropic": "claude-opus-5-5", "ollama": "gemma4:e4b"}
+FALLBACK_BETA = "server-side-fallback-2026-07-01"
+
+# ------------------------------------------------------------- vocabulary
+
+# tag -> allowed arguments (None: takes none). gesture's are the rig's own
+# motion labels, pause's a number of seconds.
+VOCAB = {
+    "look": ("left", "right", "up", "down", "viewer", "away"),
+    "nod": None, "shake": None,
+    "tilt": ("left", "right"),
+    "brow": ("up", "down", "furrow"),
+    "blink": None,
+    "lean": ("in", "back"),
+    "gesture": "motion",
+    "pause": "seconds",
+}
+MAX_PAUSE = 3.0
+MAX_TAG = 48            # an unclosed '[' longer than this is not a tag
+
+# Direction conventions, normalised role units (after the binding's sign).
+# Cubism's standard ids: ParamAngleX/EyeBallX + turn toward screen right,
+# AngleY/EyeBallY + up. AngleZ and BodyAngleY signs vary more between
+# riggers; UNVERIFIED on the sample rigs -- flip here if the first render
+# tilts or leans the wrong way.
+SIGN = {"right": +1.0, "up": +1.0, "tilt_right": +1.0, "lean_in": +1.0}
+
+# How far a directed move goes, as a fraction of the role's authored range on
+# that side (centre to the fitted p98 or p2). A deliberate look sits near the
+# edge of where riggers put the eyes; the head goes about half as far, as an
+# authored head trails the eyes with a smaller turn (the fitted head-follow
+# gain is ~0 -- heads rest ~5% of the time, the pairing is near chance -- so
+# it cannot set this).
+FRAC = {"look_gaze": 0.8, "look_head": 0.5, "away_gaze": 0.7, "away_down": 0.3,
+        "nod": 0.5, "shake": 0.4, "tilt": 0.6, "lean": 0.7, "brow_form": 0.8}
+# Brow expression value in fitted std units, loaded onto every brow column as
+# events._brow does: 2 std on the heights is the fitted p98 (0.43 vs 0.42).
+BROW_E = {"up": 2.0, "down": -2.0, "furrow": -1.5}
+# Nod and shake strokes are conversational head movements, faster than any
+# idle head move (fitted head move median 1.3 s): speech-linked nods run
+# 0.2-0.5 s a stroke (Hadar et al. 1983). Hand-set, not fitted.
+NOD_STROKE = 0.3
+SHAKE_STROKE = 0.25
+# A directed pose is held at least this long, else it reads as a twitch;
+# otherwise for the group's fitted hold median.
+MIN_HOLD = 1.0
+GESTURE_MAX = 8.0       # seconds of a directed motion at most
+
+# Speaking rate. Japanese TTS speaks ~7-8 morae/s, Mandarin ~4-5 syllables/s:
+# 6 CJK characters/s sits between. English at ~150 words/min is ~14
+# characters/s counting spaces. Punctuation is silent but pauses.
+CJK_RATE = 6.0
+LATIN_RATE = 14.0
+SENT_PAUSE = 0.35
+CLAUSE_PAUSE = 0.15
+SENT_END = set(".!?。！？…\n")
+CLAUSE = set(",;:、，；：—")
+SUB_MAX = {"cjk": 22, "latin": 48}   # characters per subtitle before a clause split
+
+_FULLWIDTH = str.maketrans({"［": "[", "］": "]", "：": ":", "【": "[", "】": "]"})
+_TAG_RE = re.compile(r"^\s*([A-Za-z_]+)\s*(?::\s*([^\s\]]+))?\s*$")
+
+
+def gesture_labels(motion_names):
+    """{label: motion name} for the rig's motion files: the basename without
+    .motion3.json, lowercased (GesturePlayer looks motions up by basename).
+    The first file wins a duplicate label."""
+    out = {}
+    for n in motion_names:
+        b = os.path.basename(n)
+        lab = re.sub(r"\.motion3\.json$", "", b, flags=re.I).lower()
+        out.setdefault(lab, b)
+    return out
+
+
+# ----------------------------------------------------------------- parser
+
+class TagParser:
+    """Incremental tag parser: feed() streamed chunks, close() at the end.
+
+    `spoken` is the text with tags removed (runs of spaces left by a removed
+    tag collapsed), `tags` the accepted tags as {"tag", "arg", "at"} with
+    `at` the character offset in `spoken` where they sit, `warnings` what was
+    dropped. feed()/close() also return the tags completed by that call, the
+    hook for acting on them as they arrive.
+    """
+
+    def __init__(self, gestures=()):
+        self.gestures = {g.lower() for g in gestures}
+        self.spoken = ""
+        self.tags = []
+        self.warnings = []
+        self._buf = None          # text after an open '[', or None
+
+    def _text(self, s):
+        if not s:
+            return
+        if not self.spoken:
+            s = s.lstrip()
+        elif self.spoken.endswith((" ", "\n")):
+            s = s.lstrip(" ")
+        self.spoken += s
+
+    def _tag(self, inner):
+        m = _TAG_RE.match(inner)
+        if not m:
+            self.warnings.append(f"malformed tag [{inner}] dropped")
+            return None
+        name, arg = m.group(1).lower(), m.group(2)
+        arg = arg.lower() if arg is not None else None
+        allowed = VOCAB.get(name, "?")
+        if allowed == "?":
+            self.warnings.append(f"unknown tag [{inner}] dropped")
+            return None
+        if allowed is None:
+            if arg is not None:
+                self.warnings.append(f"[{name}] takes no argument; "
+                                     f"'{arg}' ignored")
+            arg = None
+        elif allowed == "seconds":
+            try:
+                v = float(arg)
+            except (TypeError, ValueError):
+                self.warnings.append(f"[{inner}]: pause needs seconds; dropped")
+                return None
+            if not math.isfinite(v) or v <= 0:
+                self.warnings.append(f"[{inner}]: pause must be > 0; dropped")
+                return None
+            arg = str(round(min(v, MAX_PAUSE), 3))
+        elif allowed == "motion":
+            if arg not in self.gestures:
+                self.warnings.append(f"[{inner}]: the rig has no motion "
+                                     f"'{arg}'; dropped")
+                return None
+        elif arg not in allowed:
+            self.warnings.append(f"[{inner}]: '{name}' takes "
+                                 f"{'/'.join(allowed)}; dropped")
+            return None
+        tag = {"tag": name, "arg": arg, "at": len(self.spoken)}
+        self.tags.append(tag)
+        return tag
+
+    def feed(self, chunk):
+        done = []
+        chunk = chunk.translate(_FULLWIDTH)
+        i = 0
+        while i < len(chunk):
+            if self._buf is None:
+                j = chunk.find("[", i)
+                if j < 0:
+                    self._text(chunk[i:])
+                    break
+                self._text(chunk[i:j])
+                self._buf = ""
+                i = j + 1
+                continue
+            j = chunk.find("]", i)
+            k = chunk.find("[", i)
+            if k >= 0 and (j < 0 or k < j):
+                # A new '[' before this one closed: the first was not a tag.
+                self.warnings.append(f"unclosed '[{self._buf + chunk[i:k]}' "
+                                     "dropped")
+                self._buf = None
+                i = k
+                continue
+            if j < 0:
+                self._buf += chunk[i:]
+                if len(self._buf) > MAX_TAG:
+                    # Too long to be a tag: speak it, minus the bracket.
+                    self.warnings.append(f"'[' never closed within {MAX_TAG} "
+                                         "characters; kept as text")
+                    rest, self._buf = self._buf, None
+                    self._text(rest)
+                break
+            t = self._tag(self._buf + chunk[i:j])
+            if t:
+                done.append(t)
+            self._buf = None
+            i = j + 1
+        return done
+
+    def close(self):
+        if self._buf is not None:
+            self.warnings.append(f"unterminated tag '[{self._buf}' at the end "
+                                 "dropped")
+            self._buf = None
+        self.spoken = self.spoken.strip()
+        n = len(self.spoken)
+        for t in self.tags:
+            t["at"] = min(t["at"], n)
+        return []
+
+
+def parse(text, gestures=()):
+    p = TagParser(gestures)
+    p.feed(text)
+    p.close()
+    return p
+
+
+# ----------------------------------------------------------------- timing
+
+def _is_cjk(ch):
+    return (unicodedata.east_asian_width(ch) in ("W", "F")
+            and unicodedata.category(ch)[0] in "LN")
+
+
+def timeline(spoken, tags, cjk_rate=CJK_RATE, latin_rate=LATIN_RATE):
+    """(actions, spans, end): every non-pause tag with its time `t` in
+    seconds, (start, end) of each spoken character -- the silence after
+    punctuation and [pause] excluded -- and when speech ends.
+
+    Tags at one offset act in their written order: a [pause] there delays
+    the tags after it, not the ones before."""
+    by_at = {}
+    for t in tags:
+        by_at.setdefault(t["at"], []).append(t)
+    clock, acts, spans = 0.0, [], []
+    for i in range(len(spoken) + 1):
+        for t in by_at.get(i, ()):
+            if t["tag"] == "pause":
+                clock += float(t["arg"])
+            else:
+                acts.append({"t": round(clock, 4), "tag": t["tag"],
+                             "arg": t["arg"], "at": i})
+        if i == len(spoken):
+            break
+        ch = spoken[i]
+        if ch in SENT_END or ch in CLAUSE or unicodedata.category(ch)[0] == "P":
+            spans.append((clock, clock))
+            clock += (SENT_PAUSE if ch in SENT_END
+                      else CLAUSE_PAUSE if ch in CLAUSE else 0.0)
+        else:
+            d = 1.0 / (cjk_rate if _is_cjk(ch) else latin_rate)
+            spans.append((clock, clock + d))
+            clock += d
+    return acts, spans, clock
+
+
+def subtitles(spoken, spans):
+    """[{"start", "end", "text"}]: sentences, split again at a clause break
+    when longer than SUB_MAX characters. A segment runs from its first
+    character to the end of its last (silences after it excluded), and is
+    shown at least 0.5 s."""
+    if not spoken:
+        return []
+    segs, a = [], 0
+    cjk = sum(_is_cjk(c) for c in spoken) > len(spoken) / 3
+    cap = SUB_MAX["cjk" if cjk else "latin"]
+    for i, ch in enumerate(spoken):
+        last = i == len(spoken) - 1
+        if ch in SENT_END or last or (ch in CLAUSE and i + 1 - a >= cap):
+            while a < i and spoken[a].isspace():
+                a += 1
+            text = spoken[a:i + 1].strip()
+            if text:
+                t0, t1 = spans[a][0], spans[i][1]
+                segs.append({"start": round(t0, 3),
+                             "end": round(max(t1, t0 + 0.5), 3),
+                             "text": text})
+            a = i + 1
+    return segs
+
+
+def srt(segs):
+    def ts(s):
+        ms = int(round(s * 1000))
+        return f"{ms // 3600000:02d}:{ms // 60000 % 60:02d}:" \
+               f"{ms // 1000 % 60:02d},{ms % 1000:03d}"
+    return "".join(f"{i}\n{ts(s['start'])} --> {ts(s['end'])}\n{s['text']}\n\n"
+                   for i, s in enumerate(segs, 1))
+
+
+# ---------------------------------------------------------------- realize
+
+def _toward(st, r, side, frac):
+    """frac of the role's authored range from its centre toward side (+1:
+    the fitted p98, -1: the p2), within [-1, 1]."""
+    R = st["roles"][r]
+    edge = R["hi"] if side > 0 else R["lo"]
+    return float(np.clip(R["center"] + frac * (edge - R["center"]), -1, 1))
+
+
+def _hold(st, g):
+    return max(float(st["groups"][g]["hold"][0]), MIN_HOLD)
+
+
+def realize(actions, st, roles, motions, rng, start=None):
+    """Event tokens for timed actions (timeline()), on the bound `roles` only.
+
+    st: the run's statistics (load_stats, adapted). motions: {motion name:
+    seconds}. Each directed token carries "src": "director" and, for moves,
+    "hold": how long its target is kept before the idle may move the group
+    again. Within a group the directed moves run one after another, as
+    events.render would play them anyway.
+    """
+    bound = set(roles)
+    have = {g: [r for r in rs if r in bound] for g, rs in ev.GROUPS.items()}
+    pos = {r: (start or {}).get(r, st["roles"][r]["center"]) for r in bound
+           if r in ev.ALL_ROLES}
+    labels = gesture_labels(motions)
+    busy = {}
+    out = []
+    hf = st["head_follow"]
+    typ = {"gaze": "saccade", "head": "head_turn", "body": "body_shift",
+           "brow": "brow"}
+
+    def move(g, t, target, hold, dur=None):
+        target = {r: v for r, v in target.items() if r in bound}
+        if not target:
+            return None
+        t = max(t, busy.get(g, 0.0))
+        amp = float(np.sqrt(sum((v - pos[r]) ** 2 for r, v in target.items())))
+        d = dur if dur is not None else ev._move_dur(st, g, amp, rng)
+        tok = {"t": round(t, 4), "type": typ[g], "role": g,
+               "target": {r: round(v, 5) for r, v in target.items()},
+               "duration": round(d, 4), "hold": round(max(hold, 0.0), 4),
+               "src": "director"}
+        if g == "head":
+            tok["follows"] = None
+        out.append(tok)
+        pos.update(target)
+        busy[g] = t + d
+        return tok, amp
+
+    def centre(cols):
+        return {r: st["roles"][r]["center"] for r in cols}
+
+    for a in sorted(actions, key=lambda a: float(a["t"])):
+        t, tag, arg = float(a["t"]), a["tag"], a.get("arg")
+        if tag == "look":
+            gz, hd = centre(have["gaze"]), centre(
+                [r for r in have["head"] if r != "head_z"])
+            if arg in ("left", "right"):
+                s = SIGN["right"] * (1 if arg == "right" else -1)
+                gz.update(gaze_x=_toward(st, "gaze_x", s, FRAC["look_gaze"]))
+                hd.update(head_x=_toward(st, "head_x", s, FRAC["look_head"]))
+            elif arg in ("up", "down"):
+                s = SIGN["up"] * (1 if arg == "up" else -1)
+                gz.update(gaze_y=_toward(st, "gaze_y", s, FRAC["look_gaze"]))
+                hd.update(head_y=_toward(st, "head_y", s, FRAC["look_head"]))
+            elif arg == "away":
+                s = SIGN["right"] * (1 if rng.random() < 0.5 else -1)
+                dn = -SIGN["up"]
+                gz.update(gaze_x=_toward(st, "gaze_x", s, FRAC["away_gaze"]),
+                          gaze_y=_toward(st, "gaze_y", dn, FRAC["away_down"]))
+                hd.update(head_x=_toward(st, "head_x", s, FRAC["look_head"]),
+                          head_y=_toward(st, "head_y", dn, FRAC["away_down"]))
+            hold = _hold(st, "gaze")
+            got = move("gaze", t, gz, hold)
+            lag = 0.0
+            if got:
+                tok, amp = got
+                if hold > 0:
+                    out.append({"t": round(tok["t"] + tok["duration"], 4),
+                                "type": "fixate", "role": "gaze",
+                                "duration": tok["hold"], "src": "director"})
+                if amp > ev.BLINK_AMP and rng.random() < ev.P_BLINK:
+                    out.append({"t": tok["t"], "type": "blink", "role": "eyes",
+                                "src": "director"})
+                lag = hf["lag"]
+            move("head", t + lag, hd, hold - lag)
+        elif tag == "nod" and "head_y" in bound:
+            c = st["roles"]["head_y"]["center"]
+            dn = _toward(st, "head_y", -SIGN["up"], FRAC["nod"])
+            move("head", t, {"head_y": dn}, 0.0, NOD_STROKE)
+            move("head", t, {"head_y": c}, 0.0, 1.3 * NOD_STROKE)
+        elif tag == "shake" and "head_x" in bound:
+            c = st["roles"]["head_x"]["center"]
+            s = 1 if rng.random() < 0.5 else -1
+            for k, v in enumerate((s, -s)):
+                move("head", t, {"head_x": _toward(st, "head_x", v,
+                                                   FRAC["shake"])},
+                     0.0, SHAKE_STROKE * (1.0 if k == 0 else 1.6))
+            move("head", t, {"head_x": c}, 0.0, 1.3 * SHAKE_STROKE)
+        elif tag == "tilt":
+            s = SIGN["tilt_right"] * (1 if arg == "right" else -1)
+            move("head", t, {"head_z": _toward(st, "head_z", s, FRAC["tilt"])},
+                 _hold(st, "head"))
+        elif tag == "lean":
+            s = SIGN["lean_in"] * (1 if arg == "in" else -1)
+            move("body", t, {"body_y": _toward(st, "body_y", s, FRAC["lean"])},
+                 _hold(st, "body"))
+        elif tag == "brow":
+            e = BROW_E[arg]
+            tgt = {}
+            for r in have["brow"]:
+                R = st["roles"][r]
+                if arg == "furrow" and r in ("brow_lf", "brow_rf"):
+                    # Cubism's BrowForm runs angry (-1) to smile (+1).
+                    tgt[r] = _toward(st, r, -1, FRAC["brow_form"])
+                    continue
+                k = float(np.clip(st["brow_loading"].get(r, 1.0), -1, 1))
+                tgt[r] = float(np.clip(R["center"] + R["std"] * k * e,
+                                       max(R["lo"], -1), min(R["hi"], 1)))
+            move("brow", t, tgt, _hold(st, "brow"))
+        elif tag == "blink":
+            out.append({"t": round(t, 4), "type": "blink", "role": "eyes",
+                        "src": "director"})
+        elif tag == "gesture":
+            name = labels.get(str(arg).lower())
+            if name is None:
+                continue
+            t = max(t, busy.get("arms", 0.0))
+            d = min(float(motions[name]), GESTURE_MAX)
+            out.append({"t": round(t, 4), "type": "gesture", "role": "arms",
+                        "motion": name, "start": 0.0, "duration": round(d, 4),
+                        "fade": st["gesture"]["fade"], "src": "director"})
+            busy["arms"] = t + d
+    return out
+
+
+# ------------------------------------------------------------------ merge
+
+MOVES = ("saccade", "head_turn", "body_shift", "brow")
+
+
+def windows(directed):
+    """{group: [(start, end)]} that directed tokens take over: a move for its
+    duration plus hold, a gesture for its duration."""
+    win = {}
+    for k in directed:
+        if k["type"] in MOVES:
+            win.setdefault(k["role"], []).append(
+                (float(k["t"]), float(k["t"]) + float(k["duration"])
+                 + float(k.get("hold", 0.0))))
+        elif k["type"] == "gesture":
+            win.setdefault("arms", []).append(
+                (float(k["t"]), float(k["t"]) + float(k["duration"])))
+    return win
+
+
+def merge(idle, directed):
+    """One token stream: `idle` minus what overlaps a directed window on the
+    same group, plus `directed`, stably sorted by onset (events.render plays
+    a group's moves in list order).
+
+    An idle move is dropped when its [t, t + duration] meets the window: one
+    that started before and is still moving would hold the directed move
+    back. Its fixation goes with it. An idle gesture starting inside a
+    directed one is dropped; one already playing gives way when the directed
+    one starts (GesturePlayer plays the latest). Blinks stay. Head turns'
+    `follows` indices are renumbered (null when their saccade was dropped).
+    """
+    win = windows(directed)
+
+    def hit(g, a, b):
+        return any(a <= w1 and b >= w0 for w0, w1 in win.get(g, ()))
+
+    kept, gone_sacc = [], set()
+    for i, k in enumerate(idle):
+        typ = k["type"]
+        if typ in MOVES:
+            a = float(k["t"])
+            if hit(k["role"], a, a + float(k["duration"])):
+                if typ == "saccade":
+                    gone_sacc.add(round(a + float(k["duration"]), 4))
+                continue
+        elif typ == "fixate":
+            a = float(k["t"])
+            if (round(a, 4) in gone_sacc
+                    or hit("gaze", a, a + float(k.get("duration", 0.0)))):
+                continue
+        elif typ == "gesture":
+            a = float(k["t"])
+            if any(w0 <= a < w1 for w0, w1 in win.get("arms", ())):
+                continue
+        kept.append((i, dict(k)))
+    allk = kept + [(None, dict(k)) for k in directed]
+    allk.sort(key=lambda x: (float(x[1]["t"]), x[1]["type"]))
+    new_of = {i: j for j, (i, _) in enumerate(allk) if i is not None}
+    out = []
+    for _, k in allk:
+        if k["type"] == "head_turn" and k.get("follows") is not None:
+            k["follows"] = new_of.get(k["follows"])
+        out.append(k)
+    return out
+
+
+# --------------------------------------------------------------- prompting
+
+SYSTEM_TEMPLATE = """\
+You are {persona}
+
+You are a Live2D character talking with the user face to face. Reply with \
+exactly what you say aloud: one to three short spoken sentences, in the \
+user's language. Act with your face and body by placing action tags inline, \
+in square brackets, at the moment in your speech where the action happens. \
+Tags are silent; they are never read out.
+
+Action tags (use only these, exactly as written):
+[look:left] [look:right] [look:up] [look:down]  glance that way (screen \
+directions)
+[look:viewer]  look back at the user
+[look:away]  look aside: shy, thinking, evasive
+[nod]  one nod: yes, agreement, listening
+[shake]  shake the head: no, disbelief
+[tilt:left] [tilt:right]  tilt the head: curious, playful, puzzled
+[brow:up]  raise the brows: surprise, interest
+[brow:down]  lower the brows: serious, sad
+[brow:furrow]  knit the brows: annoyed, doubtful
+[blink]  a deliberate blink
+[lean:in]  lean toward the user: eager, intimate
+[lean:back]  lean away: surprised, wary
+[pause:0.5]  stay silent for that many seconds (0.2 to 3)
+{gestures}
+Rules:
+- Use about one tag per clause; put a tag before the words it goes with.
+- No other markup: no asterisk actions, no parentheses stage directions, no \
+emoji, no lists, no narration.
+- Never explain or mention the tags.
+
+Example: [look:viewer] Oh, you came back! [brow:up] I was just thinking \
+about you. [tilt:right] What shall we do today?
+"""
+
+
+def system_prompt(persona, labels):
+    """Byte-stable for a given persona and rig (no clock, no turn count), so
+    the prompt cache hits on every turn."""
+    if labels:
+        g = ("[gesture:NAME]  play one of your own full-body motions, NAME one "
+             "of: " + ", ".join(sorted(labels)) + ". Each lasts several "
+             "seconds; use at most one per reply.\n")
+    else:
+        g = ""
+    persona = (persona or "a friendly, expressive character.").strip()
+    return SYSTEM_TEMPLATE.format(persona=persona, gestures=g)
+
+
+# ---------------------------------------------------------------- backends
+
+class TextBackend:
+    """A pre-written tagged reply (file or stdin), streamed in small chunks
+    so the incremental parser runs exactly as it does on a live model."""
+
+    def __init__(self, text, chunk=7):
+        self.text, self.chunk = text, chunk
+        self.stop_reason, self.usage = "end_turn", {}
+
+    def stream(self, system, messages):
+        for i in range(0, len(self.text), self.chunk):
+            yield self.text[i:i + self.chunk]
+
+
+def _unexpected_kwarg(exc):
+    m = re.search(r"unexpected keyword argument '(\w+)'", str(exc))
+    return m.group(1) if m else None
+
+
+class AnthropicBackend:
+    def __init__(self, model, effort="low", max_tokens=2048, log=print):
+        self.model, self.effort, self.max_tokens = model, effort, max_tokens
+        self.log = log
+        self.stop_reason, self.usage = None, {}
+        self._client = None
+
+    def _open(self, kw):
+        """client.beta.messages.stream(**kw), moving any keyword this SDK
+        version does not know into extra_body (the SDK forwards it as is)."""
+        extra = {}
+        for _ in range(4):
+            try:
+                args = dict(kw, extra_body=extra) if extra else kw
+                return self._client.beta.messages.stream(**args)
+            except TypeError as exc:
+                k = _unexpected_kwarg(exc)
+                if not k or k not in kw:
+                    raise
+                extra[k] = kw.pop(k)
+                self.log(f"anthropic: SDK has no '{k}=' argument; sending it "
+                         "in extra_body")
+        raise RuntimeError("anthropic: could not build the request")
+
+    def stream(self, system, messages):
+        try:
+            import anthropic                  # lazy: only this backend needs it
+        except ImportError as exc:
+            raise SystemExit(f"--backend anthropic needs the SDK "
+                             f"(pip install anthropic): {exc}") from exc
+        if self._client is None:
+            self._client = anthropic.Anthropic()
+        kw = dict(model=self.model, max_tokens=self.max_tokens,
+                  system=[{"type": "text", "text": system,
+                           "cache_control": {"type": "ephemeral"}}],
+                  messages=messages,
+                  output_config={"effort": self.effort},
+                  betas=[FALLBACK_BETA], fallbacks="default")
+        with self._open(kw) as s:
+            for text in s.text_stream:
+                yield text
+            msg = s.get_final_message()
+        self.stop_reason = msg.stop_reason
+        u = getattr(msg, "usage", None)
+        self.usage = {k: getattr(u, k, None) for k in
+                      ("input_tokens", "output_tokens",
+                       "cache_creation_input_tokens",
+                       "cache_read_input_tokens")} if u is not None else {}
+        self.log(f"anthropic: stop {self.stop_reason}; usage "
+                 + ", ".join(f"{k} {v}" for k, v in self.usage.items()))
+
+
+class OllamaBackend:
+    """Ollama's /api/chat, streamed (one JSON object per line), stdlib only."""
+
+    def __init__(self, model, url="http://localhost:11434", seed=0,
+                 timeout=300, log=print):
+        self.model, self.url, self.seed = model, url.rstrip("/"), seed
+        self.timeout, self.log = timeout, log
+        self.stop_reason, self.usage = None, {}
+
+    def stream(self, system, messages):
+        import urllib.request
+        body = {"model": self.model, "stream": True,
+                "messages": [{"role": "system", "content": system}] + messages,
+                "options": {"seed": int(self.seed)}}
+        req = urllib.request.Request(
+            self.url + "/api/chat", data=json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=self.timeout) as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                d = json.loads(line)
+                if d.get("error"):
+                    raise RuntimeError(f"ollama: {d['error']}")
+                text = (d.get("message") or {}).get("content") or ""
+                if text:
+                    yield text
+                if d.get("done"):
+                    self.stop_reason = d.get("done_reason", "stop")
+                    self.usage = {k: d.get(k) for k in
+                                  ("prompt_eval_count", "eval_count")}
+        self.log(f"ollama: stop {self.stop_reason}; usage {self.usage}")
+
+
+def make_backend(a, log=print):
+    model = a.model or DEFAULT_MODEL.get(a.backend)
+    if a.backend == "anthropic":
+        return AnthropicBackend(model, a.effort, a.max_tokens, log)
+    if a.backend == "ollama":
+        return OllamaBackend(model, a.ollama_url, a.seed, log=log)
+    if a.backend == "file":
+        if not a.reply_file:
+            raise SystemExit("--backend file needs --reply-file")
+        with open(a.reply_file, encoding="utf-8") as fh:
+            return TextBackend(fh.read())
+    if a.backend == "stdin":
+        return TextBackend(sys.stdin.read())
+    raise SystemExit(f"unknown backend {a.backend}")
+
+
+# ------------------------------------------------------------------- turns
+
+def ask(backend, system, messages, gestures, log=print):
+    """Stream one reply through the parser. Returns a dict: raw tagged text,
+    spoken text, tags, warnings, stop_reason, usage, refused. A refusal
+    yields no spoken text and no tags, whatever streamed before it."""
+    p = TagParser(gestures)
+    raw = []
+    for chunk in backend.stream(system, messages):
+        raw.append(chunk)
+        p.feed(chunk)
+    p.close()
+    refused = backend.stop_reason == "refusal"
+    for w in p.warnings:
+        log(f"director: {w}")
+    if backend.stop_reason in ("max_tokens", "length"):
+        log("director: WARNING reply cut off at the token limit")
+    return {"raw": "".join(raw), "spoken": "" if refused else p.spoken,
+            "tags": [] if refused else p.tags, "warnings": p.warnings,
+            "stop_reason": backend.stop_reason, "usage": backend.usage,
+            "refused": refused}
+
+
+def runtime_args(a, seconds):
+    out = ["--model", a.model_json, "--rig", a.rig, "--events", a.events,
+           "--probe-dir", a.probe_dir, "--fps", str(a.fps),
+           "--seed", str(a.seed), "--seconds", f"{seconds:.2f}"]
+    if a.clips:
+        out += ["--clips", a.clips]
+    if a.binding:
+        out += ["--binding", a.binding]
+    if a.events_pool_only:
+        out.append("--events-pool-only")
+    if a.no_snap:
+        out.append("--no-snap")
+    return out
+
+
+def length(acts, end, motions, tail):
+    """Seconds to render: speech, any directed motion still playing after
+    it, and a tail so the last move lands."""
+    last = end
+    labels = gesture_labels(motions)
+    for x in acts:
+        d = 2.0
+        if x["tag"] == "gesture" and labels.get(x["arg"]) in motions:
+            d = min(motions[labels[x["arg"]]], GESTURE_MAX)
+        last = max(last, x["t"] + d)
+    return last + tail
+
+
+def plan(a, reply, out_dir, motions, log=print):
+    """Write reply.txt, spoken.txt, actions.json, subs.srt/json, then plan
+    tokens.json in-process (runtime --direct --dump-only). Returns (render
+    argv, seconds) or None for a refusal."""
+    os.makedirs(out_dir, exist_ok=True)
+    if reply["refused"]:
+        with open(os.path.join(out_dir, "refusal.txt"), "w",
+                  encoding="utf-8") as fh:
+            fh.write(f"stop_reason: {reply['stop_reason']}\n")
+        log("director: the model refused this turn; no tokens written")
+        return None
+    with open(os.path.join(out_dir, "reply.txt"), "w", encoding="utf-8") as fh:
+        fh.write(reply["raw"])
+    with open(os.path.join(out_dir, "spoken.txt"), "w", encoding="utf-8") as fh:
+        fh.write(reply["spoken"] + "\n")
+    acts, spans, end = timeline(reply["spoken"], reply["tags"],
+                                a.cjk_rate, a.latin_rate)
+    segs = subtitles(reply["spoken"], spans)
+    seconds = length(acts, end, motions, a.tail)
+    with open(os.path.join(out_dir, "actions.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump({"speech_seconds": round(end, 3), "seconds": round(seconds, 3),
+                   "actions": acts, "warnings": reply["warnings"]}, fh,
+                  indent=1, ensure_ascii=False)
+    with open(os.path.join(out_dir, "subs.srt"), "w", encoding="utf-8") as fh:
+        fh.write(srt(segs))
+    with open(os.path.join(out_dir, "subs.json"), "w", encoding="utf-8") as fh:
+        json.dump(segs, fh, indent=1, ensure_ascii=False)
+    log(f"director: {len(reply['spoken'])} spoken characters, "
+        f"{end:.2f}s speech, {len(acts)} actions, {len(segs)} subtitles; "
+        f"rendering {seconds:.2f}s")
+    try:
+        from .runtime import main as runtime_main
+    except ImportError:
+        from flow.runtime import main as runtime_main
+    tok = os.path.join(out_dir, "tokens.json")
+    base = runtime_args(a, seconds)
+    rc = runtime_main(base + ["--direct", os.path.join(out_dir, "actions.json"),
+                              "--tokens", tok, "--dump-only", "--dump",
+                              os.path.join(out_dir, "plan.npz")])
+    if rc:
+        raise SystemExit(f"runtime planning failed ({rc})")
+    cmd = [sys.executable, "-m", "flow.runtime"] + base + [
+        "--tokens-in", tok, "--size", str(a.size),
+        "--out", os.path.join(out_dir, "render")]
+    return cmd, seconds
+
+
+def render(cmd, out_dir, log=print):
+    """Run the render in its own process (one GL backend per process), then
+    mux the subtitles in as a soft track when ffmpeg is there."""
+    log("director: " + shlex.join(cmd))
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    rc = subprocess.call(cmd, cwd=root)
+    if rc:
+        log(f"director: render exited {rc}")
+        return rc
+    vid = os.path.join(out_dir, "render", "preview.mp4")
+    subs = os.path.join(out_dir, "subs.srt")
+    if shutil.which("ffmpeg") and os.path.exists(vid) and os.path.getsize(subs):
+        dest = os.path.join(out_dir, "demo.mp4")
+        r = subprocess.run(["ffmpeg", "-y", "-i", vid, "-i", subs, "-c:v",
+                            "copy", "-c:s", "mov_text", dest],
+                           capture_output=True)
+        log(f"director: video with subtitles -> {dest}" if r.returncode == 0
+            else "director: ffmpeg could not mux subtitles; preview.mp4 kept")
+    return 0
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("--model-json", required=True, help="the rig's .model3.json")
+    ap.add_argument("--rig", required=True, help="rigs/<name>.npz")
+    ap.add_argument("--clips", default=None, help="clips/<name>.npz (column "
+                    "alignment, as flow.runtime)")
+    ap.add_argument("--events", default="default", metavar="STATS.json",
+                    help="fitted event statistics (flow.events --fit)")
+    ap.add_argument("--probe-dir", default="out")
+    ap.add_argument("--binding", default=None)
+    ap.add_argument("--events-pool-only", action="store_true")
+    ap.add_argument("--no-snap", action="store_true")
+    ap.add_argument("--say", default=None, help="the user's message")
+    ap.add_argument("--persona", default=None, help="who the character is "
+                    "(first line of the system prompt)")
+    ap.add_argument("--backend", default="anthropic",
+                    choices=("anthropic", "ollama", "file", "stdin"))
+    ap.add_argument("--model", default=None, help="language model (default "
+                    + ", ".join(f"{k}: {v}" for k, v in DEFAULT_MODEL.items())
+                    + ")")
+    ap.add_argument("--effort", default="low", help="anthropic effort")
+    ap.add_argument("--max-tokens", type=int, default=2048)
+    ap.add_argument("--ollama-url", default="http://localhost:11434")
+    ap.add_argument("--reply-file", default=None,
+                    help="--backend file: a tagged reply to use as is")
+    ap.add_argument("--cjk-rate", type=float, default=CJK_RATE,
+                    help="CJK characters spoken per second")
+    ap.add_argument("--latin-rate", type=float, default=LATIN_RATE,
+                    help="other characters (spaces included) per second")
+    ap.add_argument("--tail", type=float, default=1.5,
+                    help="seconds rendered after the last speech or motion")
+    ap.add_argument("--fps", type=float, default=30.0)
+    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--size", type=int, default=512)
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--render", action="store_true",
+                    help="render after planning (needs GL); otherwise print "
+                         "the render command")
+    ap.add_argument("--chat", action="store_true",
+                    help="keep talking: read user lines from stdin, one turn "
+                         "directory each (turn01, ...)")
+    ap.add_argument("--print-system", action="store_true",
+                    help="print the system prompt and stop")
+    a = ap.parse_args(argv)
+
+    try:
+        from ..l2dprobe.motions import motion_files
+    except ImportError:
+        from l2dprobe.motions import motion_files
+    try:
+        from .runtime import authored_motions
+    except ImportError:
+        from flow.runtime import authored_motions
+    names = [os.path.basename(p) for p in motion_files(a.model_json)]
+    labels = gesture_labels(names)
+    system = system_prompt(a.persona, labels)
+    if a.print_system:
+        print(system)
+        return 0
+    motions = {n: m["frames"] / a.fps
+               for n, m in authored_motions(a.model_json, a.fps)}
+    print(f"director: {len(labels)} gesture labels: "
+          + (", ".join(sorted(labels)) or "none"))
+    backend = make_backend(a)
+    messages = []
+
+    def turn(text, out_dir):
+        messages.append({"role": "user", "content": text})
+        reply = ask(backend, system, messages, labels)
+        print(f"director: reply: {reply['raw'].strip()}")
+        res = plan(a, reply, out_dir, motions)
+        if res is None:
+            messages.pop()            # a refused turn is not history
+            return 3
+        # The tagged reply is what the model wrote; keep it as its turn so
+        # the next turn sees the same tags it is asked to use.
+        messages.append({"role": "assistant", "content": reply["raw"]})
+        cmd, _ = res
+        if a.render:
+            return render(cmd, out_dir)
+        print("render with:\n  " + shlex.join(cmd))
+        return 0
+
+    if not a.chat:
+        if a.say is None and a.backend not in ("file", "stdin"):
+            ap.error("--say is required (or --chat)")
+        return turn(a.say or "", a.out)
+    if a.backend in ("file", "stdin"):
+        ap.error("--chat needs a live backend")
+    n = 0
+    rc = 0
+    first = a.say
+    while True:
+        if first is not None:
+            line, first = first, None
+        else:
+            try:
+                line = input("you> ").strip()
+            except EOFError:
+                break
+        if not line:
+            continue
+        n += 1
+        rc = turn(line, os.path.join(a.out, f"turn{n:02d}"))
+    return 0 if rc in (0, 3) else rc
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
