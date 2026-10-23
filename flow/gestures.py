@@ -107,9 +107,12 @@ MAX_PHRASES = 2
 # appears; 8.0 s" (runs/demo/gestures_al.txt). With at least MIN_RIG
 # distinct motions a line keeps only what sets the gesture apart from the
 # rig's typical one: a feature at least COMMON of them show is dropped
-# (aidang_2's sway and shown part: 10-12 of 14; Natori's arm switches, the
-# most common Cubism feature that still tells clips apart, 5 of 8; Hiyori's
-# arms move in all 10, so only how they move is said).
+# (aidang_2's arm sway, hand sway and shown part are in 11, 11 and 12 of
+# its 14 old lines). On the Cubism samples (rig_stats) Hiyori's arms move
+# in 9 of 10 and her shoulders in 7, Natori's right-arm switch is thrown in
+# all 8 and her shoulders move in 7: those go, so what is said is how the
+# arms move, a blush, brows, a leg or hand switch. Her hands (4 of 10) and
+# Natori's body (4 of 8) stay.
 MIN_RIG = 3
 COMMON = 0.7
 # A commonly moving part still counts when this gesture moves it at least
@@ -120,7 +123,7 @@ SMALL_X = 0.5
 REL_MIN = 0.3
 # Length against the rig's median over its distinct motions: lafei's main_1
 # (2.2 s) and aidang_2's touch_head (2.9 s) against clips that run to the
-# 8 s cap; Hiyori's m07-m09 (1.6-2.1 s) against her 4.4 s median.
+# 8 s cap; Hiyori's m07-m09 (1.6-2.1 s) against her 4.3 s median.
 SHORT_X = 0.6
 LONG_X = 1.6
 # Two motions play the same when their frame counts differ by at most
@@ -381,7 +384,12 @@ def phrases(entries, switch_atoms):
             out.append(f"{s} {'move' if plural else 'moves'} more than "
                        "in the other gestures")
         elif kind == "small":
-            out.append(f"{s} barely {'move' if plural else 'moves'}")
+            # "barely" only where the move is slight outright: Hiyori m01's
+            # arms (0.35-1.0, half her median) read as near still.
+            out.append(f"{s} barely {'move' if plural else 'moves'}"
+                       if a < SMALL else
+                       f"{s} {'move' if plural else 'moves'} less than in "
+                       "the other gestures")
         else:
             still.append(f"{s} {'stay' if plural else 'stays'} still")
     if unclear:
@@ -567,14 +575,26 @@ def describe_rig(motions, keep, lo, hi, rest, base_parts=None, groups=None,
         if len(reps) < MIN_RIG:
             out[name] = "; ".join(full + [f"{sec:.1f} s{mood}"])
             continue
-        bits = phrases(*distinctive(at, rig))
+        entries, sw = distinctive(at, rig)
+        bits = phrases(entries, sw)
         length = ""
         if med_s > 0 and sec <= SHORT_X * med_s:
             length = ", short"
         elif med_s > 0 and sec >= LONG_X * med_s:
             length = ", long"
-        if not bits and label_of(name) in opaque:
-            bits = full
+        # A numbered label says nothing, so its line must say what moves:
+        # where only parts kept still or moved less are distinctive, the
+        # measured phrases lead (Hiyori m01: "shoulders move; both arms
+        # move", not "both arms move less than in the other gestures").
+        positive = sw or any(e[0] in ("osc", "big", "move") for e in entries)
+        # Parts kept still are absent from it, so they cannot contradict
+        # it; "moves less" can (Hiyori m05: "both arms move widely; left
+        # arm barely moves"), so it goes.
+        if label_of(name) in opaque and not positive and full:
+            rest_ = phrases([e for e in entries if e[0] == "still"], set())
+            lead = full[:MAX_PHRASES]
+            bits = (lead + [b for b in rest_ if b not in lead]
+                    )[:MAX_PHRASES + 1]
         if bits or length or mood:
             out[name] = "; ".join(bits + [f"{sec:.1f} s{length}{mood}"])
         else:
@@ -619,7 +639,7 @@ def distinctive(at, rig):
     """(entries, switch atoms) for phrases(): only what sets the gesture
     apart from the rig's typical one (rig_stats). A feature at least
     COMMON of the rig's distinct motions show is dropped -- aidang_2's arm
-    and hand sway and its shown part are in 11-12 of 14 clips -- unless
+    sway, hand sway and shown part are in 10-12 of its 14 clips -- unless
     this gesture moves that part notably more (BIG_X) or less (SMALL_X)
     than the rig's median; a part the rig commonly moves and this gesture
     does not is said to stay still."""

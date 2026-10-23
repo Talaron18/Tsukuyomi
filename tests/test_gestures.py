@@ -393,3 +393,37 @@ def test_main_merges_identical_files(tmp_path, capsys):
             "4.0 s\n") in cap.out
     assert "director: gesture wave2 [measured, same motion as wave]" \
         in cap.err
+
+
+def test_unbound_gaze_held_at_extremes_is_a_switch(tmp_path):
+    """aidang_2 binds no gaze (its eyeballs are switches), so the gesture
+    layer plays ParamEyeBallX, named "eyes" through its standard role. Held
+    at its extremes and jumping, it is a switch, never "eyes swing"."""
+    root = tmp_path / "g"
+    root.mkdir()
+    seg = [0.0, -1.0]
+    for i in range(1, 9):                 # jump every 0.5 s, then hold
+        v = 1.0 if i % 2 else -1.0
+        seg += [0, i * 0.5 - 0.02, -v, 0, i * 0.5, v]
+    (root / "look.motion3.json").write_text(json.dumps({
+        "Version": 3, "Meta": {"Duration": 4.0, "Fps": 30},
+        "Curves": [{"Target": "Parameter", "Id": "ParamEyeBallX",
+                    "Segments": seg}]}))
+    model = root / "g.model3.json"
+    model.write_text(json.dumps({"Version": 3, "FileReferences": {
+        "Moc": "g.moc3", "Motions": {"": [{"File": "look.motion3.json"}]}}}))
+    role_of = {"ParamEyeBallX": "gaze_x"}
+    sw = gz.rig_switches(str(model), ["ParamEyeBallX", "ParamArmLAngle"],
+                         ["gaze", "arm"], FPS, role_of)
+    assert list(sw) == ["ParamEyeBallX"]
+    assert np.allclose(sw["ParamEyeBallX"], (-1.0, 1.0), atol=1e-4)
+    from flow.runtime import authored_motions
+    ms = authored_motions(str(model), FPS)
+    lo, hi = {"ParamEyeBallX": -1.0}, {"ParamEyeBallX": 1.0}
+    rest = {"ParamEyeBallX": -1.0}
+    raw = gz.describe_motions(ms, lambda p: True, lo, hi, rest,
+                              role_of=role_of, fps=FPS)
+    assert raw["look.motion3.json"].startswith("eyes swing back and forth")
+    d = gz.describe_motions(ms, lambda p: True, lo, hi, rest,
+                            role_of=role_of, fps=FPS, switches=sw)
+    assert d["look.motion3.json"].startswith("eyes change;")
