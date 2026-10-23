@@ -30,6 +30,10 @@ Expressive sources, one per run:
   --ckpt prior.pt        deterministic next-frame prior (flow.prior)
   --ckpt flowprior.pt    flow-matching prior (flow.flowprior --save), sampled
                          a chunk at a time; --seed picks the noise
+  --events stats.json    event scheduler (flow.events, fitted --fit): gaze,
+                         head, body and brow roles as fixate/saccade/hold
+                         events, arms as cross-faded segments of the rig's
+                         own motion files; --tokens dumps the event stream
   --behaviors stats.json hand-made baseline (flow.behaviors) driving only the
                          head/body/gaze/brow roles; other expressive
                          parameters are held at the idle's first frame and
@@ -176,10 +180,13 @@ class Switches:
     """
 
     def __init__(self, states: dict[str, tuple[float, float]], ramp: int,
-                 enter: float = 0.7):
+                 enter: float = 0.7, shape: str = "linear"):
         self.states = states
         self.ramp = max(int(ramp), 1)
         self.enter = enter
+        # "minjerk" eases the ramp in and out instead of stepping velocity at
+        # both ends; --events uses it, every other mode keeps the linear ramp.
+        self.shape = shape
         self.side: dict[str, int] = {}
         self.pos: dict[str, float] = {}
 
@@ -199,6 +206,8 @@ class Switches:
         p = self.pos[pid]
         p = min(p + step, 1.0) if side else max(p - step, 0.0)
         self.pos[pid] = p
+        if self.shape == "minjerk":
+            p = p * p * p * (10 - 15 * p + 6 * p * p)
         return lo + p * (hi - lo)
 
 
@@ -295,8 +304,17 @@ def main(argv=None) -> int:
                          "these fitted statistics, or 'default'. Drives head, "
                          "body, gaze and brow roles; every other expressive "
                          "parameter is held at the idle's first frame")
+    ap.add_argument("--events", default=None, metavar="STATS.json",
+                    help="event-based motion (flow.events) with these fitted "
+                         "statistics, or 'default'. Roles bind by standard "
+                         "ID or --binding only (no descriptor fallback)")
+    ap.add_argument("--tokens", default=None, metavar="OUT.json",
+                    help="--events: write the scheduled event tokens here")
+    ap.add_argument("--tokens-in", default=None, metavar="IN.json",
+                    help="--events: render these event tokens instead of "
+                         "scheduling (a --tokens file, or a list of tokens)")
     ap.add_argument("--binding", default=None, metavar="FILE.json",
-                    help="--behaviors role binding override: "
+                    help="--behaviors/--events role binding override: "
                          '{"head_x": "ParamFoo"} or {"head_x": ["ParamFoo", -1]}')
     ap.add_argument("--static-fade", type=float, default=0.5,
                     help="--static: seconds to cross-fade from one motion "
@@ -368,9 +386,11 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     if a.dump_only and not a.dump:
         ap.error("--dump-only needs --dump")
-    if not (a.static or a.neutral or a.ckpt or a.behaviors):
-        ap.error("--ckpt is required unless --static, --neutral or "
-                 "--behaviors")
+    if not (a.static or a.neutral or a.ckpt or a.behaviors or a.events):
+        ap.error("--ckpt is required unless --static, --neutral, "
+                 "--behaviors or --events")
+    if a.events and a.behaviors:
+        ap.error("--events and --behaviors are separate sources; pick one")
     if not a.dump_only:
         _, ensure_display = _backend()
         ensure_display(["-m", f"{__package__ or 'flow'}.runtime"]
@@ -431,7 +451,8 @@ def main(argv=None) -> int:
 
     model = desc = flow = None
     window = 48
-    use_model = bool(a.ckpt) and not (a.static or a.neutral or a.behaviors)
+    use_model = bool(a.ckpt) and not (a.static or a.neutral or a.behaviors
+                                      or a.events)
     if use_model:
         torch, Prior = _prior()
         ck = torch.load(a.ckpt, map_location="cpu", weights_only=False)
@@ -492,7 +513,69 @@ def main(argv=None) -> int:
     n_frames = int(a.seconds * a.fps)
     blink_requests = []
     roles = {}
-    if a.behaviors and not (a.static or a.neutral):
+    motions = authored_motions(a.model, a.fps)
+    band_by_id = dict(zip(pids, bands))
+    events_on = bool(a.events) and not (a.static or a.neutral)
+    pid_index0 = set(pids)
+    tokens = None
+    if events_on:
+        try:
+            from . import events as ev
+        except ImportError:
+            from flow import events as ev
+        stats = ev.load_stats(a.events)
+        roles = ev.bind(pids, [pids[i] for i in expressive],
+                        ev.load_binding(a.binding))
+        for r, (p, sg, src) in sorted(roles.items()):
+            print(f"  role {r:<8} -> {p}{'' if sg > 0 else ' (sign -1)'}  "
+                  f"[{src}]")
+        missing = sorted(set(ev.ALL_ROLES) - set(roles))
+        if missing:
+            print(f"events: unbound roles (no standard id; --binding to add): "
+                  f"{', '.join(missing)}")
+        start = {r: stats["roles"][r]["center"] for r in roles}
+        if a.tokens_in:
+            with open(a.tokens_in, encoding="utf-8") as fh:
+                blob = json.load(fh)
+            tokens = blob["tokens"] if isinstance(blob, dict) else blob
+            print(f"events: rendering {len(tokens)} tokens from {a.tokens_in}")
+        else:
+            gkeep0 = base_keep({p for p, _, _ in roles.values()} | held,
+                               phys, band_by_id)
+            found_sw = ({} if a.no_snap else toggle_params(a.model, a.fps))
+            sw = {pids[i]: (found_sw[pids[i]][1], found_sw[pids[i]][2])
+                  for i in expressive if pids[i] in found_sw
+                  and bands[i] == "expressive"
+                  and snappable(pids[i], groups[i])}
+            gest = ev.gesture_library(
+                motions, lambda p: p in pid_index0 and gkeep0(p),
+                dict(zip(pids, lo.tolist())), dict(zip(pids, hi.tolist())),
+                sw, a.fps)
+            tokens = ev.schedule(stats, list(roles), a.seconds, rng, gest,
+                                 start)
+        gen, blink_requests = ev.render(tokens, list(roles), a.seconds, a.fps,
+                                        start)
+        traj = np.tile(default_n.astype(np.float32), (n_frames, 1))
+        col_of = {pids[i]: c for c, i in enumerate(expressive)}
+        for r, (p, sg, _) in roles.items():
+            traj[:, col_of[p]] = np.clip(sg * gen[r][:n_frames], -1, 1)
+        kinds_n = {}
+        for k in tokens:
+            kinds_n[k["type"]] = kinds_n.get(k["type"], 0) + 1
+        print(f"events: {len(roles)} roles from "
+              f"{'defaults' if a.events == 'default' else a.events}; tokens "
+              + ", ".join(f"{k} {v}" for k, v in sorted(kinds_n.items())))
+        if a.tokens:
+            os.makedirs(os.path.dirname(os.path.abspath(a.tokens)),
+                        exist_ok=True)
+            with open(a.tokens, "w", encoding="utf-8") as fh:
+                json.dump({"seconds": a.seconds, "fps": a.fps,
+                           "seed": a.seed,
+                           "roles": {r: [p, sg] for r, (p, sg, _)
+                                     in roles.items()},
+                           "tokens": tokens}, fh, indent=0)
+            print(f"tokens -> {a.tokens}")
+    elif a.behaviors and not (a.static or a.neutral):
         try:
             from .behaviors import bind_roles, generate, load_binding, load_stats
         except ImportError:
@@ -610,17 +693,17 @@ def main(argv=None) -> int:
     breath_idx = [i for i, p in enumerate(pids) if "breath" in p.lower()]
     auto = Autonomic(a.fps, rng, requests=blink_requests)
 
-    motions = authored_motions(a.model, a.fps)
     n_parts = len({p for _, m in motions for p in m["parts"]})
     if n_parts and not has_pose(a.model):
         print(f"{n_parts} parts are switched by PartOpacity curves and the rig "
               "has no pose3 file; applying them directly (Live2D Native would "
               "ignore them and draw every variant)")
     # Under --behaviors only the bound roles are driven; the base state holds
-    # every other expressive parameter at the idle's first frame.
-    model_driven = ({p for p, _, _ in roles.values()} if a.behaviors
+    # every other expressive parameter at the idle's first frame. --events
+    # starts from the same base and lets gestures move the rest.
+    model_driven = ({p for p, _, _ in roles.values()}
+                    if a.behaviors or events_on
                     else {pids[i] for i in expressive}) - held
-    band_by_id = dict(zip(pids, bands))
     base_name, base_params, base_parts = base_state(
         motions, base_keep(model_driven, phys, band_by_id))
     if base_name and not (a.static or a.neutral):
@@ -646,6 +729,32 @@ def main(argv=None) -> int:
         print(f"STATIC: no motion files found; replaying {len(traj)} frames of "
               "the expressive band from the clips, model bypassed")
 
+    gesture_frames = None
+    if events_on:
+        # Gestures write what the base state may hold (not roles, physics,
+        # autonomic, mouth) and nothing held still as a whole-model transform.
+        role_ids = {p for p, _, _ in roles.values()}
+        gkeep = base_keep(role_ids | held, phys, band_by_id)
+        pid_set = set(pids)
+        player = ev.GesturePlayer(
+            {n: m for n, m in motions}, lambda p: p in pid_set and gkeep(p),
+            base_params, base_parts,
+            {p: float(v) for p, v in zip(pids, dflt)}, a.fps)
+        gesture_frames = player.frames(tokens, n_frames)
+        gesture_cols = []
+        for col, i in enumerate(expressive):
+            p = pids[i]
+            if p in role_ids or p in held:
+                continue
+            gesture_cols.append(col)
+            vals = np.array([gp.get(p, base_params.get(p, dflt[i]))
+                             for gp, _ in gesture_frames], np.float32)
+            traj[:, col] = np.clip((vals - lo[i]) / span_e[col] * 2 - 1, -1, 1)
+        n_g = sum(k["type"] == "gesture" for k in tokens)
+        print(f"events: {n_g} gesture segments from {len(motions)} motion "
+              "files (arms will score as copying against the rig's own "
+              "clips; novelty is judged on the role columns)")
+
     if a.behaviors and not (a.static or a.neutral):
         bound = model_driven
         for col, i in enumerate(expressive):
@@ -663,8 +772,17 @@ def main(argv=None) -> int:
                 if pids[i] in found and bands[i] == "expressive"
                 and snappable(pids[i], groups[i])}
         if live:
-            switches = Switches({p: (v[1], v[2]) for p, v in live.items()},
-                                a.snap_ramp)
+            if events_on:
+                # Gesture seams flip arm swaps that authored clips (one arm
+                # variant per motion) never flip inside a clip; a 6-frame
+                # linear ramp there cost Natori 7x authored arm jerk. Under
+                # --events a flip eases over the gesture fade instead.
+                fade_n = int(round(stats["gesture"]["fade"] * a.fps))
+                switches = Switches({p: (v[1], v[2]) for p, v in live.items()},
+                                    max(a.snap_ramp, fade_n), shape="minjerk")
+            else:
+                switches = Switches({p: (v[1], v[2]) for p, v in live.items()},
+                                    a.snap_ramp)
             print(f"snapping {len(live)} switch-like parameters: "
                   + ", ".join(sorted(live)))
 
@@ -681,6 +799,7 @@ def main(argv=None) -> int:
     seg_id = -1
     fade_from = None
     pid_index = {p: i for i, p in enumerate(pids)}
+    expr_ids = {pids[i] for i in expressive}
     for f in range(n_frames):
         if static_frames is not None:
             m, t = static_frames[f]
@@ -726,6 +845,16 @@ def main(argv=None) -> int:
                 over[pids[i]] = v
                 applied[f, col] = (v - lo[i]) / span_x[col] * 2 - 1
             parts = base_parts
+            if gesture_frames is not None:
+                # Discrete and other non-expressive parameters the gesture
+                # keys (arm swaps among them) go with their part opacities.
+                gp, parts = gesture_frames[f]
+                for p, v in gp.items():
+                    if p not in expr_ids:
+                        over[p] = v
+                for col in gesture_cols:
+                    if pids[expressive[col]] not in player.keyed[f]:
+                        applied_mask[f, col] = False
         if a.no_parts:
             parts = None
         frames.append((over, parts))
@@ -740,6 +869,7 @@ def main(argv=None) -> int:
                 opac[f, col_of[p]] = v
         mode = ("static" if a.static else "neutral" if a.neutral
                 else f"behaviors seed={a.seed}" if a.behaviors
+                else f"events seed={a.seed}" if events_on
                 else f"flow steps={flow[3]} seed={a.seed}" if flow
                 else f"prior anchor={a.anchor:g} reseed={a.reseed:g}")
         os.makedirs(os.path.dirname(os.path.abspath(a.dump)), exist_ok=True)

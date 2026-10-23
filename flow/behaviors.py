@@ -104,8 +104,11 @@ def min_jerk(u):
 
 # ------------------------------------------------------------------ binding
 
-def bind_roles(pids, allowed=None, rig_npz=None, override=None):
+def bind_roles(pids, allowed=None, rig_npz=None, override=None, roles=None):
     """{role: (pid, sign, source)}. `allowed` limits candidates (column ids).
+
+    `roles` ({role: standard id}, default ROLES) lets flow.events bind its
+    extra brow columns the same way.
 
     source is "id", "override" or "fallback". Fallback needs rig_npz to sit in
     a directory with other exported rigs, whose standard-ID parameters are the
@@ -114,7 +117,7 @@ def bind_roles(pids, allowed=None, rig_npz=None, override=None):
     allowed = list(pids) if allowed is None else list(allowed)
     by_canon = {canon(p): p for p in allowed}
     out = {}
-    for role, sid in ROLES.items():
+    for role, sid in (ROLES if roles is None else roles).items():
         if canon(sid) in by_canon:
             out[role] = (by_canon[canon(sid)], 1.0, "id")
     for role, v in (override or {}).items():
