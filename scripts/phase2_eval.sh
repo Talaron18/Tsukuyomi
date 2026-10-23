@@ -17,6 +17,10 @@
 #   EPOCHS    flow-prior epochs [40]
 #   BASE      flow-prior chunk baseline: hold, damped or velocity [hold]
 #   SECONDS_  seconds per scored run [60]
+#   BASIS     flow-prior smooth chunk basis size, 0 = per frame [0]
+#   CTX_NOISE flow-prior context-noise sigma, training only [0]
+#   LOCAL     1 = give the flow head per-parameter history (--local) [0]
+#   SMOOTH    runtime causal smoothing seconds, flow source only [0.08]
 set -euo pipefail
 
 # python -m flow.X resolves against the current directory, so a run started
@@ -40,6 +44,13 @@ EPOCHS=${EPOCHS:-40}
 # values on the first server run, 47% vs 9-12% with hold in a local test.
 BASE=${BASE:-hold}
 SECS=${SECONDS_:-60}
+# All opt-in: locally they cut unsmoothed jerk 3-5x, but gaze and brows still
+# never rest (score face/holds FAIL), so none is a default yet.
+BASIS=${BASIS:-0}
+CTX_NOISE=${CTX_NOISE:-0}
+LOCAL=${LOCAL:-0}
+SMOOTH=${SMOOTH:-0.08}
+local_arg=(); [[ "$LOCAL" == 1 ]] && local_arg=(--local)
 STEPS=${STEPS:-"clips fit train score render ab"}
 
 has() { [[ " $STEPS " == *" $1 "* ]]; }
@@ -67,6 +78,7 @@ if has train; then
     python -m flow.flowprior clips2 --rigs rigs --holdout "$HOLDOUT" \
         --epochs "$EPOCHS" --steps 200 --threads "$(nproc)" --device auto \
         --base "$BASE" --rollout-seconds "$SECS" \
+        --basis "$BASIS" --ctx-noise "$CTX_NOISE" "${local_arg[@]}" \
         --save fp.pt --log fp.log.json 2>&1 | tee fp.train.txt
 fi
 
@@ -76,7 +88,7 @@ sources=(beh flow static)
 src_args() {
     case $1 in
         beh)    echo --behaviors beh.json ;;
-        flow)   echo --ckpt fp.pt ;;
+        flow)   echo --ckpt fp.pt --smooth "$SMOOTH" ;;
         det)    echo --ckpt "$DET_CKPT" ;;
         static) echo --static ;;
     esac

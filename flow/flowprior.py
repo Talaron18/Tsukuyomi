@@ -636,14 +636,23 @@ def main(argv=None) -> int:
                          "-60%% to -6%% vs damped, but the free rollout moved "
                          "2x and jittered 3x more -- it learns to lean on "
                          "velocity, and its own jittery output then feeds back "
-                         "(exposure bias). Needs context-noise training first.")
+                         "(exposure bias). With --basis 3 --ctx-noise 0.5 "
+                         "locally: chunk error -40%%, unsmoothed jerk 9.3x "
+                         "(vs 190x for --local alone), but holds/face still "
+                         "FAIL, so it stays opt-in.")
     ap.add_argument("--basis", type=int, default=0, metavar="K",
                     help="represent each parameter's chunk residual by K "
-                         "smooth coefficients (0 = per frame, as before)")
+                         "smooth coefficients (0 = per frame, as before). "
+                         "Opt-in: locally (3 training rigs, 8 epochs) K=3 cut "
+                         "unsmoothed runtime jerk on Hiyori 51x -> 15x "
+                         "authored, Natori 362x -> 97x, but gaze/brow still "
+                         "never rest (score holds/face FAIL), as without it")
     ap.add_argument("--ctx-noise", type=float, default=0.0, metavar="SIGMA",
                     help="training only: corrupt the context tail by SIGMA x "
                          "the per-frame residual rms and bend the target back "
-                         "(0 = off)")
+                         "(0 = off). Helps --local only together with --basis "
+                         "(jerk 35x -> 24x at K=5); without a basis 190x -> "
+                         "174x. SIGMA 2 was worse than 0.5 on every measure")
     ap.add_argument("--ctx-noise-mode", default="walk",
                     choices=("walk", "jitter", "mix"))
     ap.add_argument("--ctx-noise-frac", type=float, default=0.5,
