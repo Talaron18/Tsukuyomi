@@ -1,0 +1,1 @@
+[tilt:right] ふふっ、[look:viewer] 私にそんな風に聞かれるなんて、少し [brow:up] 照れちゃいますね。 [pause:0.5] [gesture:main_1] 今日はあなたと一緒に、 [look:down] ゆっくりとお茶でも飲みながら過ごしたいです。

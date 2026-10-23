@@ -1,12 +1,37 @@
 [
  {
   "start": 0.0,
-  "end": 2.086,
-  "text": "Oh my, Fleet Admiral, is it?"
+  "end": 2.079,
+  "text": "Oh my, fleet admiral already?"
  },
  {
-  "start": 2.507,
-  "end": 8.229,
-  "text": "Congratulations, Commander~ I simply must make you a celebratory dinner tonight."
+  "start": 2.5,
+  "end": 4.436,
+  "text": "Congratulations, Commander."
+ },
+ {
+  "start": 4.786,
+  "end": 5.286,
+  "text": "."
+ },
+ {
+  "start": 5.136,
+  "end": 5.636,
+  "text": "."
+ },
+ {
+  "start": 5.557,
+  "end": 7.214,
+  "text": "I mean, Admiral, fufu."
+ },
+ {
+  "start": 7.636,
+  "end": 11.493,
+  "text": "You simply must let me pamper you tonight to celebrate,"
+ },
+ {
+  "start": 11.714,
+  "end": 12.214,
+  "text": "okay?"
  }
 ]

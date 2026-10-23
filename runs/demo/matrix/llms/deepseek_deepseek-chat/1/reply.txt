@@ -1,1 +1,1 @@
-[look:up] The beach? [tilt:right] My, that's quite the invitation. [look:viewer] I'd love to come along, dear.
+[look:viewer] The beach? [tilt:right] Just the two of us, I hope. [gesture:main_2] I'd love to come along.

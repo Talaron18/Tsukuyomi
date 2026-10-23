@@ -1,9 +1,9 @@
 director: not offered on this rig: lean:in (body_y centre 0.93, no room: the lean moves +0.031)
 director: 14 gesture labels: complete, home, idle, login, mail, main_1, main_2, main_3, mission, mission_complete, touch_body, touch_head, touch_special, wedding
-siliconflow: stop stop; usage {'prompt_tokens': 558, 'completion_tokens': 1693}
-director: model 12.0s, first text after 11.9s
-director: reply: You really know how to [tilt:right] sweep a girl off her feet with an invitation like this. I’d love to, [look:viewer] but you’ll have to promise to keep your hands busy away from my sunscreen. Tomorrow sounds wonderful, [nod], so I’ll pack my favorite swimsuit then.
-director: 235 spoken characters, 17.64s speech, 3 actions, 3 subtitles; rendering 19.14s
+siliconflow: stop stop; usage {'prompt_tokens': 558, 'completion_tokens': 1542}
+director: model 11.5s, first text after 11.4s
+director: reply: Oh, [look:viewer] are you finally asking me out to the shore, my darling? [tilt:right] well, I suppose I can make some time just for you... [nod] but only if you promise to keep a close eye on me while I relax.
+director: 177 spoken characters, 14.27s speech, 3 actions, 5 subtitles; rendering 15.77s
 132 params: expressive 104, physics 7, autonomic 2, mouth 2, discrete 17
 seeded from clips2/aidang_2.npz
 events: switch-like role columns left to the rig's own motions: brow_la=ParamBrowLAngle, brow_r=ParamBrowRY, brow_ra=ParamBrowRAngle, gaze_x=ParamEyeBallX, gaze_y=ParamEyeBallY
@@ -17,13 +17,13 @@ events: switch-like role columns left to the rig's own motions: brow_la=ParamBro
   role head_z   -> ParamAngleZ  [id]
 events: unbound roles (no standard id; --binding to add): body_z, brow_lf, brow_lx
 events: body adapted to the rig's own motions (weights {'body_x': 0.929, 'body_y': 0.933, 'w_hold': 0.875, 'w_move': 0.932}; own holds 34 +1 censored, 0 unanimated clips, moves 68): hold 0.16s move 1.07s p_chain 0.50
-director: 3 actions -> 4 tokens; 6 idle tokens overridden
-events: 8 roles from ev.json; tokens body_shift 16, brow 6, gesture 5, head_turn 12
+director: 3 actions -> 4 tokens; 4 idle tokens overridden
+events: 8 roles from ev.json; tokens body_shift 13, brow 5, gesture 5, head_turn 11
 tokens -> runs/demo/matrix/llms/siliconflow_Qwen_Qwen3.6-35B-A3B/1/tokens.json
 11 parts are switched by PartOpacity curves and the rig has no pose3 file; applying them directly (Live2D Native would ignore them and draw every variant)
 base state from idle.motion3.json: 11 part opacities, 63 held parameters
 events: 5 gesture segments from 14 motion files (arms will score as copying against the rig's own clips; novelty is judged on the role columns)
 snapping 30 switch-like parameters: ParamAcceX, ParamArmFore3InneiT, ParamArmForeL3Hand1T, ParamArmForeL3Hand2T, ParamArmForeL3X, ParamArmForeR2T, ParamArmL2Hand1T, ParamArmL2Hand3T, ParamArmL2Hand4T, ParamArmUpperRWT, ParamArmYuanT, ParamBreastBandSwitch, ParamBrowLAngle, ParamBrowRAngle, ParamBrowRY, ParamFumoArmT, ParamHandLDChangePa, ParamHandR1T, ParamHandR2T, ParamMDTHandXinT, ParamMDTHandYuanT, ParamNaiZiShadowPY, ParamPaoEyeL, ParamPaoEyeR, ParamPaoFlush, ParamPaoScale, ParamSkirtDefaultT, ParamSkirtJiaoPYX, ParamSkirtJiaoPYY, ParamSkirtMubiaoT
-dump -> runs/demo/matrix/llms/siliconflow_Qwen_Qwen3.6-35B-A3B/1/plan.npz  (574 frames, 104 expressive, 11 parts, mode events seed=0)
+dump -> runs/demo/matrix/llms/siliconflow_Qwen_Qwen3.6-35B-A3B/1/plan.npz  (473 frames, 104 expressive, 11 parts, mode events seed=0)
 render with:
-  /home/main/venv/hongenv/bin/python -m flow.runtime --model 'live2d-models/live2d_3/model/Azue Lane(JP)/aidang_2/aidang_2.model3.json' --rig rigs/aidang_2.npz --events ev.json --probe-dir out --fps 30.0 --seed 0 --seconds 19.14 --clips clips2/aidang_2.npz --tokens-in runs/demo/matrix/llms/siliconflow_Qwen_Qwen3.6-35B-A3B/1/tokens.json --size 512 --out runs/demo/matrix/llms/siliconflow_Qwen_Qwen3.6-35B-A3B/1/render
+  /home/main/venv/hongenv/bin/python -m flow.runtime --model 'live2d-models/live2d_3/model/Azue Lane(JP)/aidang_2/aidang_2.model3.json' --rig rigs/aidang_2.npz --events ev.json --probe-dir out --fps 30.0 --seed 0 --seconds 15.77 --clips clips2/aidang_2.npz --tokens-in runs/demo/matrix/llms/siliconflow_Qwen_Qwen3.6-35B-A3B/1/tokens.json --size 512 --out runs/demo/matrix/llms/siliconflow_Qwen_Qwen3.6-35B-A3B/1/render

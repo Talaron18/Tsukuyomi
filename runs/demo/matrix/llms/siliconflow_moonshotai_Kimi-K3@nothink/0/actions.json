@@ -1,0 +1,23 @@
+{
+ "speech_seconds": 6.714,
+ "seconds": 9.5,
+ "actions": [
+  {
+   "t": 0.0,
+   "tag": "gesture",
+   "arg": "touch_special",
+   "at": 0
+  },
+  {
+   "t": 2.7929,
+   "tag": "look",
+   "arg": "viewer",
+   "at": 33
+  }
+ ],
+ "warnings": [],
+ "model_seconds": 5.712,
+ "first_text_seconds": 4.559,
+ "stop_reason": "stop",
+ "usage": {}
+}

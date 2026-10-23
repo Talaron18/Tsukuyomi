@@ -1,17 +1,32 @@
 [
  {
   "start": 0.0,
-  "end": 2.364,
-  "text": "Ara ara, is that even a question?"
+  "end": 1.579,
+  "text": "Ara ara, welcome back."
  },
  {
-  "start": 2.786,
-  "end": 5.079,
-  "text": "Of course I missed you, darling."
+  "start": 2.0,
+  "end": 3.721,
+  "text": "Did I miss you, you ask."
  },
  {
-  "start": 5.5,
-  "end": 9.721,
-  "text": "Now come a little closer, and let big sister see your face."
+  "start": 4.071,
+  "end": 4.571,
+  "text": "."
+ },
+ {
+  "start": 4.421,
+  "end": 4.921,
+  "text": "."
+ },
+ {
+  "start": 4.771,
+  "end": 5.271,
+  "text": "?"
+ },
+ {
+  "start": 5.193,
+  "end": 9.629,
+  "text": "Come a little closer, and maybe I'll whisper the answer to you."
  }
 ]

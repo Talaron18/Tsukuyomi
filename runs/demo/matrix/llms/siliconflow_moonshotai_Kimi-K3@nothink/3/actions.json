@@ -1,0 +1,29 @@
+{
+ "speech_seconds": 8.35,
+ "seconds": 9.85,
+ "actions": [
+  {
+   "t": 0.0,
+   "tag": "gesture",
+   "arg": "main_1",
+   "at": 0
+  },
+  {
+   "t": 0.7286,
+   "tag": "brow",
+   "arg": "up",
+   "at": 8
+  },
+  {
+   "t": 5.5714,
+   "tag": "look",
+   "arg": "viewer",
+   "at": 68
+  }
+ ],
+ "warnings": [],
+ "model_seconds": 13.035,
+ "first_text_seconds": 11.801,
+ "stop_reason": "stop",
+ "usage": {}
+}

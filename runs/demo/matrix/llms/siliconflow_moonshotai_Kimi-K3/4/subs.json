@@ -2,26 +2,31 @@
  {
   "start": 0.0,
   "end": 0.5,
-  "text": "Ara ara."
+  "text": "Oh my."
  },
  {
-  "start": 0.85,
-  "end": 1.35,
+  "start": 0.707,
+  "end": 1.207,
   "text": "."
  },
  {
-  "start": 1.2,
-  "end": 1.7,
+  "start": 1.057,
+  "end": 1.557,
   "text": "."
  },
  {
-  "start": 1.621,
-  "end": 4.414,
-  "text": "what's gotten into you today, Commander?"
+  "start": 1.479,
+  "end": 4.55,
+  "text": "you certainly know how to make a girl blush."
  },
  {
-  "start": 4.836,
-  "end": 11.564,
-  "text": "Fufu, if you keep flattering me like that, I might start thinking you want something from me."
+  "start": 4.971,
+  "end": 8.479,
+  "text": "Was that sweet compliment just for me, Commander?"
+ },
+ {
+  "start": 8.9,
+  "end": 12.836,
+  "text": "Because if it was, I shall have to treasure it all day."
  }
 ]

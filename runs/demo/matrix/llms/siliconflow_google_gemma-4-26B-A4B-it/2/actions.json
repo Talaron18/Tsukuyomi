@@ -1,0 +1,47 @@
+{
+ "speech_seconds": 9.9,
+ "seconds": 14.557,
+ "actions": [
+  {
+   "t": 0.0,
+   "tag": "brow",
+   "arg": "up",
+   "at": 0
+  },
+  {
+   "t": 1.0643,
+   "tag": "tilt",
+   "arg": "right",
+   "at": 4
+  },
+  {
+   "t": 3.2786,
+   "tag": "look",
+   "arg": "viewer",
+   "at": 35
+  },
+  {
+   "t": 5.0571,
+   "tag": "gesture",
+   "arg": "main_2",
+   "at": 56
+  },
+  {
+   "t": 5.0571,
+   "tag": "brow",
+   "arg": "down",
+   "at": 56
+  },
+  {
+   "t": 6.6857,
+   "tag": "look",
+   "arg": "away",
+   "at": 66
+  }
+ ],
+ "warnings": [],
+ "model_seconds": 5.703,
+ "first_text_seconds": 1.702,
+ "stop_reason": "stop",
+ "usage": {}
+}

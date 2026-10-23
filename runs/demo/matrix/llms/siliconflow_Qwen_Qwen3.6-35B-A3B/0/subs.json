@@ -1,22 +1,27 @@
 [
  {
   "start": 0.0,
-  "end": 5.436,
-  "text": "Well, would you really think I’d be sitting here without noticing you’re gone?"
+  "end": 3.436,
+  "text": "Calling me like that right away, did I miss you?"
  },
  {
-  "start": 5.857,
-  "end": 10.514,
-  "text": "I’ve missed you plenty, Commander, absolutely no lies about that."
+  "start": 3.857,
+  "end": 4.357,
+  "text": "Hmm."
  },
  {
-  "start": 10.936,
-  "end": 14.507,
-  "text": "Though if you start letting it all go to your head,"
+  "start": 4.421,
+  "end": 4.921,
+  "text": "."
  },
  {
-  "start": 14.729,
-  "end": 17.443,
-  "text": "I might just tease you until you blush."
+  "start": 4.771,
+  "end": 5.271,
+  "text": "."
+ },
+ {
+  "start": 5.193,
+  "end": 6.264,
+  "text": "I suppose I did."
  }
 ]

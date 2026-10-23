@@ -1,11 +1,9 @@
 director: not offered on this rig: lean:in (body_y centre 0.93, no room: the lean moves +0.031)
 director: 14 gesture labels: complete, home, idle, login, mail, main_1, main_2, main_3, mission, mission_complete, touch_body, touch_head, touch_special, wedding
-deepseek: stop stop; usage {'prompt_tokens': 545, 'completion_tokens': 44, 'prompt_cache_hit_tokens': 384}
-director: model 0.9s, first text after 0.5s
-director: reply: [blink] Oh? [brow:up] The whole thing? 
-
-[tilt:right] Well... you must have been very hungry. [look:away] I did have a single slice planned...
-director: 99 spoken characters, 10.14s speech, 4 actions, 9 subtitles; rendering 11.64s
+deepseek: stop stop; usage {'prompt_tokens': 545, 'completion_tokens': 27, 'prompt_cache_hit_tokens': 384}
+director: model 1.0s, first text after 0.8s
+director: reply: [pause:1] [look:right] All of it? [look:viewer] Even the little strawberry on top?
+director: 45 spoken characters, 4.77s speech, 2 actions, 2 subtitles; rendering 6.27s
 132 params: expressive 104, physics 7, autonomic 2, mouth 2, discrete 17
 seeded from clips2/aidang_2.npz
 events: switch-like role columns left to the rig's own motions: brow_la=ParamBrowLAngle, brow_r=ParamBrowRY, brow_ra=ParamBrowRAngle, gaze_x=ParamEyeBallX, gaze_y=ParamEyeBallY
@@ -19,13 +17,13 @@ events: switch-like role columns left to the rig's own motions: brow_la=ParamBro
   role head_z   -> ParamAngleZ  [id]
 events: unbound roles (no standard id; --binding to add): body_z, brow_lf, brow_lx
 events: body adapted to the rig's own motions (weights {'body_x': 0.929, 'body_y': 0.933, 'w_hold': 0.875, 'w_move': 0.932}; own holds 34 +1 censored, 0 unanimated clips, moves 68): hold 0.16s move 1.07s p_chain 0.50
-director: 4 actions -> 4 tokens; 7 idle tokens overridden
-events: 8 roles from ev.json; tokens blink 1, body_shift 10, brow 1, gesture 4, head_turn 4
+director: 2 actions -> 2 tokens; 4 idle tokens overridden
+events: 8 roles from ev.json; tokens body_shift 7, brow 3, gesture 2, head_turn 3
 tokens -> runs/demo/matrix/llms/deepseek_deepseek-chat/2/tokens.json
 11 parts are switched by PartOpacity curves and the rig has no pose3 file; applying them directly (Live2D Native would ignore them and draw every variant)
 base state from idle.motion3.json: 11 part opacities, 63 held parameters
-events: 4 gesture segments from 14 motion files (arms will score as copying against the rig's own clips; novelty is judged on the role columns)
+events: 2 gesture segments from 14 motion files (arms will score as copying against the rig's own clips; novelty is judged on the role columns)
 snapping 30 switch-like parameters: ParamAcceX, ParamArmFore3InneiT, ParamArmForeL3Hand1T, ParamArmForeL3Hand2T, ParamArmForeL3X, ParamArmForeR2T, ParamArmL2Hand1T, ParamArmL2Hand3T, ParamArmL2Hand4T, ParamArmUpperRWT, ParamArmYuanT, ParamBreastBandSwitch, ParamBrowLAngle, ParamBrowRAngle, ParamBrowRY, ParamFumoArmT, ParamHandLDChangePa, ParamHandR1T, ParamHandR2T, ParamMDTHandXinT, ParamMDTHandYuanT, ParamNaiZiShadowPY, ParamPaoEyeL, ParamPaoEyeR, ParamPaoFlush, ParamPaoScale, ParamSkirtDefaultT, ParamSkirtJiaoPYX, ParamSkirtJiaoPYY, ParamSkirtMubiaoT
-dump -> runs/demo/matrix/llms/deepseek_deepseek-chat/2/plan.npz  (349 frames, 104 expressive, 11 parts, mode events seed=0)
+dump -> runs/demo/matrix/llms/deepseek_deepseek-chat/2/plan.npz  (188 frames, 104 expressive, 11 parts, mode events seed=0)
 render with:
-  /home/main/venv/hongenv/bin/python -m flow.runtime --model 'live2d-models/live2d_3/model/Azue Lane(JP)/aidang_2/aidang_2.model3.json' --rig rigs/aidang_2.npz --events ev.json --probe-dir out --fps 30.0 --seed 0 --seconds 11.64 --clips clips2/aidang_2.npz --tokens-in runs/demo/matrix/llms/deepseek_deepseek-chat/2/tokens.json --size 512 --out runs/demo/matrix/llms/deepseek_deepseek-chat/2/render
+  /home/main/venv/hongenv/bin/python -m flow.runtime --model 'live2d-models/live2d_3/model/Azue Lane(JP)/aidang_2/aidang_2.model3.json' --rig rigs/aidang_2.npz --events ev.json --probe-dir out --fps 30.0 --seed 0 --seconds 6.27 --clips clips2/aidang_2.npz --tokens-in runs/demo/matrix/llms/deepseek_deepseek-chat/2/tokens.json --size 512 --out runs/demo/matrix/llms/deepseek_deepseek-chat/2/render

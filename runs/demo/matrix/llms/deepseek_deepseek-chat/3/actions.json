@@ -1,6 +1,6 @@
 {
- "speech_seconds": 7.357,
- "seconds": 8.857,
+ "speech_seconds": 7.493,
+ "seconds": 8.993,
  "actions": [
   {
    "t": 1.35,
@@ -9,19 +9,19 @@
    "at": 15
   },
   {
-   "t": 4.0,
+   "t": 3.7857,
    "tag": "tilt",
    "arg": "right",
-   "at": 47
+   "at": 44
   }
  ],
  "warnings": [],
- "model_seconds": 0.845,
- "first_text_seconds": 0.468,
+ "model_seconds": 1.211,
+ "first_text_seconds": 0.834,
  "stop_reason": "stop",
  "usage": {
   "prompt_tokens": 544,
-  "completion_tokens": 38,
+  "completion_tokens": 39,
   "prompt_cache_hit_tokens": 384
  }
 }

@@ -1,32 +1,27 @@
 {
- "speech_seconds": 17.793,
- "seconds": 19.293,
+ "speech_seconds": 6.614,
+ "seconds": 8.693,
  "actions": [
   {
-   "t": 1.2214,
+   "t": 2.4357,
+   "tag": "look",
+   "arg": "viewer",
+   "at": 33
+  },
+  {
+   "t": 5.1929,
    "tag": "tilt",
    "arg": "left",
-   "at": 16
-  },
-  {
-   "t": 8.4429,
-   "tag": "nod",
-   "arg": null,
-   "at": 114
-  },
-  {
-   "t": 11.9357,
-   "tag": "look",
-   "arg": "away",
-   "at": 159
+   "at": 56
   }
  ],
  "warnings": [],
- "model_seconds": 14.051,
- "first_text_seconds": 13.821,
+ "model_seconds": 28.227,
+ "first_text_seconds": 27.504,
  "stop_reason": "stop",
  "usage": {
   "prompt_tokens": 557,
-  "completion_tokens": 1941
+  "completion_tokens": 2703,
+  "prompt_cache_hit_tokens": 0
  }
 }

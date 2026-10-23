@@ -1,0 +1,29 @@
+{
+ "speech_seconds": 7.779,
+ "seconds": 9.279,
+ "actions": [
+  {
+   "t": 0.0,
+   "tag": "tilt",
+   "arg": "left",
+   "at": 0
+  },
+  {
+   "t": 1.5,
+   "tag": "brow",
+   "arg": "up",
+   "at": 16
+  },
+  {
+   "t": 5.2143,
+   "tag": "nod",
+   "arg": null,
+   "at": 63
+  }
+ ],
+ "warnings": [],
+ "model_seconds": 5.719,
+ "first_text_seconds": 4.567,
+ "stop_reason": "stop",
+ "usage": {}
+}

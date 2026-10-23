@@ -1,27 +1,42 @@
 [
  {
   "start": 0.0,
-  "end": 3.007,
-  "text": "Oh my, the cake I was saving for tea time?"
+  "end": 0.5,
+  "text": "Oh my."
  },
  {
-  "start": 3.429,
-  "end": 4.65,
-  "text": "Naughty, naughty."
- },
- {
-  "start": 5.0,
-  "end": 5.5,
+  "start": 0.707,
+  "end": 1.207,
   "text": "."
  },
  {
-  "start": 5.35,
-  "end": 5.85,
+  "start": 1.057,
+  "end": 1.557,
   "text": "."
  },
  {
-  "start": 5.771,
-  "end": 11.279,
-  "text": "But don't worry, you can make it up to me by keeping me company this evening~"
+  "start": 1.479,
+  "end": 4.05,
+  "text": "you really ate the cake I was saving?"
+ },
+ {
+  "start": 4.471,
+  "end": 7.329,
+  "text": "Then you'll just have to make it up to me."
+ },
+ {
+  "start": 7.679,
+  "end": 8.179,
+  "text": "."
+ },
+ {
+  "start": 8.029,
+  "end": 8.529,
+  "text": "."
+ },
+ {
+  "start": 8.45,
+  "end": 12.171,
+  "text": "and I expect something even sweeter in return, okay?"
  }
 ]

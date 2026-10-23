@@ -1,17 +1,32 @@
 [
  {
   "start": 0.0,
-  "end": 2.864,
-  "text": "Oh my~ A beach date, just the two of us?"
+  "end": 1.007,
+  "text": "My, the beach?"
  },
  {
-  "start": 3.286,
-  "end": 10.579,
-  "text": "Ufufu, how could your big sister possibly refuse~ Just promise you won't stare at my swimsuit too much,"
+  "start": 1.429,
+  "end": 3.857,
+  "text": "Is someone asking me out on a date?"
  },
  {
-  "start": 10.8,
-  "end": 11.3,
-  "text": "okay?"
+  "start": 4.279,
+  "end": 6.207,
+  "text": "Of course I'll come with you."
+ },
+ {
+  "start": 6.557,
+  "end": 7.057,
+  "text": "."
+ },
+ {
+  "start": 6.907,
+  "end": 7.407,
+  "text": "."
+ },
+ {
+  "start": 7.329,
+  "end": 11.186,
+  "text": "and maybe I'll even let you help me pick out a swimsuit."
  }
 ]

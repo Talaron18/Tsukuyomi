@@ -1,9 +1,9 @@
 director: not offered on this rig: lean:in (body_y centre 0.93, no room: the lean moves +0.031)
 director: 14 gesture labels: complete, home, idle, login, mail, main_1, main_2, main_3, mission, mission_complete, touch_body, touch_head, touch_special, wedding
-siliconflow: stop stop; usage {'prompt_tokens': 544, 'completion_tokens': 433}
-director: model 10.6s, first text after 10.2s
-director: reply: ふふっ、[tilt:right] 私はあなたと一緒にいられるだけで十分嬉しいのよ。[look:away] でも…お茶を淹れて、隣でのんびりする時間は欲しいかしら。[look:viewer] ね、いいでしょう？
-director: 68 spoken characters, 11.73s speech, 3 actions, 4 subtitles; rendering 13.49s
+siliconflow: stop stop; usage {'prompt_tokens': 544, 'completion_tokens': 417}
+director: model 15.6s, first text after 14.1s
+director: reply: ふふっ、[tilt:right] あなたのお側にいられるだけで、私は十分幸せですよ。[look:viewer] でも今日は、お茶を淹れてゆっくりお話ししましょうか？[gesture:touch_head] 甘いものもご用意しますね。
+director: 71 spoken characters, 12.05s speech, 3 actions, 3 subtitles; rendering 14.03s
 132 params: expressive 104, physics 7, autonomic 2, mouth 2, discrete 17
 seeded from clips2/aidang_2.npz
 events: switch-like role columns left to the rig's own motions: brow_la=ParamBrowLAngle, brow_r=ParamBrowRY, brow_ra=ParamBrowRAngle, gaze_x=ParamEyeBallX, gaze_y=ParamEyeBallY
@@ -17,13 +17,13 @@ events: switch-like role columns left to the rig's own motions: brow_la=ParamBro
   role head_z   -> ParamAngleZ  [id]
 events: unbound roles (no standard id; --binding to add): body_z, brow_lf, brow_lx
 events: body adapted to the rig's own motions (weights {'body_x': 0.929, 'body_y': 0.933, 'w_hold': 0.875, 'w_move': 0.932}; own holds 34 +1 censored, 0 unanimated clips, moves 68): hold 0.16s move 1.07s p_chain 0.50
-director: 3 actions -> 3 tokens; 6 idle tokens overridden
-events: 8 roles from ev.json; tokens body_shift 12, brow 4, gesture 5, head_turn 5
+director: 3 actions -> 3 tokens; 5 idle tokens overridden
+events: 8 roles from ev.json; tokens body_shift 13, brow 4, gesture 4, head_turn 7
 tokens -> runs/demo/matrix/llms/siliconflow_zai-org_GLM-5.3-Flash/5/tokens.json
 11 parts are switched by PartOpacity curves and the rig has no pose3 file; applying them directly (Live2D Native would ignore them and draw every variant)
 base state from idle.motion3.json: 11 part opacities, 63 held parameters
-events: 5 gesture segments from 14 motion files (arms will score as copying against the rig's own clips; novelty is judged on the role columns)
+events: 4 gesture segments from 14 motion files (arms will score as copying against the rig's own clips; novelty is judged on the role columns)
 snapping 30 switch-like parameters: ParamAcceX, ParamArmFore3InneiT, ParamArmForeL3Hand1T, ParamArmForeL3Hand2T, ParamArmForeL3X, ParamArmForeR2T, ParamArmL2Hand1T, ParamArmL2Hand3T, ParamArmL2Hand4T, ParamArmUpperRWT, ParamArmYuanT, ParamBreastBandSwitch, ParamBrowLAngle, ParamBrowRAngle, ParamBrowRY, ParamFumoArmT, ParamHandLDChangePa, ParamHandR1T, ParamHandR2T, ParamMDTHandXinT, ParamMDTHandYuanT, ParamNaiZiShadowPY, ParamPaoEyeL, ParamPaoEyeR, ParamPaoFlush, ParamPaoScale, ParamSkirtDefaultT, ParamSkirtJiaoPYX, ParamSkirtJiaoPYY, ParamSkirtMubiaoT
-dump -> runs/demo/matrix/llms/siliconflow_zai-org_GLM-5.3-Flash/5/plan.npz  (404 frames, 104 expressive, 11 parts, mode events seed=0)
+dump -> runs/demo/matrix/llms/siliconflow_zai-org_GLM-5.3-Flash/5/plan.npz  (420 frames, 104 expressive, 11 parts, mode events seed=0)
 render with:
-  /home/main/venv/hongenv/bin/python -m flow.runtime --model 'live2d-models/live2d_3/model/Azue Lane(JP)/aidang_2/aidang_2.model3.json' --rig rigs/aidang_2.npz --events ev.json --probe-dir out --fps 30.0 --seed 0 --seconds 13.49 --clips clips2/aidang_2.npz --tokens-in runs/demo/matrix/llms/siliconflow_zai-org_GLM-5.3-Flash/5/tokens.json --size 512 --out runs/demo/matrix/llms/siliconflow_zai-org_GLM-5.3-Flash/5/render
+  /home/main/venv/hongenv/bin/python -m flow.runtime --model 'live2d-models/live2d_3/model/Azue Lane(JP)/aidang_2/aidang_2.model3.json' --rig rigs/aidang_2.npz --events ev.json --probe-dir out --fps 30.0 --seed 0 --seconds 14.03 --clips clips2/aidang_2.npz --tokens-in runs/demo/matrix/llms/siliconflow_zai-org_GLM-5.3-Flash/5/tokens.json --size 512 --out runs/demo/matrix/llms/siliconflow_zai-org_GLM-5.3-Flash/5/render

@@ -1,6 +1,6 @@
 {
- "speech_seconds": 7.976,
- "seconds": 9.476,
+ "speech_seconds": 6.993,
+ "seconds": 8.493,
  "actions": [
   {
    "t": 0.0,
@@ -9,25 +9,25 @@
    "at": 0
   },
   {
-   "t": 2.8333,
+   "t": 1.8333,
    "tag": "tilt",
    "arg": "right",
-   "at": 16
+   "at": 10
   },
   {
-   "t": 5.4595,
+   "t": 4.9048,
    "tag": "look",
-   "arg": "away",
-   "at": 33
+   "arg": "up",
+   "at": 28
   }
  ],
  "warnings": [],
- "model_seconds": 1.149,
- "first_text_seconds": 0.58,
+ "model_seconds": 1.22,
+ "first_text_seconds": 0.577,
  "stop_reason": "stop",
  "usage": {
   "prompt_tokens": 550,
-  "completion_tokens": 51,
+  "completion_tokens": 47,
   "prompt_cache_hit_tokens": 384
  }
 }

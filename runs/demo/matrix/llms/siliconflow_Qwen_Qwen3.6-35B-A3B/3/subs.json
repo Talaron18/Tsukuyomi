@@ -1,27 +1,17 @@
 [
  {
   "start": 0.0,
-  "end": 0.929,
-  "text": "Fleet Admiral?"
+  "end": 3.357,
+  "text": "I heard you finally earned that shiny new title,"
  },
  {
-  "start": 1.35,
-  "end": 4.65,
-  "text": "Well, well, look at you all grown up already."
+  "start": 3.579,
+  "end": 8.371,
+  "text": "fleet admiral, though I suppose I shouldn't be completely surprised."
  },
  {
-  "start": 5.071,
-  "end": 8.429,
-  "text": "I suppose I should finally address you formally…"
- },
- {
-  "start": 8.85,
-  "end": 9.35,
-  "text": "…"
- },
- {
-  "start": 9.2,
-  "end": 14.279,
-  "text": "but let’s be real, I still prefer how you look when you’re smiling at me."
+  "start": 9.071,
+  "end": 13.214,
+  "text": "But don't think a fancy rank changes how I get to spoil you."
  }
 ]
