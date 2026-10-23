@@ -1,0 +1,16 @@
+1
+00:00:00,000 --> 00:00:04,436
+School was okay, but math class went right over my head today.
+
+2
+00:00:04,786 --> 00:00:05,286
+.
+
+3
+00:00:05,136 --> 00:00:05,636
+.
+
+4
+00:00:05,557 --> 00:00:06,914
+What about your day?
+
