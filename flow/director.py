@@ -41,14 +41,18 @@ a directed glance moves like the idle glances around it.
              head turn left in would delay a directed nod, not mix with it).
              Blinks and untouched groups pass through unchanged.
 
-  speak      --tts edge|siliconflow|file (flow.speech): the spoken text is
+  speak      --tts edge|siliconflow|voicevox|file|auto (flow.speech), the
+             backend and voice per reply language from rigs/<rig>.voice.json
+             or --voice-config (flags win): the spoken text is
              synthesised (split at [pause] tags, the pauses inserted as
              silence) into speech.wav, and the times above come from the
              audio instead of the rate: word boundaries where the service
-             sends them (edge), else the phrases matched to the voiced
-             stretches an energy detector finds. The render runs the audio
-             plus --tail; a per-frame mouth-open curve from the speech level
-             goes to actions.json as "mouth", which the runtime turns into a
+             sends them (edge), the moras (VOICEVOX), else the phrases
+             matched to the voiced stretches an energy detector finds. The
+             render runs the audio plus --tail; a per-frame mouth curve from
+             the speech level -- under --lipsync auto on the parameters and
+             ranges the rig's own talking motions use (flow.mouth) -- goes
+             to actions.json as "mouth", which the runtime turns into a
              "mouth" token, so --tokens-in replays it too. demo.mp4 gets the
              audio and the subtitles. --tts none [default] is the rate model,
              unchanged.
@@ -1114,27 +1118,73 @@ def length(acts, end, motions, tail):
     return last + tail
 
 
+def tts_kind(a):
+    """--tts as given; unset is none (silent, as always), or auto when a
+    --voice-config is named. A rigs/<rig>.voice.json on disk alone never
+    switches speech on."""
+    kind = getattr(a, "tts", None)
+    if kind:
+        return kind
+    return "auto" if getattr(a, "voice_config", None) else "none"
+
+
+def voice_config_path(a):
+    """--voice-config, else <rig without .npz>.voice.json (as the gesture
+    overrides); the latter is read only when it exists."""
+    if getattr(a, "voice_config", None):
+        return a.voice_config
+    rig = getattr(a, "rig", None)
+    return os.path.splitext(rig)[0] + ".voice.json" if rig else None
+
+
 def make_tts(a, log=print):
-    """The --tts backend, or None for --tts none (the rate model)."""
-    kind = getattr(a, "tts", "none") or "none"
+    """A speech.VoiceRouter for the --tts backend (or the voice config's
+    per language, --tts auto), or None for --tts none (the rate model)."""
+    kind = tts_kind(a)
     if kind == "none":
         return None
-    if kind == "edge":
-        return sp.EdgeTTS(a.voice, a.tts_rate, log=log)
-    if kind == "siliconflow":
-        base, env = OPENAI_COMPAT["siliconflow"]
-        # The chat --api-base/--api-key-env are SiliconFlow's only when the
-        # chat backend is SiliconFlow: a DeepSeek base must not be used here.
-        if a.backend == "siliconflow":
-            base, env = a.api_base or base, a.api_key_env or env
-        return sp.SiliconFlowTTS(a.tts_api_base or base, a.tts_key_env or env,
-                                 a.tts_model, a.voice, a.tts_format,
-                                 a.tts_sample_rate, log=log)
-    if kind == "file":
-        if not a.tts_file:
-            raise SystemExit("--tts file needs --tts-file")
-        return sp.FileTTS(a.tts_file)
-    raise SystemExit(f"unknown --tts {kind}")
+    if kind not in ("auto",) + sp.TTS_KINDS:
+        raise SystemExit(f"unknown --tts {kind}")
+    g = lambda k: getattr(a, k, None)          # noqa: E731
+    path = voice_config_path(a)
+    if g("voice_config") and not os.path.exists(g("voice_config")):
+        raise SystemExit(f"--voice-config {g('voice_config')}: no such file")
+    cfg = sp.load_voice_config(path, log)
+    if cfg:
+        log(f"speech: voice config {path}: "
+            + "; ".join(f"{k} {v.get('tts', 'edge')}"
+                        + (f" {v['voice']}" if v.get("voice") else "")
+                        for k, v in cfg.items()))
+    cli = {"voice": g("voice"), "rate": g("tts_rate"), "model": g("tts_model"),
+           "speed": g("tts_speed"), "pitch": g("tts_pitch")}
+
+    def make(kind, st):
+        if kind == "edge":
+            return sp.EdgeTTS(st.get("voice"), st.get("rate") or "+0%",
+                              log=log)
+        if kind == "siliconflow":
+            base, env = OPENAI_COMPAT["siliconflow"]
+            # The chat --api-base/--api-key-env are SiliconFlow's only when
+            # the chat backend is SiliconFlow: a DeepSeek base must not be
+            # used here.
+            if g("backend") == "siliconflow":
+                base, env = g("api_base") or base, g("api_key_env") or env
+            return sp.SiliconFlowTTS(g("tts_api_base") or base,
+                                     g("tts_key_env") or env, st.get("model"),
+                                     st.get("voice"), g("tts_format") or "wav",
+                                     g("tts_sample_rate"), log=log)
+        if kind == "voicevox":
+            return sp.VoicevoxTTS(g("voicevox_url") or sp.VOICEVOX_URL,
+                                  st.get("voice"),
+                                  {k: st.get(k) for k in sp.VOICEVOX_KNOBS},
+                                  log=log)
+        if kind == "file":
+            if not g("tts_file"):
+                raise SystemExit("--tts file needs --tts-file")
+            return sp.FileTTS(g("tts_file"))
+        raise SystemExit(f"unknown tts {kind}")
+
+    return sp.VoiceRouter(kind, cli, cfg, make, log)
 
 
 def plan(a, reply, out_dir, motions, log=print, tts=None):
@@ -1166,19 +1216,34 @@ def plan(a, reply, out_dir, motions, log=print, tts=None):
         sp.write_wav(os.path.join(out_dir, "speech.wav"), said["audio"],
                      said["sr"])
         seconds = length(acts, end, motions, a.tail)
-        extra = {"tts": {"backend": a.tts, "voice": tts.last_voice,
+        extra = {"tts": {"backend": getattr(tts, "kind", None) or a.tts,
+                         "voice": tts.last_voice,
                          "timing": said["method"],
                          "voiced_end": round(said["speech_end"], 3)}}
-        if a.lipsync != "off":
+        credit = getattr(tts, "credit", None)
+        if credit:
+            extra["tts"]["credit"] = credit
+        lipsync = getattr(a, "lipsync", None) or "auto"
+        if lipsync != "off":
             # Sampled at the run's own frame times (runtime n_frames is
             # int(seconds * fps) of the --seconds it is given, rounded to
             # 2 decimals there); the runtime pads or crops to its count.
-            extra["mouth"] = dict(sp.mouth_track(
+            cal = getattr(a, "mouth_cal", None) if lipsync == "auto" else None
+            tr = sp.mouth_track(
                 said["audio"], said["sr"], a.fps,
-                int(round(seconds, 2) * a.fps) + 1, a.lipsync, a.mouth_gain),
-                mode=a.lipsync)
+                int(round(seconds, 2) * a.fps) + 1, lipsync, a.mouth_gain,
+                cal=cal, moras=said.get("moras"))
+            # auto without a calibrated map is open, token and all.
+            mode = lipsync if lipsync != "auto" or "map" in tr else "open"
+            extra["mouth"] = dict(tr, mode=mode)
+            if "gamma" in tr:
+                log(f"mouth: openness ** {tr['gamma']:g} toward the rig's "
+                    f"talking level {cal.get('level')}")
         log(f"speech: {end:.2f}s audio ({tts.last_voice}), tag times from "
             f"{said['method']} -> speech.wav")
+        if credit:
+            log(f"speech: credit \"{credit}\" wherever this audio is "
+                "published (VOICEVOX voice library terms)")
     else:
         # A speech.wav left by an earlier run into this folder would be
         # muxed onto this silent one.
@@ -1317,16 +1382,38 @@ def main(argv=None) -> int:
                     help="CJK characters spoken per second")
     ap.add_argument("--latin-rate", type=float, default=LATIN_RATE,
                     help="other characters (spaces included) per second")
-    ap.add_argument("--tts", default="none",
-                    choices=("none", "edge", "siliconflow", "file"),
+    ap.add_argument("--tts", default=None,
+                    choices=("none", "auto", "edge", "siliconflow",
+                             "voicevox", "file"),
                     help="speak the reply: tag times, subtitles and the "
                          "mouth then follow the audio (speech.wav). none "
-                         "[default]: silent, times from --cjk-rate/"
-                         "--latin-rate; edge: edge-tts (pip install "
-                         "edge-tts); siliconflow: its /audio/speech "
-                         "(SILICONFLOW_API_KEY); file: --tts-file")
+                         "[default; auto with --voice-config]: silent, times "
+                         "from --cjk-rate/--latin-rate; auto: per language "
+                         "from the voice config, edge where it names none; "
+                         "edge: edge-tts (pip install edge-tts); "
+                         "siliconflow: its /audio/speech "
+                         "(SILICONFLOW_API_KEY); voicevox: a VOICEVOX engine "
+                         "at --voicevox-url (Japanese; other languages go "
+                         "to edge); file: --tts-file")
+    ap.add_argument("--voice-config", default=None, metavar="FILE.json",
+                    help="per-language voices: {\"ja\": {\"tts\": "
+                         "\"voicevox\", \"voice\": \"name/style\", "
+                         "\"speed\": 1.0}, \"en\": {\"tts\": \"edge\", "
+                         "\"voice\": \"en-US-AnaNeural\", \"rate\": "
+                         "\"+0%%\"}}; keys tts, voice, rate (edge), model "
+                         "(siliconflow), speed/pitch/intonation/volume "
+                         "(voicevox). Flags win. Default with --tts: <rig "
+                         "without .npz>.voice.json when it exists")
+    ap.add_argument("--voicevox-url", default=sp.VOICEVOX_URL,
+                    help="VOICEVOX engine base URL (no proxy for localhost)")
+    ap.add_argument("--tts-speed", type=float, default=None,
+                    help="voicevox speedScale")
+    ap.add_argument("--tts-pitch", type=float, default=None,
+                    help="voicevox pitchScale")
     ap.add_argument("--voice", default=None,
-                    help="TTS voice. edge default by the reply's script: "
+                    help="TTS voice. voicevox: a style id, "
+                         "\"character/style\" or a character (GET /speakers "
+                         "lists them); edge default by the reply's script: "
                          + ", ".join(f"{k} {v}" for k, v in
                                      sp.EDGE_VOICES.items())
                          + f"; siliconflow default {sp.SF_TTS_VOICE} (a name "
@@ -1342,16 +1429,20 @@ def main(argv=None) -> int:
                     "else https://api.siliconflow.com/v1)")
     ap.add_argument("--tts-key-env", default=None, help="siliconflow TTS key "
                     "variable (default SILICONFLOW_API_KEY)")
-    ap.add_argument("--tts-rate", default="+0%",
-                    help="edge speaking rate, e.g. +10%%")
+    ap.add_argument("--tts-rate", default=None,
+                    help="edge speaking rate, e.g. +10%% [+0%%]")
     ap.add_argument("--tts-file", default=None,
                     help="--tts file: a wav/mp3 of the reply")
-    ap.add_argument("--lipsync", default="open",
-                    choices=("open", "vowels", "off"),
-                    help="with --tts: open [default] drives the mouth-open "
-                         "parameter from the speech level; vowels also drives "
-                         "ParamA/I/U/E/O where the rig has them (crude "
-                         "formant estimate; experimental); off: still mouth")
+    ap.add_argument("--lipsync", default=None,
+                    choices=("auto", "open", "vowels", "off"),
+                    help="with --tts: auto [default] drives the mouth "
+                         "parameters the rig's own talking motions use, over "
+                         "their authored speaking range (flow.mouth; open "
+                         "where the motions have no lip flaps); open drives "
+                         "the mouth-open parameter from the speech level, "
+                         "rest to maximum; vowels also drives ParamA/I/U/E/O "
+                         "where the rig has them (VOICEVOX: from the moras; "
+                         "else a crude formant estimate); off: still mouth")
     ap.add_argument("--mouth-gain", type=float, default=1.0,
                     help="scale on the mouth opening (1: the utterance's "
                          "loud level opens it fully)")
@@ -1427,6 +1518,14 @@ def main(argv=None) -> int:
           + (", ".join(sorted(labels)) or "none"))
     backend = make_backend(a)
     tts = make_tts(a)
+    if tts is not None and (a.lipsync or "auto") == "auto":
+        try:
+            from .mouth import calibrate, describe
+        except ImportError:
+            from flow.mouth import calibrate, describe
+        a.mouth_cal = calibrate(a.model_json, a.rig, a.fps,
+                                authored_motions(a.model_json, a.fps))
+        print(describe(a.mouth_cal))
     messages = []
 
     def turn(text, out_dir):

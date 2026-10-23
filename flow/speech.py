@@ -13,12 +13,22 @@ lip-sync curve. numpy and the standard library only; ffmpeg decodes mp3.
                             this was written.
                siliconflow  OpenAI-compatible POST {base}/audio/speech. No
                             word timings.
+               voicevox     a VOICEVOX engine over HTTP (Japanese only: other
+                            languages go to edge, logged). Sends its AudioQuery's
+                            moras, timed by their phoneme lengths. The API is
+                            from memory (GET /speakers, POST /audio_query,
+                            POST /synthesis), UNVERIFIED against a live engine
+                            where this was written; error bodies are surfaced.
                file         a recorded wav/mp3, used as is.
+             VoiceRouter picks the backend per reply from its language and
+             the rig's voice config (rigs/<rig>.voice.json), flags winning.
   speak      the reply is split at its [pause:x] tags, each piece synthesised
              and joined with that much silence, so a pause is heard. Every
              spoken character gets a (start, end) in the audio:
                words        from the word boundaries, matched in order
                             against the text;
+               moras        VOICEVOX: the reply's kana and kanji runs aligned
+                            to the moras (align_moras), then as words;
                vad          otherwise the characters' weights (the rate
                             model's seconds per character, punctuation and
                             spaces 0) are spread over the voiced stretches an
@@ -28,7 +38,8 @@ lip-sync curve. numpy and the standard library only; ffmpeg decodes mp3.
              the utterance's own loud level (95th percentile), gated with
              hysteresis, attack/release smoothed, snapped shut below 0.05.
              Optional vowel weights (a/i/u/e/o) from the first two spectral
-             envelope peaks.
+             envelope peaks, or with VOICEVOX from the moras (mora_track:
+             a/i/u/e/o/N/pau per frame, pauses and ッ closing the mouth).
 """
 
 from __future__ import annotations
@@ -554,12 +565,462 @@ class FileTTS:
         return x, sr, None
 
 
+# -------------------------------------------------------------- VOICEVOX
+
+VOICEVOX_URL = "http://127.0.0.1:50021"
+# AudioQuery knobs a voice config or flag may set: our name -> its field.
+VOICEVOX_KNOBS = {"speed": "speedScale", "pitch": "pitchScale",
+                  "intonation": "intonationScale", "volume": "volumeScale"}
+SMALL_KANA = set("ァィゥェォャュョヮぁぃぅぇぉゃゅょゎ")
+# Kana the engine reads as another mora: particles は/へ/を and the
+# yotsugana. Matched at a small cost, not as a mismatch.
+KANA_READ = {("ハ", "ワ"), ("ヘ", "エ"), ("ヲ", "オ"), ("ヅ", "ズ"),
+             ("ヂ", "ジ")}
+# Alignment costs (align_moras). A kana that is not the mora there costs
+# MISMATCH, less than dropping it and the mora (DROP each), so a one-off
+# reading difference does not shift the rest. A kanji/Latin/digit run takes
+# 1 .. RUN_MORAS * its length moras at RUN_COST each: cheap, so the kana
+# around it decide where it ends.
+MISMATCH = 0.6
+DROP = 1.0
+RUN_MORAS = 4
+RUN_MAX = 16
+RUN_COST = 0.05
+# Rescaling the summed phoneme lengths to the decoded audio: a ratio off by
+# more than this is logged (the engine rounds each phoneme to its frame
+# rate, ~93.75 Hz from memory, so a few percent is expected).
+RATIO_WARN = 0.05
+
+
+def _kata(ch):
+    o = ord(ch)
+    return chr(o + 0x60) if 0x3041 <= o <= 0x3096 else ch
+
+
+def _is_kana(ch):
+    o = ord(ch)
+    return (0x3041 <= o <= 0x309F or 0x30A1 <= o <= 0x30FA or ch == "ー"
+            or 0x31F0 <= o <= 0x31FF)
+
+
+def kana_units(text):
+    """[(kind, reading, start, end)] over `text`: "k" one kana mora (a kana
+    with the small ゃ/ゅ/ょ... after it, in katakana; ー alone), "x" a run
+    of anything else spoken (kanji, Latin, digits), "p" punctuation or a
+    symbol, "s" white space."""
+    out, i, n = [], 0, len(text)
+    while i < n:
+        ch = text[i]
+        cat = unicodedata.category(ch)
+        if ch.isspace():
+            out.append(("s", "", i, i + 1))
+            i += 1
+        elif _is_kana(ch) and ch not in SMALL_KANA:
+            j = i + 1
+            while j < n and text[j] in SMALL_KANA:
+                j += 1
+            out.append(("k", "".join(_kata(c) for c in text[i:j]), i, j))
+            i = j
+        elif cat[0] in "PS" or ch in SMALL_KANA:
+            out.append(("p", "", i, i + 1))
+            i += 1
+        else:
+            j = i + 1
+            while (j < n and not text[j].isspace() and not _is_kana(text[j])
+                   and unicodedata.category(text[j])[0] not in "PS"):
+                j += 1
+            out.append(("x", text[i:j], i, j))
+            i = j
+    return out
+
+
+def query_moras(query, dur=None, log=print):
+    """[{"text", "vowel", "start", "vstart", "end"}] seconds from an
+    AudioQuery: prePhonemeLength, then each accent phrase's moras
+    (consonant_length + vowel_length) and its pause_mora, all divided by
+    speedScale (the engine adds the pre/post silences as phonemes before
+    applying the speed, from memory). A pause mora's vowel is "pau";
+    pauseLength replaces and pauseLengthScale scales its length where the
+    engine has them. With `dur` (the decoded audio's seconds) the times are
+    rescaled so the total, postPhonemeLength included, is the audio's: the
+    query's lengths are what was synthesised, the engine's frame rounding
+    and any unknown in the above are absorbed by one ratio, logged when it
+    is far from 1."""
+    speed = float(query.get("speedScale") or 1.0)
+    p_len = query.get("pauseLength")
+    p_scale = float(query.get("pauseLengthScale") or 1.0)
+    t = float(query.get("prePhonemeLength") or 0.0) / speed
+    out = []
+    for ap in query.get("accent_phrases") or ():
+        for mo in ap.get("moras") or ():
+            c = float(mo.get("consonant_length") or 0.0) / speed
+            v = float(mo.get("vowel_length") or 0.0) / speed
+            out.append({"text": mo.get("text") or "",
+                        "vowel": mo.get("vowel") or "pau",
+                        "consonant": mo.get("consonant"),
+                        "start": t, "vstart": t + c, "end": t + c + v})
+            t += c + v
+        pm = ap.get("pause_mora")
+        if pm:
+            v = float(pm.get("vowel_length") or 0.0)
+            if p_len is not None:
+                v = float(p_len)
+            v = v * p_scale / speed
+            out.append({"text": pm.get("text") or "、", "vowel": "pau",
+                        "consonant": None, "start": t, "vstart": t,
+                        "end": t + v})
+            t += v
+    total = t + float(query.get("postPhonemeLength") or 0.0) / speed
+    if dur and total > 0:
+        r = dur / total
+        if abs(r - 1) > RATIO_WARN:
+            log(f"voicevox: audio {dur:.2f}s vs query {total:.2f}s (x{r:.3f})"
+                "; mora times rescaled to the audio")
+        for m in out:
+            for k in ("start", "vstart", "end"):
+                m[k] *= r
+    return out
+
+
+def _kana_eq(u, m):
+    if u == m["text"]:
+        return 0.0
+    if (u, m["text"]) in KANA_READ:
+        return 0.1
+    if u == "ー" and not m.get("consonant") and m["vowel"] != "pau":
+        return 0.1                     # a long vowel the engine spelt out
+    return MISMATCH
+
+
+def align_moras(text, moras):
+    """[(unit text, start, end)] for the spoken units of `text` that got
+    moras, in order. Dynamic programming over (units, moras): a kana unit
+    takes one mora (free when it is that mora), a kanji/Latin/digit run
+    1..RUN_MORAS per character, punctuation and spaces none; pause moras
+    are skipped free, other moras and units dropped at DROP.
+
+    Why not spread by phrase: the reply is mixed kanji and kana, and the
+    engine's reading of a kanji is unknown here, but every kana is a fixed
+    point -- in typical replies most characters are kana -- so a kanji run
+    lands between the kana around it and only its inside is a guess (its
+    moras' span, start to end). A unit that matched nothing is left to
+    word_spans, which spreads the time between its neighbours."""
+    units = kana_units(text)
+    U, M = len(units), len(moras)
+    INF = float("inf")
+    best = [[INF] * (M + 1) for _ in range(U + 1)]
+    back = [[None] * (M + 1) for _ in range(U + 1)]
+    best[0][0] = 0.0
+    pau = [m["vowel"] in ("pau",) for m in moras]
+
+    def relax(i, j, c, frm):
+        if c < best[i][j]:
+            best[i][j], back[i][j] = c, frm
+
+    for i in range(U + 1):
+        for j in range(M + 1):
+            c0 = best[i][j]
+            if c0 == INF:
+                continue
+            if j < M:                          # skip a mora
+                relax(i, j + 1, c0 + (0.0 if pau[j] else DROP), (i, j, 0))
+            if i == U:
+                continue
+            kind, rd, a, b = units[i]
+            if kind in "ps":
+                relax(i + 1, j, c0, (i, j, 0))
+                continue
+            relax(i + 1, j, c0 + DROP * (len(rd) if kind == "x" else 1),
+                  (i, j, 0))                   # drop the unit
+            if kind == "k":
+                if j < M and not pau[j]:
+                    relax(i + 1, j + 1, c0 + _kana_eq(rd, moras[j]),
+                          (i, j, 1))
+                continue
+            for m in range(1, min(RUN_MORAS * len(rd), RUN_MAX) + 1):
+                if j + m > M or pau[j + m - 1]:
+                    break
+                relax(i + 1, j + m, c0 + RUN_COST * m, (i, j, m))
+    out = []
+    i, j = U, M
+    while i > 0 or j > 0:
+        pi, pj, m = back[i][j]
+        if pi < i and m > 0:
+            kind, rd, a, b = units[pi]
+            out.append((text[a:b], moras[pj]["start"],
+                        moras[pj + m - 1]["end"]))
+        i, j = pi, pj
+    return out[::-1]
+
+
+def _open_url(url):
+    """An opener: no proxy for a local engine (an http_proxy from the
+    environment answered localhost with 502 for Ollama on the server)."""
+    import urllib.parse
+    import urllib.request
+    host = urllib.parse.urlsplit(url).hostname or ""
+    if host in ("localhost", "127.0.0.1", "::1") or host.startswith("127."):
+        return urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    return urllib.request.build_opener()
+
+
+class VoicevoxTTS:
+    """A VOICEVOX engine. `voice`: a style id, "character/style" or a
+    character (its first style), resolved through GET /speakers; None takes
+    the first talk style listed. Knobs (VOICEVOX_KNOBS) are written into
+    the AudioQuery before synthesis. The voice libraries' terms ask for a
+    credit, "VOICEVOX:<character>", wherever the audio is published:
+    `credit` has it."""
+
+    whole = False
+    timing = "moras"
+
+    def __init__(self, url=VOICEVOX_URL, voice=None, knobs=None, log=print,
+                 timeout=120, opener=None):
+        self.url = (url or VOICEVOX_URL).rstrip("/")
+        self.voice, self.knobs = voice, dict(knobs or {})
+        self.log, self.timeout = log, timeout
+        self.opener = opener or _open_url(self.url)
+        self._speakers = None
+        self.speaker = self.character = self.last_voice = None
+
+    @property
+    def credit(self):
+        return f"VOICEVOX:{self.character}" if self.character else "VOICEVOX"
+
+    def _req(self, method, path, params=None, body=None):
+        import urllib.error
+        import urllib.parse
+        import urllib.request
+        url = self.url + path
+        if params:
+            url += "?" + urllib.parse.urlencode(params)
+        # POST /audio_query has no body; urllib would send a GET without
+        # data, so an empty one.
+        data = (json.dumps(body, ensure_ascii=False).encode("utf-8")
+                if body is not None else (b"" if method == "POST" else None))
+        req = urllib.request.Request(
+            url, data=data, method=method,
+            headers={"Content-Type": "application/json"} if body is not None
+            else {})
+        try:
+            with self.opener.open(req, timeout=self.timeout) as fh:
+                return fh.read()
+        except urllib.error.HTTPError as exc:
+            detail = exc.read()[:1000].decode("utf-8", "replace")
+            raise RuntimeError(f"{exc.code} from voicevox {method} {path}: "
+                               f"{detail}") from None
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+            raise RuntimeError(
+                f"voicevox at {self.url} unreachable ({exc}); is the engine "
+                "running? e.g. docker run --rm -p 127.0.0.1:50021:50021 "
+                "voicevox/voicevox_engine:cpu-latest (image name unverified)"
+            ) from None
+
+    def speakers(self):
+        if self._speakers is None:
+            raw = self._req("GET", "/speakers")
+            try:
+                self._speakers = json.loads(raw)
+            except ValueError:
+                raise RuntimeError("voicevox /speakers is not JSON: "
+                                   + raw[:500].decode("utf-8", "replace"))
+        return self._speakers
+
+    def styles(self):
+        """[(id, character, style)] of the talk styles."""
+        out = []
+        for sp_ in self.speakers():
+            for st in sp_.get("styles") or ():
+                if st.get("type", "talk") in (None, "talk"):
+                    out.append((int(st["id"]), str(sp_.get("name")),
+                                str(st.get("name"))))
+        return out
+
+    def resolve(self):
+        if self.speaker is not None:
+            return self.speaker
+        st = self.styles()
+        v = None if self.voice is None else str(self.voice).strip()
+        hit = None
+        if v is None:
+            if not st:
+                raise RuntimeError("voicevox lists no talk styles")
+            hit = st[0]
+            self.log(f"voicevox: no voice given; using {hit[1]}/{hit[2]} "
+                     f"(id {hit[0]})")
+        elif v.isdigit():
+            hit = next((s for s in st if s[0] == int(v)), None)
+            if hit is None:
+                hit = (int(v), f"speaker {v}", "?")
+                self.log(f"voicevox: style id {v} is not in /speakers; "
+                         "using it anyway")
+        else:
+            name, _, style = v.rpartition("/") if "/" in v else (v, "", "")
+            for exact in (True, False):
+                def eq(x, y):
+                    return x == y if exact else x.casefold() == y.casefold()
+                hit = next((s for s in st if eq(s[1], name)
+                            and (not style or eq(s[2], style))), None)
+                if hit:
+                    break
+            if hit is None:
+                raise RuntimeError(
+                    f"voicevox: no voice {v!r}; available: "
+                    + ", ".join(f"{c}/{s} ({i})" for i, c, s in st))
+        self.speaker, self.character = hit[0], hit[1]
+        self.last_voice = f"{hit[1]}/{hit[2]} ({hit[0]})"
+        return self.speaker
+
+    def query(self, text):
+        sid = self.resolve()
+        raw = self._req("POST", "/audio_query",
+                        {"text": text, "speaker": sid})
+        try:
+            q = json.loads(raw)
+        except ValueError:
+            raise RuntimeError("voicevox /audio_query is not JSON: "
+                               + raw[:500].decode("utf-8", "replace"))
+        for k, v in self.knobs.items():
+            if v is not None and k in VOICEVOX_KNOBS:
+                q[VOICEVOX_KNOBS[k]] = float(v)
+        return q
+
+    def synth(self, text):
+        """(audio, sr, words, moras): words from align_moras over the mora
+        times, which are rescaled to the audio's length."""
+        q = self.query(text)
+        data = self._req("POST", "/synthesis", {"speaker": self.speaker},
+                         body=q)
+        if data[:4] != b"RIFF":
+            raise RuntimeError("voicevox /synthesis did not send a wav: "
+                               + data[:500].decode("utf-8", "replace"))
+        x, sr = decode(data)
+        moras = query_moras(q, len(x) / sr, self.log)
+        words = align_moras(text, moras)
+        return x, sr, words, moras
+
+
+# ---------------------------------------------------------- voice config
+
+# Per-language voice settings, from rigs/<rig>.voice.json or --voice-config:
+#   {"ja": {"tts": "voicevox", "voice": "冥鳴ひまり/ノーマル", "speed": 1.0},
+#    "en": {"tts": "edge", "voice": "en-US-AnaNeural", "rate": "+0%"},
+#    "default": {...}}
+# Languages are language()'s: ja, zh, ko, en; "default" covers the rest.
+VOICE_KEYS = {"tts", "voice", "rate", "model", *VOICEVOX_KNOBS}
+VOICE_LANGS = ("ja", "zh", "ko", "en", "default")
+TTS_KINDS = ("edge", "siliconflow", "voicevox", "file")
+
+
+def load_voice_config(path, log=print):
+    """{language: {key: value}} from a voice config file; {} when there is
+    none. Unknown languages and keys are dropped with a line each."""
+    if not path or not os.path.exists(path):
+        return {}
+    with open(path, encoding="utf-8") as fh:
+        blob = json.load(fh)
+    if not isinstance(blob, dict):
+        raise SystemExit(f"{path}: a voice config is a JSON object "
+                         "language -> settings")
+    out = {}
+    for lang, entry in blob.items():
+        if lang.startswith("_"):
+            continue                       # "_comment" and the like
+        if lang not in VOICE_LANGS or not isinstance(entry, dict):
+            log(f"voice config {path}: {lang!r} ignored (languages: "
+                + ", ".join(VOICE_LANGS) + ")")
+            continue
+        bad = set(entry) - VOICE_KEYS
+        if bad:
+            log(f"voice config {path}: {lang}: unknown keys "
+                + ", ".join(sorted(bad)) + " ignored")
+        if entry.get("tts") and entry["tts"] not in TTS_KINDS:
+            raise SystemExit(f"{path}: {lang}: unknown tts {entry['tts']!r}")
+        out[lang] = {k: v for k, v in entry.items() if k in VOICE_KEYS}
+    return out
+
+
+def voice_settings(lang, tts, cli, cfg, log=print):
+    """(backend kind, settings) for replies in `lang`.
+
+    `tts`: the --tts flag ("auto": the config's choice, edge where it names
+    none). `cli`: flag values (voice, rate, speed, ...; None = not given).
+    The config entry for the language (else "default") applies when it
+    names the same backend or none; a flag wins over it. VOICEVOX speaks
+    Japanese only: another language falls back to edge, with that
+    language's edge entry if the config has one and no voice flag (the
+    flag named a VOICEVOX voice)."""
+    entry = cfg.get(lang) or cfg.get("default") or {}
+    kind = entry.get("tts", "edge") if tts == "auto" else tts
+    use = entry if entry.get("tts", kind) == kind else {}
+    out = {k: v for k, v in use.items() if k != "tts"}
+    out.update({k: v for k, v in cli.items() if v is not None})
+    if kind == "voicevox" and lang != "ja":
+        log(f"speech: VOICEVOX speaks Japanese only; this {lang} reply goes "
+            "to edge")
+        kind = "edge"
+        out = {k: v for k, v in (entry if entry.get("tts", "edge") == "edge"
+                                 else {}).items() if k != "tts"}
+        if cli.get("rate") is not None:
+            out["rate"] = cli["rate"]
+    return kind, out
+
+
+class VoiceRouter:
+    """The TTS for a reply, chosen in begin() from its language: `make(kind,
+    settings)` builds a backend, cached per (kind, settings). speak() reads
+    `whole` after begin(), so the choice is made there."""
+
+    def __init__(self, tts, cli, cfg, make, log=print):
+        self.tts, self.cli, self.cfg = tts, dict(cli), cfg
+        self.make, self.log = make, log
+        self._made = {}
+        self.cur = self.kind = None
+
+    def pick(self, lang):
+        kind, st = voice_settings(lang, self.tts, self.cli, self.cfg,
+                                  self.log)
+        key = (kind, tuple(sorted((k, str(v)) for k, v in st.items())))
+        if key not in self._made:
+            self._made[key] = self.make(kind, st)
+        self.kind = kind
+        return self._made[key]
+
+    def begin(self, spoken):
+        self.cur = self.pick(language(spoken))
+        if hasattr(self.cur, "begin"):
+            self.cur.begin(spoken)
+
+    @property
+    def whole(self):
+        return bool(getattr(self.cur, "whole", False))
+
+    @property
+    def timing(self):
+        return getattr(self.cur, "timing", None)
+
+    @property
+    def last_voice(self):
+        return getattr(self.cur, "last_voice", None)
+
+    @property
+    def credit(self):
+        return getattr(self.cur, "credit", None)
+
+    def synth(self, text):
+        if self.cur is None:
+            self.begin(text)
+        return self.cur.synth(text)
+
+
 # ----------------------------------------------------------------- speak
 
 def speak(spoken, tags, tts, weight, log=print):
     """Synthesize `spoken` and time it. Returns {audio, sr, spans (per
     character, seconds), acts (non-pause tags with t, as timeline()), end
-    (audio seconds), speech_end, method}.
+    (audio seconds), speech_end, method, moras (VOICEVOX: query_moras of
+    every piece on the joined audio's clock, else None)}.
 
     `weight(ch)`: seconds a character takes in the rate model, 0 for one
     that is silent. Pause tags split the text; each piece is synthesised
@@ -576,6 +1037,7 @@ def speak(spoken, tags, tts, weight, log=print):
     w_all = [0.0 if (ch.isspace() or unicodedata.category(ch)[0] == "P")
              else weight(ch) for ch in spoken]
     pieces, spans, seg_end, methods = [], [None] * n, [], []
+    moras = None
     clock, sr = 0.0, None
     for k in range(len(cuts) - 1):
         if k > 0:
@@ -590,7 +1052,12 @@ def speak(spoken, tags, tts, weight, log=print):
             seg_end.append(clock)
             continue
         lead = len(text) - len(text.lstrip())
-        x, xsr, words = tts.synth(body)
+        res = tts.synth(body)
+        x, xsr, words = res[:3]
+        if len(res) > 3 and res[3] is not None:
+            moras = (moras or []) + [
+                {**m, **{k: clock + m[k] for k in ("start", "vstart", "end")}}
+                for m in res[3]]
         if sr is None:
             sr = xsr
         x = _resample(x, xsr, sr)
@@ -601,7 +1068,7 @@ def speak(spoken, tags, tts, weight, log=print):
         if words:
             loc, share = word_spans(body, wts, words, dur)
             if share >= MIN_COVER:
-                method = "words"
+                method = getattr(tts, "timing", None) or "words"
             else:
                 log(f"speech: word boundaries cover {share:.0%} of the text; "
                     "aligning by voiced energy instead")
@@ -645,7 +1112,8 @@ def speak(spoken, tags, tts, weight, log=print):
                       for a, b in spans],
             "acts": acts, "end": end,
             "speech_end": max(seg_end) if seg_end else 0.0,
-            "method": "+".join(sorted(set(methods))) or "none"}
+            "method": "+".join(sorted(set(methods))) or "none",
+            "moras": moras}
 
 
 # -------------------------------------------------------------- lip sync
@@ -724,13 +1192,98 @@ def vowels(x, sr, fps, open_):
     return out
 
 
-def mouth_track(x, sr, fps, n_frames, mode="open", gain=1.0):
+# Mora-driven mouth (VOICEVOX). Each frame reads the moras over its own
+# stretch widened by MORA_XFADE either side, sampled MORA_SUB times, so a
+# vowel change cross-fades over ~2 frames instead of switching. A consonant
+# shows its mora's vowel (the lips anticipate it). ん keeps the mouth at
+# most N_OPEN open, shaped as u; ッ, pauses and anything outside the moras
+# close it. Hand-set: ん is a nasal with the lips near closed, ッ a held
+# closure.
+MORA_XFADE = 0.02
+MORA_SUB = 7
+N_OPEN = 0.2
+VISEMES = ("a", "i", "u", "e", "o", "N", "pau")
+
+
+def mora_weights(moras, fps, n):
+    """(gate, {vowel: share}, visemes) per frame from the mora timeline
+    (speak's "moras"): how much of the level-based openness may show (0 in
+    pauses, N_OPEN in ん), the share of each vowel shape (summing to 1 where
+    any vowel or ん is heard; ん counts as u) and the frame's main viseme.
+    Devoiced vowels (upper case) keep their shape."""
+    starts = np.array([m["start"] for m in moras]) if moras else np.zeros(0)
+    labs = []
+    for m in moras or ():
+        v = m["vowel"]
+        labs.append("N" if v == "N" else v.lower() if v.lower() in "aiueo"
+                    and len(v) == 1 else "pau")
+    gate = np.zeros(n)
+    share = {v: np.zeros(n) for v in VOWEL_F}
+    vis = []
+    off = np.linspace(-MORA_XFADE, 1.0 / fps + MORA_XFADE, MORA_SUB)
+    for f in range(n):
+        c = dict.fromkeys(VISEMES, 0)
+        for t in f / fps + off:
+            k = int(np.searchsorted(starts, t, side="right") - 1)
+            c[labs[k] if 0 <= k and t < moras[k]["end"] else "pau"] += 1
+        vis.append(max(VISEMES, key=lambda v: c[v]))
+        gate[f] = ((MORA_SUB - c["pau"]) / MORA_SUB
+                   * (1 - (1 - N_OPEN) * c["N"] / MORA_SUB))
+        tot = sum(c[v] for v in "aiueo") + c["N"]
+        if tot:
+            for v in "aiueo":
+                share[v][f] = (c[v] + (c["N"] if v == "u" else 0)) / tot
+    return gate, share, vis
+
+
+def mora_track(moras, fps, open_):
+    """(openness, {vowel: weight * openness}, visemes) per frame: the
+    level-based openness says how far the mouth opens, the moras which
+    shape it takes and when it must be shut (mora_weights)."""
+    gate, share, vis = mora_weights(moras, fps, len(open_))
+    op = np.asarray(open_, np.float64) * gate
+    return op, {v: (op * w).astype(np.float32) for v, w in share.items()}, vis
+
+
+def mouth_track(x, sr, fps, n_frames, mode="open", gain=1.0, cal=None,
+                moras=None):
     """The mouth token's payload: {"fps", "open": [...]} and, mode
     "vowels", {"vowels": {"a": [...], ...}}, rounded to 4 decimals so the
-    plan and a --tokens-in replay read the same numbers."""
+    plan and a --tokens-in replay read the same numbers.
+
+    Mode "auto" with a rig calibration (flow.mouth.calibrate) that found
+    talking curves: the openness is shaped to the rig's authored speaking
+    level (cal["gamma"] from flow.mouth.level_gamma), and the payload
+    carries the calibration's "map" (parameter -> curve and its speaking
+    range) for the runtime; vowel curves are added when the map drives two
+    or more vowels. Without such a calibration "auto" is "open" exactly.
+    With `moras` (VOICEVOX) the vowels come from the moras, else from the
+    formant estimate."""
     op = np.clip(mouth_open(x, sr, fps, n_frames) * gain, 0, 1)
-    tr = {"fps": float(fps), "open": [round(float(v), 4) for v in op]}
+    tr = {"fps": float(fps)}
+    share = None
+    if moras is not None:
+        gate, share, tr["visemes"] = mora_weights(moras, fps, n_frames)
+        op = op * gate
+    if mode == "auto" and cal and cal.get("map"):
+        try:
+            from .mouth import level_gamma
+        except ImportError:
+            from flow.mouth import level_gamma
+        g = level_gamma(op, cal.get("level"))
+        op = op ** g
+        tr["gamma"] = round(float(g), 4)
+        need = sum(m["curve"] in VOWEL_F for m in cal["map"].values()) >= 2
+        mode = "vowels" if need else "open"
+        tr["map"] = cal["map"]
+    elif mode == "auto":
+        mode = "open"
+    vow = None
     if mode == "vowels":
+        vow = ({v: op * w for v, w in share.items()} if share is not None
+               else vowels(x, sr, fps, op))
+    tr["open"] = [round(float(v), 4) for v in op]
+    if vow is not None:
         tr["vowels"] = {v: [round(float(u), 4) for u in c]
-                        for v, c in vowels(x, sr, fps, op).items()}
+                        for v, c in vow.items()}
     return tr

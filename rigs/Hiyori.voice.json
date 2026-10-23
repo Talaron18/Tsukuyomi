@@ -1,0 +1,5 @@
+{
+ "_comment": "Per-language TTS for Hiyori (flow.director --tts auto, or any --tts; flags win).",
+ "en": {"tts": "edge", "voice": "en-US-AnaNeural"},
+ "ja": {"tts": "edge", "voice": "ja-JP-NanamiNeural"}
+}

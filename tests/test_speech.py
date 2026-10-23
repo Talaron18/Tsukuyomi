@@ -360,11 +360,12 @@ def test_siliconflow_tts_base_follows_the_chat_backend_only():
                               api_key_env=None, tts_api_base=None,
                               tts_key_env=None, tts_model=None, voice="x:y",
                               tts_format="wav", tts_sample_rate=None)
-    t = dr.make_tts(a)
+    t = dr.make_tts(a).pick("en")
     assert t.url == "https://api.siliconflow.com/v1/audio/speech"
     assert t.voice == "x:y"
     a.backend, a.api_base = "siliconflow", "https://api.siliconflow.cn/v1"
-    assert dr.make_tts(a).url == "https://api.siliconflow.cn/v1/audio/speech"
+    assert dr.make_tts(a).pick("en").url == \
+        "https://api.siliconflow.cn/v1/audio/speech"
 
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="no ffmpeg")

@@ -1,0 +1,6 @@
+{
+ "_comment": "Per-language TTS for aidang_2 (flow.director --tts auto, or any --tts; flags win). VOICEVOX style name unverified: GET /speakers on the engine lists them; a wrong name fails with the list. Credit 'VOICEVOX:<character>' when publishing the audio.",
+ "ja": {"tts": "voicevox", "voice": "冥鳴ひまり/ノーマル", "speed": 1.0},
+ "en": {"tts": "edge", "voice": "en-US-AriaNeural"},
+ "zh": {"tts": "edge", "voice": "zh-CN-XiaoxiaoNeural"}
+}

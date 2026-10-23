@@ -15,7 +15,10 @@ the way the design always intended, and each for its own reason:
   mouth      Held at default, unless the event stream carries a "mouth" token
              (flow.director --tts: a sampled openness curve from the speech
              audio, flow.speech), which drives the mouth-open parameter and,
-             in vowel mode, ParamA/I/U/E/O. Mouth form is left to the rig.
+             in vowel mode, ParamA/I/U/E/O; under --lipsync auto the token
+             names the parameters and their speaking ranges, calibrated from
+             the rig's own talking motions (flow.mouth). Otherwise mouth
+             form is left to the rig.
   discrete   Held at default. Part swaps cannot be interpolated.
 
 Expressive parameters that the rig's own motions use as switches -- arm and
@@ -231,12 +234,19 @@ def mouth_targets(pids, bands):
     return (opens[0] if opens else None), vow
 
 
-def mouth_frames(tok, pids, bands, hi, dflt, fps, n_frames):
+def mouth_frames(tok, pids, bands, hi, dflt, fps, n_frames, lo=None):
     """{parameter id: values per frame} from a "mouth" token: {"t", "fps",
-    "open": [...], "vowels": {"a": [...]}?}. Openness 0 is the parameter's
-    default (a rig's rest mouth is closed) and 1 its maximum. Sampled at
-    this run's frame times; outside the curve the mouth is closed. A rig
-    with no open parameter gets the openness on ParamA."""
+    "open": [...], "vowels": {"a": [...]}?, "map": {...}?}. Openness 0 is
+    the parameter's default (a rig's rest mouth is closed) and 1 its
+    maximum. Sampled at this run's frame times; outside the curve the mouth
+    is closed. A rig with no open parameter gets the openness on ParamA.
+
+    With "map" (--lipsync auto on a rig whose motions talk, flow.mouth):
+    exactly the parameters it names, each from its "lo" (rest) to its "hi"
+    (the authored speaking extreme) along its "curve" ("open" or a vowel),
+    clamped to the rig's range (`lo`, maximum)."""
+    if tok.get("map"):
+        return _mapped_mouth(tok, pids, hi, lo, fps, n_frames)
     op_i, vow = mouth_targets(pids, bands)
     src = float(tok.get("fps", fps))
     t0 = float(tok.get("t", 0.0))
@@ -267,6 +277,36 @@ def mouth_frames(tok, pids, bands, hi, dflt, fps, n_frames):
             continue
         out[pids[i]] = (float(dflt[i])
                         + at(c) * (float(hi[i]) - float(dflt[i])))
+    return out
+
+
+def _sample_curve(curve, src, t0, fps, n_frames):
+    c = np.asarray(curve, np.float64)
+    if src == fps and t0 == 0.0:
+        out = np.zeros(n_frames)
+        m = min(n_frames, len(c))
+        out[:m] = c[:m]
+        return out
+    return np.interp(np.arange(n_frames) / fps - t0,
+                     np.arange(len(c)) / src, c, left=0.0, right=0.0)
+
+
+def _mapped_mouth(tok, pids, hi, lo, fps, n_frames):
+    src = float(tok.get("fps", fps))
+    t0 = float(tok.get("t", 0.0))
+    curves = {"open": tok["open"], **(tok.get("vowels") or {})}
+    index = {p: i for i, p in enumerate(pids)}
+    out = {}
+    for p, m in tok["map"].items():
+        i = index.get(p)
+        if i is None or m.get("curve") not in curves:
+            continue
+        v = float(m["lo"]) + _sample_curve(curves[m["curve"]], src, t0, fps,
+                                           n_frames) * (float(m["hi"])
+                                                        - float(m["lo"]))
+        if lo is not None:
+            v = np.clip(v, float(lo[i]), float(hi[i]))
+        out[p] = v
     return out
 
 
@@ -962,7 +1002,8 @@ def main(argv=None) -> int:
     mtok = next((k for k in tokens if k["type"] == "mouth"),
                 None) if events_on else None
     if mtok is not None:
-        mouth = mouth_frames(mtok, pids, bands, hi, dflt, a.fps, n_frames)
+        mouth = mouth_frames(mtok, pids, bands, hi, dflt, a.fps, n_frames,
+                             lo=lo)
         print("mouth: lip sync on " + (", ".join(mouth) or
               "nothing (the rig has no mouth-open or ParamA parameter)"))
 

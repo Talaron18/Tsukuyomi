@@ -7,7 +7,7 @@ From the repo root:
 
 - `test_runtime_units.py`, `test_motions.py`, `test_score.py`,
   `test_behaviors.py`, `test_events.py`, `test_director.py`,
-  `test_speech.py` are pure numpy: no GL, no torch, no sample rigs. They
+  `test_speech.py`, `test_voicevox.py`, `test_mouth.py` are pure numpy: no GL, no torch, no sample rigs. They
   always run. `test_flowprior.py` needs torch and skips without it.
 - `test_render.py` needs live2d-py, a display (or `xvfb-run` on PATH) and
   `TSUKUYOMI_SAMPLES` (the CubismWebSamples checkout, its `Samples/`, or
