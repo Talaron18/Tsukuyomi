@@ -1,0 +1,31 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/main/yachiyo/flow/director.py", line 1406, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/home/main/yachiyo/flow/director.py", line 1384, in main
+    return turn(a.say or "", a.out)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/main/yachiyo/flow/director.py", line 1368, in turn
+    res = plan(a, reply, out_dir, motions, tts=tts)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/main/yachiyo/flow/director.py", line 1120, in plan
+    said = sp.speak(reply["spoken"], reply["tags"], tts,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/main/yachiyo/flow/speech.py", line 562, in speak
+    x, xsr, words = tts.synth(body)
+                    ^^^^^^^^^^^^^^^
+  File "/home/main/yachiyo/flow/speech.py", line 503, in synth
+    data = fh.read()
+           ^^^^^^^^^
+  File "/usr/lib/python3.11/http/client.py", line 481, in read
+    s = self._safe_read(self.length)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/http/client.py", line 632, in _safe_read
+    raise IncompleteRead(data, amt-len(data))
+http.client.IncompleteRead: IncompleteRead(226784 bytes read, 36430 more expected)
+director: 10 gesture labels: hiyori_m01, hiyori_m02, hiyori_m03, hiyori_m04, hiyori_m05, hiyori_m06, hiyori_m07, hiyori_m08, hiyori_m09, hiyori_m10
+deepseek: stop stop; usage {'prompt_tokens': 600, 'completion_tokens': 27, 'prompt_cache_hit_tokens': 384}
+director: model 0.9s, first text after 0.6s
+director: reply: [brow:up] Oh! You really came back! [lean:in] I was wondering when I'd see you again.
