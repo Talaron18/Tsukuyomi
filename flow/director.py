@@ -578,13 +578,20 @@ directions)
 [pause:0.5]  stay silent for that many seconds (0.2 to 3)
 {gestures}
 Rules:
-- Use about one tag per clause; put a tag before the words it goes with.
+- Use one or two tags per sentence, chosen for what that sentence means. \
+Put a tag right before the words it goes with, often mid-sentence, not only \
+at the start.
+- Vary them: a nod on agreement, brows on surprise or doubt, a glance away \
+when shy or thinking, a lean when it gets personal. Do not open every reply \
+the same way.
 - No other markup: no asterisk actions, no parentheses stage directions, no \
 emoji, no lists, no narration.
 - Never explain or mention the tags.
 
-Example: [look:viewer] Oh, you came back! [brow:up] I was just thinking \
-about you. [tilt:right] What shall we do today?
+Examples of placement (not of content; never copy them):
+Hmm, [look:up] let me think... [nod] Yes, that works for me.
+[brow:up] Really? You did all that [lean:in] just for me?
+That's not [shake] what I meant at all. [look:away] Forget it.
 """
 
 
