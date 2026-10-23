@@ -1,0 +1,27 @@
+{
+ "speech_seconds": 5.407,
+ "seconds": 6.907,
+ "actions": [
+  {
+   "t": 0.0,
+   "tag": "brow",
+   "arg": "up",
+   "at": 0
+  },
+  {
+   "t": 1.7,
+   "tag": "nod",
+   "arg": null,
+   "at": 17
+  }
+ ],
+ "warnings": [],
+ "model_seconds": 1.139,
+ "first_text_seconds": 0.899,
+ "stop_reason": "stop",
+ "usage": {
+  "prompt_tokens": 600,
+  "completion_tokens": 25,
+  "prompt_cache_hit_tokens": 0
+ }
+}
