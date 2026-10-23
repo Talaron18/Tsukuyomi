@@ -45,28 +45,51 @@ Fitting (`--fit clips2 --out events.json`)
 Per training rig and role group (gaze, head, body, brow; columns bound by
 standard ID only), each clip is cut into holds -- runs where every column of
 the group changes by less than flow.score.STILL_EPS per frame, the judge's own
-definition of still -- and moves between them (amplitude, duration, peak
-velocity). Clips are 2-10 s, so a hold that touches a clip end is truncated:
-it is a lower bound, and the hold-duration lognormal is fitted by censored
-maximum likelihood (complete holds contribute the density, censored ones the
-survival function). A clip that keys a group but never moves it is a single
-censored hold. Columns a clip does not key (mask False) are not data.
+definition of still -- and moves between them, split further into
+sub-movements at speed dips (authored heads and bodies rarely rest; what lies
+between two holds is several movements end to end). Each move has an
+amplitude, duration, peak velocity and whether it chains straight into the
+next one (p_chain) or ends in a hold.
 
-Rigs key motion very unevenly (some barely key the eyes). Every statistic is
-fitted per rig, then pooled as the median over the rigs that have enough data
-for it (MIN_EVENTS complete events), so one sparse rig cannot set the global
-hold time; the per-rig values are kept in the stats file and printed.
-Target spread is the std over all frames pooled, not about each clip's mean:
-that is what flow.score compares against.
+  censoring  Clips are 2-10 s, so a hold that touches a clip end is
+             truncated: a lower bound. The hold lognormal is fitted by
+             censored maximum likelihood (complete holds give the density,
+             censored ones the survival function); the Kaplan-Meier median
+             and the naive median are reported beside it.
+  sparsity   A clip that keys a group but never moves it (Mao keys gaze
+             still in 5 of 8 clips) is "unanimated", counted and left out:
+             it says nobody animated the eyes there, not that a fixation
+             lasted the whole clip. Columns a clip does not key are not data.
+             Every statistic is fitted per rig and pooled as the median over
+             the rigs with at least MIN_EVENTS complete events for it, so one
+             sparse rig cannot set the global hold time; the per-rig values
+             are kept in the stats file and printed.
+  targets    Spread is the std over all frames pooled (not about each clip's
+             mean): that is what flow.score compares. Successive targets
+             follow an AR(1) whose persistence reproduces the fitted mean
+             squared move amplitude (see _rho); left-right ranges are taken
+             symmetric.
+  coupling   head-follows-gaze probability, lag and gain from saccades paired
+             with the nearest head move; P(brow change | large saccade);
+             body-on-head slope; brow loadings on the brow heights.
 
 Gestures
 --------
 Arm parameters are rig-specific (pinyin names, ...T switches) and cannot be
 bound by role. Gesture events replay segments of the rig's OWN motion files
-(every non-role expressive parameter and part opacity), cross-faded in, back
-to back with short rests. Against the rig's own clips that part will score as
-copying -- expected. Novelty is measured on the role columns, and the claim
-of new motion rests on the event sequencing and targets there.
+(every non-role parameter the base state may hold, with part opacities),
+back to back with occasional short rests, each cross-faded in while the
+previous one keeps playing (as Live2D fades motions). A candidate segment is
+weighted by exp(-flip_cost x arm swaps it forces at the seam), and under
+--events a snapped switch eases over the fade (minimum-jerk) instead of the
+6-frame linear ramp: authored clips hold one arm variant per motion, so
+every swap is excess jerk to the judge. A gesture column the playing
+motion(s) do not key is marked unkeyed in --dump, as --static and the clips
+themselves do.
+
+Against the rig's own clips the arm part WILL score as copying -- expected.
+Novelty is measured on the role columns, and the claim of new motion rests
+on the event sequencing and targets there.
 
 Blinks are not fitted (eye-open is the autonomic band and not in the clips):
 a saccade larger than BLINK_AMP requests a blink with probability P_BLINK,
@@ -115,6 +138,7 @@ MIRROR = ("head_x", "head_z", "body_x", "body_z", "gaze_x")
 STILL_EPS = 0.002       # = flow.score.STILL_EPS (not imported: score imports us
 #                         indirectly through behaviors, keep the judge apart)
 MIN_HOLD = 3            # frames of velocity below STILL_EPS to call a hold
+DIP = 0.5               # sub-movement split: speed minimum below DIP x peaks
 MIN_EVENTS = 3          # complete events a rig needs to count for a statistic
 BLINK_AMP = 0.25        # saccade amplitude (normalised) that may bring a blink
 P_BLINK = 0.5
@@ -123,7 +147,7 @@ P_BLINK = 0.5
 DEFAULTS = {
     "groups": {
         g: {"hold": [m, 0.8], "move": [d, 0.5], "amp": [a, 0.6],
-            "dur_amp_slope": 0.3}
+            "dur_amp_slope": 0.3, "amp_rms": a, "p_chain": 0.0}
         for g, m, d, a in (("gaze", 1.5, 0.3, 0.3), ("head", 0.6, 1.2, 0.15),
                            ("body", 0.5, 1.5, 0.1), ("brow", 2.0, 0.4, 0.2))},
     "roles": {r: {"center": 0.0, "std": s, "lo": -2.5 * s, "hi": 2.5 * s}
@@ -158,14 +182,46 @@ def bind(pids, allowed=None, override=None):
 
 # ------------------------------------------------------------- extraction
 
-def segment(x, fps, eps=STILL_EPS, min_hold=MIN_HOLD):
+def _split_points(speed, a, b, dip=DIP, min_len=MIN_HOLD):
+    """Sub-movement boundaries inside the move speed[a:b].
+
+    Authored heads and bodies rarely hold (still 0-13% of the time on the
+    samples): what lies between two holds is usually several movements end
+    to end. Taken as one point-to-point move its path length was lost --
+    fitted on a rig and replayed against that rig's own clips, head and body
+    moved 0.1-0.5x as much frame to frame. A boundary is a local minimum of
+    the (lightly smoothed) speed that dips below `dip` times the peak on
+    both sides, where a minimum-jerk chain would also come to rest.
+    """
+    sm = speed[a:b].astype(float)
+    if len(sm) < 2 * min_len + 1:
+        return []
+    sm = np.convolve(np.r_[sm[0], sm, sm[-1]], [0.25, 0.5, 0.25], "valid")
+    cuts, last = [], 0
+    for k in range(min_len, len(sm) - min_len):
+        if not (sm[k] <= sm[k - 1] and sm[k] < sm[k + 1]):
+            continue
+        if k - last < min_len:
+            continue
+        nxt = len(sm) if not cuts else len(sm)
+        if (sm[k] < dip * sm[last:k].max()
+                and sm[k] < dip * sm[k + 1:nxt].max()):
+            cuts.append(k)
+            last = k
+    return [a + k for k in cuts]
+
+
+def segment(x, fps, eps=STILL_EPS, min_hold=MIN_HOLD, split=True):
     """Holds and moves of one group in one clip.
 
     x is (T, k): the group's keyed columns. Velocity is the largest per-frame
     change over the columns, so a hold means every column is still -- the
     judge's notion. Returns (holds, moves):
       holds  [(start s, duration s, censored bool, position (k,))]
-      moves  [(start s, duration s, censored bool, delta (k,), peak vel /s)]
+      moves  [(start s, duration s, censored bool, delta (k,), peak vel /s,
+               chained bool)]
+    A move is censored when it touches a clip end. `chained` says the move
+    runs straight into another one (split at a speed dip) instead of a hold.
     Frame indices are of velocity samples: hold [a, b) means x[a..b] is still.
     """
     x = np.asarray(x, np.float64)
@@ -174,7 +230,9 @@ def segment(x, fps, eps=STILL_EPS, min_hold=MIN_HOLD):
     T = len(x)
     if T < 2:
         return [], []
-    sp = np.abs(np.diff(x, axis=0)).max(axis=1)
+    dx = np.diff(x, axis=0)
+    sp = np.abs(dx).max(axis=1)
+    speed = np.sqrt((dx * dx).sum(axis=1))
     still = sp < eps
     d = np.diff(np.r_[0, still.astype(np.int8), 0])
     runs = [(a, b) for a, b in zip(np.flatnonzero(d == 1),
@@ -186,14 +244,18 @@ def segment(x, fps, eps=STILL_EPS, min_hold=MIN_HOLD):
         holds.append((a / fps, (b - a) / fps, bool(a == 0 or b == n),
                       x[a].copy()))
     # Moves are the gaps between holds (short still stretches inside a move
-    # are part of it: an ease-in-ease-out passes near zero velocity).
+    # are part of it: an ease-in-ease-out passes near zero velocity), split
+    # into sub-movements at speed dips.
     edges = [(0, 0)] + runs + [(n, n)]
     for (_, e0), (s1, _) in zip(edges[:-1], edges[1:]):
         if s1 - e0 <= 0:
             continue
-        cens = e0 == 0 or s1 == n
-        moves.append((e0 / fps, (s1 - e0) / fps, bool(cens),
-                      x[s1] - x[e0], float(sp[e0:s1].max() * fps)))
+        cuts = _split_points(speed, e0, s1) if split else []
+        bounds = [e0] + cuts + [s1]
+        for j, (u, v) in enumerate(zip(bounds[:-1], bounds[1:])):
+            cens = u == 0 or v == n
+            moves.append((u / fps, (v - u) / fps, bool(cens), x[v] - x[u],
+                          float(sp[u:v].max() * fps), j < len(bounds) - 2))
     return holds, moves
 
 
@@ -279,6 +341,7 @@ def _clip_iter(path):
 def fit_rig(path):
     """Per-rig statistics, or None when the rig binds no role by ID."""
     hold = {g: ([], []) for g in GROUPS}
+    unanimated = {g: 0 for g in GROUPS}
     move = {g: [] for g in GROUPS}         # (dur, amp, peak)
     onsets = {g: [] for g in GROUPS}       # per clip: list of (t, delta, dict)
     frames = {r: [] for r in ALL_ROLES}
@@ -301,18 +364,25 @@ def fit_rig(path):
                 continue
             x = np.stack([have[r] for r in cols], 1)
             hs, ms = segment(x, fps)
-            for _, d, cens, _ in hs:
+            for h0, d, cens, _ in hs:
+                if h0 == 0 and abs(h0 + d - (len(x) - 1) / fps) < 1e-6:
+                    # Keyed but never moved in this clip: that is a clip
+                    # where nobody animated the group (Mao keys gaze still
+                    # in 5 of 8 clips), not evidence of a long fixation.
+                    unanimated[g] += 1
+                    continue
                 hold[g][1 if cens else 0].append(d)
             clip_moves[g] = (cols, ms)
-            for t0, d, cens, delta, pk in ms:
+            for t0, d, cens, delta, pk, chained in ms:
                 if not cens:
-                    move[g].append((d, float(np.linalg.norm(delta)), pk))
+                    move[g].append((d, float(np.linalg.norm(delta)), pk,
+                                    chained))
         # Head following gaze: for each complete saccade, the head move whose
         # onset is nearest within [-0.2, 0.6] s.
         if "gaze" in clip_moves and "head" in clip_moves:
             gc, gm = clip_moves["gaze"]
             hc, hm = clip_moves["head"]
-            for t0, d, cens, delta, _ in gm:
+            for t0, d, cens, delta, *_ in gm:
                 if cens or np.linalg.norm(delta) < 0.05:
                     continue
                 follow["n"] += 1
@@ -330,13 +400,15 @@ def fit_rig(path):
                 if "gaze_y" in g and "head_y" in hd:
                     follow["gy"].append((g["gaze_y"], hd["head_y"]))
         if "gaze" in clip_moves and "brow" in clip_moves:
+            # P(brow change | large saccade): of the saccades a blink could
+            # come with, the share that a brow move starts within 0.3 s of.
             _, gm = clip_moves["gaze"]
             _, bm = clip_moves["brow"]
-            for b in bm:
-                if b[2]:
+            for g0 in gm:
+                if g0[2] or np.linalg.norm(g0[3]) <= BLINK_AMP:
                     continue
                 brow_sacc["n"] += 1
-                brow_sacc["hit"] += any(abs(b[0] - g0[0]) <= 0.3 for g0 in gm)
+                brow_sacc["hit"] += any(abs(b[0] - g0[0]) <= 0.3 for b in bm)
         if "body_x" in have and "head_x" in have:
             pairs_bh.append((have["body_x"] - have["body_x"].mean(),
                              have["head_x"] - have["head_x"].mean()))
@@ -353,15 +425,22 @@ def fit_rig(path):
     for g in GROUPS:
         comp, cens = hold[g]
         mv = move[g]
-        if not comp and not cens and not mv:
+        if not comp and not cens and not mv and not unanimated[g]:
             continue
         gs = {"n_hold": len(comp), "n_censored": len(cens), "n_move": len(mv),
+              "n_unanimated": unanimated[g],
               "hold": (censored_lognormal(comp, cens)
                        if len(comp) >= MIN_EVENTS else None),
               "hold_km_median": kaplan_meier_median(comp, cens),
               "hold_naive_median": (float(np.median(comp)) if comp else None),
               "move": _lognorm_fit([m[0] for m in mv]),
-              "amp": _lognorm_fit([m[1] for m in mv]),
+              # Net displacement under 0.01 (a glance and back) says nothing
+              # about amplitude and would blow up the log spread.
+              "amp": _lognorm_fit([m[1] for m in mv if m[1] > 0.01]),
+              "amp_rms": (float(np.sqrt(np.mean([m[1] ** 2 for m in mv])))
+                          if len(mv) >= MIN_EVENTS else None),
+              "p_chain": (float(np.mean([m[3] for m in mv]))
+                          if len(mv) >= MIN_EVENTS else None),
               "peak_vel": (float(np.median([m[2] for m in mv])) if mv else None),
               "dur_amp_slope": None}
         if len(mv) >= MIN_EVENTS:
@@ -437,10 +516,11 @@ def pool(per_rig):
                 dst[k] = [_median([v[0] for _, v in got]),
                           _median([v[1] for _, v in got])]
                 st["sources"][f"{g}.{k}"] = sorted(n for n, _ in got)
-        s = _median([p["groups"][g]["dur_amp_slope"] for p in rigs
-                     if g in p["groups"]])
-        if s is not None:
-            dst["dur_amp_slope"] = s
+        for k in ("dur_amp_slope", "amp_rms", "p_chain"):
+            v = _median([p["groups"][g].get(k) for p in rigs
+                         if g in p["groups"]])
+            if v is not None:
+                dst[k] = v
     for r in ALL_ROLES:
         got = [p["roles"][r] for p in rigs if r in p["roles"]]
         if got:
@@ -524,13 +604,30 @@ def _move_dur(st, g, amp, rng):
     return float(np.clip(d, 0.1, 4.0 * G["move"][0] + 0.1))
 
 
-def _target(st, roles, rng, scale=1.0, base=None, dev=None):
-    """A target for `roles`: base (default the role centre) + dev + spread."""
+def _rho(st, g, cols):
+    """Persistence of a group's targets. Targets follow an AR(1) about the
+    centre, x' = m + rho (x - m) + sqrt(1 - rho^2) std z, which keeps the
+    fitted spread whatever rho is; rho is set so that the expected squared
+    step, 2 (1 - rho) sum std^2, equals the fitted mean squared move
+    amplitude. Independent draws (rho 0) made every head and body move as
+    large as the whole pose distribution."""
+    var = sum(st["roles"][r]["std"] ** 2 for r in cols)
+    if var < 1e-9:
+        return 0.0
+    a2 = st["groups"][g].get("amp_rms", 0.0) ** 2
+    # Authored heads and bodies step further than independent draws would
+    # (Mark, Rice: rms step 1.2x sqrt(2 sum std^2)): they swing from one side
+    # to the other. That is a negative rho, kept down to -0.6.
+    return float(np.clip(1 - a2 / (2 * var), -0.6, 0.95))
+
+
+def _ar_target(st, cols, pos, rho, rng, dev=None, scale=1.0):
     out = {}
-    for r in roles:
+    k = math.sqrt(max(1 - rho * rho, 0.0))
+    for r in cols:
         R = st["roles"][r]
-        c = R["center"] if base is None else base[r]
-        v = c + (dev or {}).get(r, 0.0) + scale * rng.normal(0, 1) * R["std"]
+        m = R["center"] + (dev or {}).get(r, 0.0)
+        v = m + rho * (pos[r] - m) + scale * k * R["std"] * rng.normal(0, 1)
         out[r] = float(np.clip(v, max(R["lo"], -1), min(R["hi"], 1)))
     return out
 
@@ -571,6 +668,15 @@ def schedule(st, roles, seconds, rng, gestures=None, start=None):
 
     nxt = {g: (rng.uniform(0.2, 1.0) if have[g] else math.inf)
            for g in GROUPS}
+    rho = {g: _rho(st, g, have[g]) for g in GROUPS}
+    bstate = {}
+
+    def dwell(g):
+        """Hold after a move: none when the move chains straight into the
+        next sub-movement (fitted p_chain), else a fitted hold."""
+        if rng.random() < st["groups"][g].get("p_chain", 0.0):
+            return 0.0
+        return _lognormal(rng, st["groups"][g]["hold"])
     head_due = []
     t = 0.0
     while True:
@@ -586,19 +692,20 @@ def schedule(st, roles, seconds, rng, gestures=None, start=None):
                 if gr in gt and hr in have["head"]:
                     dev[hr] = hf["gain"][gc[gr]] * (
                         gt[gr] - st["roles"][gr]["center"])
-            tgt = _target(st, have["head"], rng, scale=0.5, dev=dev)
+            tgt = _ar_target(st, have["head"], pos, rho["head"], rng, dev)
             _, _, d = move("head", t, tgt, {"follows": idx})
-            nxt["head"] = t + d + _lognormal(rng, st["groups"]["head"]["hold"])
+            nxt["head"] = t + d + dwell("head")
             continue
         g = min(nxt, key=nxt.get)
         t = max(nxt[g], busy[g])
         if g == "gaze":
-            tgt = _target(st, have["gaze"], rng)
+            tgt = _ar_target(st, have["gaze"], pos, rho["gaze"], rng)
             idx, amp, d = move("gaze", t, tgt)
-            hold = _lognormal(rng, st["groups"]["gaze"]["hold"])
+            hold = dwell("gaze")
             toks[idx]["hold"] = round(hold, 4)
-            emit({"t": round(t + d, 4), "type": "fixate", "role": "gaze",
-                  "duration": round(hold, 4)})
+            if hold > 0:
+                emit({"t": round(t + d, 4), "type": "fixate", "role": "gaze",
+                      "duration": round(hold, 4)})
             if amp > BLINK_AMP and rng.random() < P_BLINK:
                 emit({"t": round(t, 4), "type": "blink", "role": "eyes"})
             if have["head"] and rng.random() < hf["p"]:
@@ -606,32 +713,35 @@ def schedule(st, roles, seconds, rng, gestures=None, start=None):
                 head_due.sort(key=lambda h: h[0])
             if (have["brow"] and amp > BLINK_AMP and t >= busy["brow"]
                     and rng.random() < st["brow_on_saccade"]):
-                _brow(st, have["brow"], t, rng, move, nxt)
+                _brow(st, have["brow"], t, rng, move, nxt, rho, dwell, bstate)
             nxt["gaze"] = t + d + hold
         elif g == "head":
-            tgt = _target(st, have["head"], rng)
+            tgt = _ar_target(st, have["head"], pos, rho["head"], rng)
             _, _, d = move("head", t, tgt, {"follows": None})
-            nxt["head"] = t + d + _lognormal(rng, st["groups"]["head"]["hold"])
+            nxt["head"] = t + d + dwell("head")
         elif g == "body":
             dev = {}
             if "body_x" in have["body"] and "head_x" in pos:
                 dev["body_x"] = st["body_head_slope"] * (
                     pos["head_x"] - st["roles"]["head_x"]["center"])
-            tgt = _target(st, have["body"], rng, dev=dev)
+            tgt = _ar_target(st, have["body"], pos, rho["body"], rng, dev)
             _, _, d = move("body", t, tgt)
-            nxt["body"] = t + d + _lognormal(rng, st["groups"]["body"]["hold"])
+            nxt["body"] = t + d + dwell("body")
         elif g == "brow":
-            _brow(st, have["brow"], t, rng, move, nxt)
+            _brow(st, have["brow"], t, rng, move, nxt, rho, dwell, bstate)
     if gestures:
         toks.extend(schedule_gestures(st, gestures, seconds, rng))
     toks.sort(key=lambda k: (k["t"], k["type"]))
     return toks
 
 
-def _brow(st, cols, t, rng, move, nxt):
-    """Brow change and hold: one shared expression value, loaded onto every
+def _brow(st, cols, t, rng, move, nxt, rho, dwell, state):
+    """Brow change and hold: one shared expression value (itself AR(1), so
+    expressions persist as the fitted amplitudes say), loaded onto every
     bound brow column by its fitted correlation with the brow heights."""
-    e = rng.normal(0, 1)
+    r_ = rho["brow"]
+    e = r_ * state.get("brow_e", 0.0) + math.sqrt(1 - r_ * r_) * rng.normal()
+    state["brow_e"] = e
     tgt = {}
     for r in cols:
         R = st["roles"][r]
@@ -640,7 +750,7 @@ def _brow(st, cols, t, rng, move, nxt):
                                       * rng.normal(0, 1))
         tgt[r] = float(np.clip(v, max(R["lo"], -1), min(R["hi"], 1)))
     _, _, d = move("brow", t, tgt)
-    nxt["brow"] = t + d + _lognormal(rng, st["groups"]["brow"]["hold"])
+    nxt["brow"] = t + d + dwell("brow")
 
 
 def gesture_library(motions, keep, lo, hi, switches, fps):
@@ -897,7 +1007,7 @@ def report(st):
                 continue
             lines.append(
                 f"      {n:<10} holds {pg['n_hold']:>3} (+{pg['n_censored']} "
-                f"censored)  hold {f(pg['hold'])}  KM median "
+                f"censored, {pg.get('n_unanimated', 0)} unanimated)  hold {f(pg['hold'])}  KM median "
                 f"{f(pg['hold_km_median'])}  naive {f(pg['hold_naive_median'])}"
                 f"  moves {pg['n_move']:>3} dur {f(pg['move'])} amp "
                 f"{f(pg['amp'])} peak {f(pg['peak_vel'])}/s")
