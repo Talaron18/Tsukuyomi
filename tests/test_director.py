@@ -553,3 +553,12 @@ def test_openai_compat_thinking_off_is_opt_in(monkeypatch):
         list(be.stream("SYS", []))
     assert "enable_thinking" not in bodies[0]
     assert bodies[1]["enable_thinking"] is False
+
+
+def test_emphasis_asterisks_are_not_spoken():
+    p = dr.TagParser()
+    for c in ["You ate *m", "y* [nod] cake?"]:
+        p.feed(c)
+    p.close()
+    assert p.spoken == "You ate my cake?"
+    assert p.spoken[p.tags[0]["at"]:] == "cake?"

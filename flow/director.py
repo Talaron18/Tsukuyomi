@@ -175,6 +175,9 @@ class TagParser:
         self._buf = None          # text after an open '[', or None
 
     def _text(self, s):
+        # Markdown emphasis is never spoken: Qwen3.6 without thinking wrote
+        # "You ate *my* cake?" despite the prompt's no-markup rule.
+        s = s.replace("*", "")
         if not s:
             return
         if not self.spoken:
