@@ -219,6 +219,31 @@ def test_directed_performance_plays_and_settles_back_to_the_idle():
              "fade": 0.5}]
     merged = dr.merge(idle, toks)
     assert not [k for k in merged if "src" not in k and k["type"] == "gesture"]
+    # The calm profile's underlay survives the merge, and the directed
+    # performance and its settle silence it while they play.
+    und = ev.underlay_token(st, "idle.motion3.json", 40.0)
+    merged = dr.merge([und] + idle, toks)
+    assert [k for k in merged if k["type"] == "underlay"] == [und]
+    n = 40 * 30
+    k = np.arange(300)
+    motions = {"idle.motion3.json": {"frames": 300, "params": {
+                   "ParamHairBack": np.sin(2 * np.pi * k / 300),
+                   "ParamArmLA": np.zeros(300)}, "parts": {}},
+               "touch_head.motion3.json": {"frames": 360, "params": {
+                   "ParamHairBack": np.full(360, 0.3),
+                   "ParamArmLA": np.ones(360)}, "parts": {}},
+               "login.motion3.json": {"frames": 150, "params": {
+                   "ParamHairBack": np.full(150, -0.3),
+                   "ParamArmLA": np.ones(150)}, "parts": {}}}
+    gp = ev.GesturePlayer(motions, lambda p: True, {"ParamHairBack": 0.0,
+                          "ParamArmLA": 0.0}, {}, {}, 30.0,
+                          ["ParamHairBack"])
+    hair = np.array([f[0]["ParamHairBack"] for f in gp.frames(merged, n)])
+    d = np.abs(np.diff(hair))
+    # touch_head plays 1-9 s: constant hair, no underlay
+    assert d[int(1.6 * 30):int(8.9 * 30)].max() == 0.0
+    # rest after the settle (11-20 s): the underlay is back
+    assert (d[int(12.5 * 30):int(19.9 * 30)] > 0).mean() > 0.9
 
 
 class _FakeStream:

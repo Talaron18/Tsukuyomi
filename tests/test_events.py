@@ -108,13 +108,27 @@ def test_fit_pools_per_rig_and_skips_holdout(tmp_path):
 def test_schedule_is_aperiodic_and_holds_are_still():
     st = ev.load_stats("default")
     roles = list(ev.ALL_ROLES)
+    fitted = json.loads(json.dumps(st))
+    fitted["idle"]["profile"] = "authored"
+    for seed in (0, 1, 2):
+        for v in ev.generate(fitted, roles, 60.0, FPS,
+                             np.random.default_rng(seed))[0].values():
+            assert periodic_peak(v.astype(np.float64), FPS)[0] <= 0.6
+    # The calm profile's few long holds make sparse step signals, on which
+    # the judge's peak fires by chance (3 body, 2 head and 2 gaze roles of
+    # 100 seeds x 16 roles; before the calm head 3 body, 4 head and the 8
+    # brows of one seed): judged as a rate, not seed by seed.
+    peaks = []
+    for seed in range(20):
+        for v in ev.generate(st, roles, 60.0, FPS,
+                             np.random.default_rng(seed))[0].values():
+            peaks.append(periodic_peak(v.astype(np.float64), FPS)[0])
+    assert np.mean(np.array(peaks) > 0.6) <= 0.02
     for seed in (0, 1, 2):
         traj, blinks, toks = ev.generate(st, roles, 60.0, FPS,
                                          np.random.default_rng(seed))
-        for r, v in traj.items():
+        for v in traj.values():
             assert len(v) == 1800 and np.abs(v).max() <= 1
-            peak, _ = periodic_peak(v.astype(np.float64), FPS)
-            assert peak <= 0.6, (seed, r, peak)
         # Outside every gaze move the gaze does not move at all.
         moving = np.zeros(1800, bool)
         for k in toks:
@@ -403,23 +417,33 @@ def test_calm_motions_by_label_group_then_energy():
     assert ev.calm_motions(cub[:1]) == (cub[:1], "all")
 
 
-def test_idle_view_calms_the_body_only_and_authored_is_untouched():
+def test_idle_view_calms_body_and_head_and_authored_is_untouched():
     st = ev.load_stats("default")
     st["groups"]["body"].update(hold=[0.16, 1.0], move=[1.07, 0.5],
                                 p_chain=0.5)
+    st["groups"]["head"].update(hold=[0.54, 1.01], p_chain=0.64)
     keep = json.loads(json.dumps(st))
     v = ev.idle_view(st)
     assert st == keep                                     # not mutated
     B = v["groups"]["body"]
     assert B["hold"] == [5.0, 0.6] and B["move"][0] == 1.5
     assert B["p_chain"] == 0.0 and B["rho_min"] == 0.0
-    for r in ev.GROUPS["body"]:
-        R, R0 = v["roles"][r], st["roles"][r]
-        assert R["center"] == R0["center"]
-        assert R["std"] == pytest.approx(0.4 * R0["std"])
-        assert R["hi"] - R["lo"] == pytest.approx(0.4 * (R0["hi"] - R0["lo"]))
-    for g in ("gaze", "head", "brow"):
+    H = v["groups"]["head"]
+    assert H["hold"] == [3.0, 0.8] and H["move"] == st["groups"]["head"]["move"]
+    assert H["p_chain"] == 0.0 and H["rho_min"] == 0.0
+    assert H["amp"][0] == pytest.approx(0.6 * st["groups"]["head"]["amp"][0])
+    assert v["head_follow"]["min_amp"] == 0.75
+    for g, f in (("body", 0.4), ("head", 0.6)):
+        for r in ev.GROUPS[g]:
+            R, R0 = v["roles"][r], st["roles"][r]
+            assert R["center"] == R0["center"]
+            assert R["std"] == pytest.approx(f * R0["std"])
+            assert R["hi"] - R["lo"] == pytest.approx(
+                f * (R0["hi"] - R0["lo"]))
+    for g in ("gaze", "brow"):
         assert v["groups"][g] == st["groups"][g]
+    for r in ev.GROUPS["gaze"]:
+        assert v["roles"][r] == st["roles"][r]
     assert v["gesture"]["rest"] == [15.0, 0.5] and v["gesture"]["lead"]
     st["idle"]["profile"] = "authored"
     assert ev.idle_view(st) is st
@@ -456,3 +480,142 @@ def test_calm_idle_rests_and_plays_only_calm_motions():
     assert np.mean(busy) < 0.4
     assert np.mean(rates) <= 12.0                       # shifts per minute
     assert np.mean(before_rates) > 3 * np.mean(rates)
+
+
+def _head_track(toks, roles, start, seconds=60.0):
+    tr, _ = ev.render(toks, roles, seconds, FPS, start)
+    return np.stack([tr[r] for r in ev.GROUPS["head"]], 1)
+
+
+def test_calm_head_fixates_and_follows_only_large_saccades():
+    """Fitted, the head turned ~40 times a minute and was still in 2-5% of
+    1 s windows on Hiyori, Natori and aidang_2: the busiest thing left."""
+    from flow.score import periodicity, stillness
+    st = ev.load_stats("default")
+    st["groups"]["head"].update(hold=[0.54, 1.01], p_chain=0.64)
+    old = json.loads(json.dumps(st))
+    old["idle"]["profile"] = "authored"
+    roles = list(ev.ALL_ROLES)
+    start = {r: st["roles"][r]["center"] for r in roles}
+    out = {"calm": [], "authored": []}
+    for name, s in (("calm", st), ("authored", old)):
+        for seed in range(12):
+            toks = ev.schedule(s, roles, 60.0, np.random.default_rng(seed),
+                               None, start)
+            X = _head_track(toks, roles, start)
+            seg = [(X, np.ones_like(X, bool))]
+            turns = [k for k in toks if k["type"] == "head_turn"]
+            out[name].append((
+                len(turns), stillness(seg, range(3), FPS),
+                periodicity(seg, range(3), FPS)[0],
+                sum(k["type"] == "saccade" for k in toks),
+                [k["follows"] for k in turns if k.get("follows") is not None],
+                toks))
+    calm, auth = out["calm"], out["authored"]
+    m = lambda rs, i: float(np.mean([r[i] for r in rs]))  # noqa: E731
+    assert 6 <= m(calm, 0) <= 20 and m(auth, 0) > 2 * m(calm, 0)
+    assert 0.5 <= m(calm, 1) <= 0.8 and m(auth, 1) < 0.3
+    assert m(calm, 2) < 0.3 and np.median([r[2] for r in calm]) < 0.3
+    # the eyes stay as lively: same saccade rate
+    assert m(calm, 3) == pytest.approx(m(auth, 3), rel=0.25)
+    # a head turn that follows a saccade follows a large one
+    for *_, follows, toks in calm:
+        pos = {r: start[r] for r in ev.GROUPS["gaze"]}
+        amp = {}
+        for i, k in enumerate(toks):
+            if k["type"] == "saccade":
+                amp[i] = float(np.sqrt(sum((v - pos[r]) ** 2
+                                           for r, v in k["target"].items())))
+                pos.update(k["target"])
+        assert all(amp[i] >= 0.75 for i in follows)
+
+
+def test_calm_head_leaves_directed_moves_alone():
+    from flow import director as dr
+    st = ev.load_stats("default")
+    old = json.loads(json.dumps(st))
+    old["idle"]["profile"] = "authored"
+    acts = [{"t": 1.0, "tag": "look", "arg": "left"},
+            {"t": 3.0, "tag": "nod"}, {"t": 6.0, "tag": "shake"},
+            {"t": 9.0, "tag": "lean", "arg": "in"}]
+    roles = list(ev.ALL_ROLES)
+    a = dr.realize(acts, st, roles, {}, np.random.default_rng(0))
+    b = dr.realize(acts, old, roles, {}, np.random.default_rng(0))
+    assert a == b and any(k["type"] == "head_turn" for k in a)
+
+
+def _underlay_motions():
+    n = 90
+    k = np.arange(n)
+    return {
+        # the idle loop: seamless hair, a switch, an arm, a part curve
+        "idle": {"frames": n, "params": {
+            "ParamHairBack": np.sin(2 * np.pi * k / n) * 10,
+            "ParamArmLA": np.linspace(-5, 5, n),
+            "ParamSkirtT": np.where(k < 45, 0.0, 1.0),
+            "ParamRibbon": np.linspace(0, 1, n)},          # not seamless
+            "parts": {"PartArmA": np.where(k < 45, 1.0, 0.0)}},
+        "main": {"frames": n, "params": {
+            "ParamHairBack": np.full(n, 3.0), "ParamArmLA": np.full(n, 2.0),
+            "ParamSkirtT": np.zeros(n), "ParamRibbon": np.full(n, 0.5)},
+            "parts": {"PartArmA": np.ones(n)}},
+    }
+
+
+def test_underlay_keeps_loose_params_alive_during_rests_only():
+    motions = _underlay_motions()
+    base = {p: float(v[0]) for p, v in motions["idle"]["params"].items()}
+    loose = ev.loose_params(
+        ["ParamHairBack", "ParamArmLA", "ParamSkirtT", "ParamRibbon",
+         "ParamHipX"], ["hair", "arm", "other", "other", "other"],
+        switches={"ParamSkirtT"})
+    assert loose == ["ParamHairBack", "ParamRibbon"]
+    gest = [{"t": 4.0, "type": "gesture", "role": "arms", "motion": "main",
+             "start": 0.0, "duration": 2.0, "fade": 0.5},
+            {"t": 12.0, "type": "gesture", "role": "arms", "motion": "main",
+             "start": 0.5, "duration": 2.0, "fade": 0.5}]
+    st = ev.load_stats("default")
+    und = ev.underlay_token(st, "idle", 20.0)
+    assert und["gain"] == 0.5 and und["t"] == 0.0
+    st["idle"]["profile"] = "authored"
+    assert ev.underlay_token(st, "idle", 20.0) is None
+    n = 600
+
+    def play(toks):
+        gp = ev.GesturePlayer(motions, lambda p: True, base,
+                              {"PartArmA": 1.0}, {}, FPS, loose)
+        return gp.frames(toks, n), gp.keyed
+
+    plain, k_plain = play(gest)
+    gp0 = ev.GesturePlayer(motions, lambda p: True, base, {"PartArmA": 1.0},
+                           {}, FPS)
+    assert gp0.frames(gest, n) == plain               # no token: as before
+    under, k_under = play([und] + gest)
+    col = lambda fr, p: np.array([f[0][p] for f in fr])  # noqa: E731
+    # arms, switches and parts: bit for bit
+    for p in ("ParamArmLA", "ParamSkirtT"):
+        assert np.array_equal(col(plain, p), col(under, p))
+    assert [f[1] for f in plain] == [f[1] for f in under]
+    hair = col(under, "ParamHairBack")
+    d = np.abs(np.diff(hair))
+    playing = np.zeros(n - 1, bool)
+    for g in gest:
+        playing[int(g["t"] * FPS) + 1:int((g["t"] + g["duration"]) * FPS)] = True
+    # held in the plain player during rests, moving under the underlay
+    rest = ~playing
+    rest[:int(1.5 * FPS)] = False                     # its ramp-in
+    assert np.abs(np.diff(col(plain, "ParamHairBack")))[
+        int(7 * FPS):int(11 * FPS)].max() == 0.0
+    assert (d[rest] > 1e-3).mean() > 0.9
+    # never more than the loop's own speed x gain, plus the ramp
+    loop_v = np.abs(np.diff(motions["idle"]["params"]["ParamHairBack"])).max()
+    assert d.max() <= loop_v * 1.5 + 1e-9
+    # while a gesture plays (past its fade) the underlay is off
+    a, b = int(4.6 * FPS), int(6.0 * FPS)
+    assert np.array_equal(hair[a:b], col(plain, "ParamHairBack")[a:b])
+    # the ribbon is not seamless: played forward and back, no seam jump
+    rib = np.abs(np.diff(col(under, "ParamRibbon")))
+    assert rib.max() <= 0.5 * (1 / 89) * 1.5 + 0.02
+    # what moves is keyed (the scorer reads the dump's mask)
+    assert "ParamHairBack" in k_under[int(2 * FPS)]   # before any gesture
+    assert k_plain[int(2 * FPS)] == set()

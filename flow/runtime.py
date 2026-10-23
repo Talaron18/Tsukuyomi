@@ -36,7 +36,9 @@ Expressive sources, one per run:
                          own motion files; --tokens dumps the event stream,
                          --direct merges flow.director's timed action tags;
                          --idle-profile calm (default) rests the body and
-                         plays only calm motions, rarely (events.idle_view)
+                         head and plays only calm motions, rarely, with hair
+                         and accessories on the idle loop in between
+                         (events.idle_view, underlay_token)
   --behaviors stats.json hand-made baseline (flow.behaviors) driving only the
                          head/body/gaze/brow roles; other expressive
                          parameters are held at the idle's first frame and
@@ -459,9 +461,11 @@ def main(argv=None) -> int:
     ap.add_argument("--idle-profile", default="calm",
                     choices=("calm", "authored"),
                     help="--events: how the scheduled idle moves. calm "
-                         "[default]: long body holds, small sway, a calm "
-                         "motion (idle/main/home, or the model's Idle group) "
-                         "every ~10-40 s (events.idle_view); authored: the "
+                         "[default]: long body and head holds, small sway, a "
+                         "calm motion (idle/main/home, or the model's Idle "
+                         "group) every ~10-40 s, hair and accessories on the "
+                         "idle loop between them (events.idle_view, "
+                         "underlay_token); authored: the "
                          "fitted statistics as is, every motion file back "
                          "to back (the scheduler before the calm profile)")
     ap.add_argument("--tokens", default=None, metavar="OUT.json",
@@ -696,6 +700,9 @@ def main(argv=None) -> int:
                 gest, settle = calm_library(gest, a.model)
             tokens = ev.schedule(stats, list(roles), a.seconds, rng, gest,
                                  start)
+            und = ev.underlay_token(stats, settle, a.seconds)
+            if und is not None:
+                tokens.insert(0, und)
             if a.no_idle:
                 tokens = [k for k in tokens if k["type"] == "blink"]
             if a.direct:
@@ -903,10 +910,24 @@ def main(argv=None) -> int:
         role_ids = {p for p, _, _ in roles.values()}
         gkeep = base_keep(role_ids | held, phys, band_by_id)
         pid_set = set(pids)
+        # What an underlay token may move, from the rig and its motions
+        # alone, so a --tokens-in replay renders what the run rendered.
+        loose = []
+        und = next((k for k in tokens if k["type"] == "underlay"), None)
+        if und is not None:
+            sw_all = toggle_params(a.model, a.fps)
+            loose = ev.loose_params(
+                [pids[i] for i in expressive], [groups[i] for i in expressive],
+                sw_all, lambda p: p in pid_set and gkeep(p)
+                and np.ptp(dict(motions).get(und["motion"], {}).get(
+                    "params", {}).get(p, [0.0])) > 0)
+            print(f"events: underlay {und['motion']} x{und['gain']:g} during "
+                  f"rests on {len(loose)} loose parameters: "
+                  + (", ".join(loose) or "none"))
         player = ev.GesturePlayer(
             {n: m for n, m in motions}, lambda p: p in pid_set and gkeep(p),
             base_params, base_parts,
-            {p: float(v) for p, v in zip(pids, dflt)}, a.fps)
+            {p: float(v) for p, v in zip(pids, dflt)}, a.fps, loose)
         gesture_frames = player.frames(tokens, n_frames)
         gesture_cols = []
         for col, i in enumerate(expressive):

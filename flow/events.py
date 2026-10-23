@@ -132,13 +132,26 @@ only `schedule` sees:
             file label, else the model's "Idle" group, else the calmer half
             by mean speed), one after a rest of median 15 s: onsets about
             every 10-40 s. The performances stay for [gesture:...] tags.
-  face      head, gaze and brow keep the fitted statistics: they already
-            hold as often as authored (scorer's holds/face checks), and the
-            head std on aidang_2 is 0.73 of authored against a 0.5 floor.
+  head      fixations: holds of median >= IDLE["head_hold"] (3 s) with no
+            chaining, targets and amplitudes at IDLE["head_spread"] (0.6),
+            rho >= 0, and the head joins only saccades of at least
+            IDLE["head_follow_amp"] (eyes move, the head mostly not). With
+            the body at rest the fitted head (hold 0.54 s, 64% chained) was
+            the main motion left: ~40 turns/min, still 2-5% of 1 s windows
+            on Hiyori, Natori and aidang_2 (server: 0.05, periodic 0.22).
+  gaze,brow keep the fitted statistics: saccades as lively as authored.
+  underlay  between calm gestures the gesture-only columns held one frame
+            for 10-40 s: hair and "other" (skirts, ribbons, accessories)
+            still 0.50 of 1 s windows on aidang_2 against 0.00 authored. An
+            "underlay" token (underlay_token) makes the loose ones
+            (loose_params: hair/other, not switches, not named for the whole
+            figure) follow the idle loop at IDLE["underlay_gain"] while no
+            gesture plays; arms and part opacities hold (GesturePlayer).
 
 Directors' moves (flow.director) use the fitted statistics, not the view, so
-a directed look or lean still reaches as far as the rig authors. The profile
-"authored" is the scheduler as it was before, rng draw for rng draw.
+a directed look, nod or lean still reaches as far as the rig authors. The
+profile "authored" is the scheduler as it was before, rng draw for rng draw,
+and emits no underlay; a token file without one replays as it did.
 
 Blinks are not fitted (eye-open is the autonomic band and not in the clips):
 a saccade larger than BLINK_AMP requests a blink with probability P_BLINK,
@@ -240,7 +253,46 @@ IDLE = {
     # median 15 s (90%: 6.6-34 s), and the first one after a lead-in rather
     # than at t = 0 (the base state is already the idle's first frame).
     "gesture": {"rest": [15.0, 0.5], "p_rest": 1.0, "lead": [6.0, 0.6]},
+    # Head fixations. As fitted the head was the busiest thing left on
+    # screen: hold 0.54 s, 64% of moves chained, ~40 turns/min and still 2-5%
+    # of 1 s windows on Hiyori, Natori and aidang_2 (server score: still
+    # 0.05, periodic 0.22). The pooled hold is short because clips are 2-10
+    # s and the fitted rigs mostly perform; the rigs that do let the head
+    # rest hold it far longer (ev.fit.txt, censored ML / Kaplan-Meier
+    # median: Wanko -/4.27 s, biaoqiang 1.90/0.83, xianghe_2 1.71/1.80,
+    # dafeng_2 1.04/1.57; lingbo and z23 chain under 20%). A 3 s median
+    # gives a few turns per 10 s and the head still about 60% of the time.
+    # sigma 0.8 (90%: 0.8-11 s; fitted pool 1.01): at 0.6 the steadier
+    # rhythm left a periodic peak > 0.5 in 5 of 100 simulated minutes, at
+    # 0.8 in 4 and the mean peak 0.10 (fitted head 0.28).
+    "head_spread": 0.6,         # x fitted head spread, range and amplitude
+    "head_hold": [3.0, 0.8],    # floor on the hold median (s) / its sigma
+    "head_p_chain": 0.0,        # every turn ends in a fixation
+    # As for the body: the fitted swing (rho at -0.6) alternates sides at
+    # every turn, which with regular holds reads as a metronome.
+    "head_rho_min": 0.0,
+    # The head joins only large gaze shifts; smaller ones are made by the
+    # eyes alone (the "eye-only range": Stahl 1999, Exp Brain Res 126:41;
+    # review Freedman 2008, Exp Brain Res 190:369). 0.75 is the largest
+    # quarter of the saccades the srv pool schedules (amplitude quartiles
+    # 0.31/0.54/0.77, normalised): with the fitted p 0.46, about 2 of ~19
+    # saccades a minute bring the head along instead of 9.
+    "head_follow_amp": 0.75,
+    # Hair and accessories during rests (underlay_token). With gestures one
+    # per ~15 s, the columns only they move held one frame for the rests:
+    # hair and other still 0.50 of 1 s windows on aidang_2 (server score)
+    # against 0.00 authored. During a rest they follow the idle loop instead
+    # at this gain, about the body's calm spread (the loop's hair swings
+    # with a body that now rests), ramped in over `underlay_ramp` s.
+    "underlay_gain": 0.5,
+    "underlay_ramp": 1.0,
 }
+# Rig group labels (l2dprobe.analyze.group_of, flow.score's groups) of the
+# parameters an underlay moves: hair, and "other" -- skirts, ribbons,
+# frills, strings, accessories, familiars. Arms and everything named for
+# the whole figure stay held: the calm profile rests those on purpose.
+UNDERLAY_GROUPS = ("hair", "other")
+UNDERLAY_SKIP = ("hip", "waist", "leg", "body", "foot")
 # Motion file labels (basename, lower case, no extension or _<n> suffix)
 # that are calm enough to play unprompted. Azur Lane's idle is the loop the
 # game plays while the character stands, main_<n> and home its main-screen
@@ -835,30 +887,69 @@ def idle_view(st):
     if P.get("profile", "calm") != "calm":
         return st
     st = json.loads(json.dumps(st))
-    f = float(P.get("body_spread", 1.0))
-    for r in GROUPS["body"]:
+    _calm_group(st, "body", float(P.get("body_spread", 1.0)),
+                P.get("body_hold"), P.get("body_move"),
+                P.get("body_p_chain"), P.get("body_rho_min"))
+    _calm_group(st, "head", float(P.get("head_spread", 1.0)),
+                P.get("head_hold"), None, P.get("head_p_chain"),
+                P.get("head_rho_min"))
+    if P.get("head_follow_amp") is not None:
+        st["head_follow"]["min_amp"] = float(P["head_follow_amp"])
+    st["gesture"].update(P.get("gesture", {}))
+    return st
+
+
+def _calm_group(st, g, f, hold, move, p_chain, rho_min):
+    """idle_view on one move group, in place: its roles' spread and range
+    x f about the unchanged centre, amplitudes alike, floors on the hold
+    and move medians, a cap on chaining and a floor on _rho. None: as
+    fitted."""
+    for r in GROUPS[g]:
         R = st["roles"][r]
         c = R["center"]
         R["std"] *= f
         R["lo"], R["hi"] = c + f * (R["lo"] - c), c + f * (R["hi"] - c)
-    G = st["groups"]["body"]
+    G = st["groups"][g]
     # Amplitudes shrink with the spread: _rho sets the targets' persistence
     # from amp_rms^2 / std^2, and shrinking the spread alone sent rho to its
     # -0.6 clip (a swing from side to side at every shift); and _move_dur
     # scales duration by amp / median amp.
     G["amp"] = [G["amp"][0] * f, G["amp"][1]]
     G["amp_rms"] = G.get("amp_rms", 0.0) * f
-    h = P.get("body_hold")
-    if h:
-        G["hold"] = [max(G["hold"][0], h[0]), h[1]]
-    if P.get("body_move"):
-        G["move"] = [max(G["move"][0], P["body_move"]), G["move"][1]]
-    if P.get("body_p_chain") is not None:
-        G["p_chain"] = min(G.get("p_chain", 0.0), P["body_p_chain"])
-    if P.get("body_rho_min") is not None:
-        G["rho_min"] = P["body_rho_min"]
-    st["gesture"].update(P.get("gesture", {}))
-    return st
+    if hold:
+        G["hold"] = [max(G["hold"][0], hold[0]), hold[1]]
+    if move:
+        G["move"] = [max(G["move"][0], move), G["move"][1]]
+    if p_chain is not None:
+        G["p_chain"] = min(G.get("p_chain", 0.0), p_chain)
+    if rho_min is not None:
+        G["rho_min"] = rho_min
+
+
+def underlay_token(st, motion, seconds):
+    """The calm profile's underlay: one token over the whole run naming the
+    loop the loose parameters follow while no gesture plays (GesturePlayer;
+    which parameters is the runtime's call, loose_params). None under the
+    "authored" profile or without a motion. No rng is drawn."""
+    P = st.get("idle") or IDLE
+    if P.get("profile", "calm") != "calm" or not motion:
+        return None
+    return {"t": 0.0, "type": "underlay", "role": "loose", "motion": motion,
+            "start": 0.0, "duration": round(float(seconds), 4),
+            "gain": float(P.get("underlay_gain", IDLE["underlay_gain"])),
+            "ramp": float(P.get("underlay_ramp", IDLE["underlay_ramp"]))}
+
+
+def loose_params(pids, groups, switches=(), keep=lambda p: True):
+    """The parameters an underlay may move: gesture parameters (keep) in
+    UNDERLAY_GROUPS by the rig's group labels, not named for the whole
+    figure (UNDERLAY_SKIP), and not a switch (switches: runtime's
+    toggle_params) -- a switch pulled toward the loop would cross its
+    threshold and flip a part."""
+    sw = set(switches)
+    return [p for p, g in zip(pids, groups)
+            if g in UNDERLAY_GROUPS and p not in sw and keep(p)
+            and not any(w in p.lower() for w in UNDERLAY_SKIP)]
 
 
 # ------------------------------------------------------------ event layer
@@ -987,7 +1078,10 @@ def schedule(st, roles, seconds, rng, gestures=None, start=None):
                       "duration": round(hold, 4)})
             if amp > BLINK_AMP and rng.random() < P_BLINK:
                 emit({"t": round(t, 4), "type": "blink", "role": "eyes"})
-            if have["head"] and rng.random() < hf["p"]:
+            # min_amp: idle_view's calm head joins large saccades only. The
+            # draw comes first so the authored stream is draw for draw.
+            if (have["head"] and rng.random() < hf["p"]
+                    and amp >= hf.get("min_amp", 0.0)):
                 head_due.append((t + hf["lag"], idx, tgt))
                 head_due.sort(key=lambda h: h[0])
             if (have["brow"] and amp > BLINK_AMP and t >= busy["brow"]
@@ -1202,13 +1296,16 @@ class GesturePlayer:
     its base value (else the rig default); a part, at its base opacity.
     """
 
-    def __init__(self, motions, keep, base_params, base_parts, default, fps):
+    def __init__(self, motions, keep, base_params, base_parts, default, fps,
+                 loose=()):
         self.motions = motions
         self.keep = keep
         self.base_params = dict(base_params)
         self.base_parts = dict(base_parts or {})
         self.default = default
         self.fps = fps
+        # Parameters an underlay token may move (runtime.loose_params).
+        self.loose = set(loose)
         self.param_ids = sorted(
             {p for m in motions.values() for p in m["params"] if keep(p)}
             | set(self.base_params))
@@ -1240,14 +1337,78 @@ class GesturePlayer:
         m = self.motions.get(tok["motion"])
         return {p for p in m["params"] if self.keep(p)} if m else set()
 
+    def _loops(self, tok):
+        """{param: (curve, seamless)} of an underlay token's motion over the
+        loose parameters it moves."""
+        m = self.motions.get(tok["motion"])
+        out = {}
+        for p in sorted(self.loose):
+            if m is None or p not in m["params"] or not self.keep(p):
+                continue
+            v = np.asarray(m["params"][p], float)
+            if len(v) < 2 or np.ptp(v) <= 0:
+                continue
+            # A loop authored to repeat ends where it starts; any other
+            # curve plays forward and back, never jumping at the seam.
+            seam = abs(v[-1] - v[0]) <= np.abs(np.diff(v)).max() + 1e-9
+            out[p] = (v, seam)
+        return out
+
+    def _sway(self, params, keyed, und, rest_from, t):
+        """The underlay over a held pose, in place: each loose parameter
+        pulled `gain` of the way toward the loop's value at t, ramped in
+        (minimum-jerk over `ramp`) from rest_from, when the pose began to
+        be held, and out again by the underlay's own end."""
+        tok, loops = und
+        t0 = float(tok["t"])
+        t1 = t0 + float(tok["duration"])
+        if not loops or t < t0 or t >= t1:
+            return
+        ramp = max(float(tok.get("ramp", 1.0)), 1.0 / self.fps)
+        e = float(min_jerk((t - max(rest_from, t0)) / ramp)
+                  * min_jerk((t1 - t) / ramp))
+        if e <= 0:
+            return
+        g = e * float(tok.get("gain", 1.0))
+        k = int(round((t - t0 + float(tok.get("start", 0.0))) * self.fps))
+        for p, (v, seam) in loops.items():
+            n = len(v)
+            i = k % n if seam else (n - 1) - abs(k % (2 * n - 2) - (n - 1))
+            params[p] = params[p] + g * (float(v[i]) - params[p])
+            keyed.add(p)
+
+    def _held(self, tok, t, und):
+        """(params, parts, keyed) of gesture `tok` (None: the base state) at
+        t, under the underlay once it has ended and holds its last frame."""
+        if tok is None:
+            params, parts = self.base()
+            keyed, rest_from = set(), 0.0
+        else:
+            params, parts = self.sample(tok, t)
+            keyed = self.keys(tok)
+            rest_from = float(tok["t"]) + float(tok["duration"])
+        if und is not None and t > rest_from:
+            keyed = set(keyed)
+            self._sway(params, keyed, und, rest_from, t)
+        return params, parts, keyed
+
     def frames(self, tokens, n_frames):
         """[(params, parts)] per frame. Also sets self.keyed: per frame, the
         parameters some playing motion actually keys. The others sit at
         their rest value only because nothing animates them -- the clips
         mark such columns unkeyed, and so does the runtime's --dump, as it
-        does under --static."""
+        does under --static.
+
+        An "underlay" token (events.underlay_token) keeps the loose
+        parameters alive while no gesture plays: during a rest, and before
+        the first gesture, they move with the token's loop at its gain
+        (_sway) instead of holding a frame; part opacities and every other
+        parameter hold as before. Without one the frames are as they were.
+        """
         ges = sorted((k for k in tokens if k["type"] == "gesture"),
                      key=lambda k: k["t"])
+        und = next((k for k in tokens if k["type"] == "underlay"), None)
+        und = (und, self._loops(und)) if und is not None else None
         out, self.keyed = [], []
         gi = -1
         for f in range(n_frames):
@@ -1255,18 +1416,33 @@ class GesturePlayer:
             while gi + 1 < len(ges) and float(ges[gi + 1]["t"]) <= t + 1e-9:
                 gi += 1
             if gi < 0:
-                out.append(self.base())
-                self.keyed.append(set())
+                if und is None:
+                    out.append(self.base())
+                    self.keyed.append(set())
+                else:
+                    params, parts, keyed = self._held(None, t, und)
+                    out.append((params, parts))
+                    self.keyed.append(keyed)
                 continue
             cur = ges[gi]
-            new = self.sample(cur, t)
-            keyed = self.keys(cur)
+            if und is None:
+                new = self.sample(cur, t)
+                keyed = self.keys(cur)
+            else:
+                *new, keyed = self._held(cur, t, und)
+                new = tuple(new)
             fade = max(float(cur.get("fade", 0.5)), 0.0)
             el = t - float(cur["t"])
             if fade > 0 and el < fade:
-                old = self.sample(ges[gi - 1], t) if gi > 0 else self.base()
-                if gi > 0:
-                    keyed = keyed | self.keys(ges[gi - 1])
+                if und is None:
+                    old = (self.sample(ges[gi - 1], t) if gi > 0
+                           else self.base())
+                    if gi > 0:
+                        keyed = keyed | self.keys(ges[gi - 1])
+                else:
+                    *old, k_old = self._held(ges[gi - 1] if gi > 0 else None,
+                                             t, und)
+                    keyed = keyed | k_old
                 w = float(min_jerk(el / fade))
                 # Parameters blend; part visibility switches at the midpoint.
                 # Blended, both arm variants were half visible through the
