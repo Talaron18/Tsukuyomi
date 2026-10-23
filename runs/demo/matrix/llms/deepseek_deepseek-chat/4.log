@@ -1,7 +1,9 @@
+director: not offered on this rig: lean:in (body_y centre 0.93, no room: the lean moves +0.031)
 director: 14 gesture labels: complete, home, idle, login, mail, main_1, main_2, main_3, mission, mission_complete, touch_body, touch_head, touch_special, wedding
-deepseek: stop stop; usage {'prompt_tokens': 576, 'completion_tokens': 32, 'prompt_cache_hit_tokens': 384}
-director: reply: [brow:up] Oh? [tilt:right] Saying that so suddenly... [look:away] you'll make me blush, Commander.
-director: 63 spoken characters, 5.90s speech, 3 actions, 5 subtitles; rendering 7.40s
+deepseek: stop stop; usage {'prompt_tokens': 541, 'completion_tokens': 29, 'prompt_cache_hit_tokens': 384}
+director: model 0.9s, first text after 0.6s
+director: reply: [look:up] Oh my, saying something like that without warning... [look:viewer] You'll make me blush, Commander.
+director: 85 spoken characters, 7.27s speech, 2 actions, 4 subtitles; rendering 8.77s
 132 params: expressive 104, physics 7, autonomic 2, mouth 2, discrete 17
 seeded from clips2/aidang_2.npz
 events: switch-like role columns left to the rig's own motions: brow_la=ParamBrowLAngle, brow_r=ParamBrowRY, brow_ra=ParamBrowRAngle, gaze_x=ParamEyeBallX, gaze_y=ParamEyeBallY
@@ -15,13 +17,13 @@ events: switch-like role columns left to the rig's own motions: brow_la=ParamBro
   role head_z   -> ParamAngleZ  [id]
 events: unbound roles (no standard id; --binding to add): body_z, brow_lf, brow_lx
 events: body adapted to the rig's own motions (weights {'body_x': 0.929, 'body_y': 0.933, 'w_hold': 0.875, 'w_move': 0.932}; own holds 34 +1 censored, 0 unanimated clips, moves 68): hold 0.16s move 1.07s p_chain 0.50
-director: 3 actions -> 3 tokens; 7 idle tokens overridden
-events: 8 roles from ev.json; tokens body_shift 7, brow 2, gesture 3, head_turn 2
+director: 2 actions -> 2 tokens; 4 idle tokens overridden
+events: 8 roles from ev.json; tokens body_shift 8, brow 3, gesture 3, head_turn 3
 tokens -> runs/demo/matrix/llms/deepseek_deepseek-chat/4/tokens.json
 11 parts are switched by PartOpacity curves and the rig has no pose3 file; applying them directly (Live2D Native would ignore them and draw every variant)
 base state from idle.motion3.json: 11 part opacities, 63 held parameters
 events: 3 gesture segments from 14 motion files (arms will score as copying against the rig's own clips; novelty is judged on the role columns)
 snapping 30 switch-like parameters: ParamAcceX, ParamArmFore3InneiT, ParamArmForeL3Hand1T, ParamArmForeL3Hand2T, ParamArmForeL3X, ParamArmForeR2T, ParamArmL2Hand1T, ParamArmL2Hand3T, ParamArmL2Hand4T, ParamArmUpperRWT, ParamArmYuanT, ParamBreastBandSwitch, ParamBrowLAngle, ParamBrowRAngle, ParamBrowRY, ParamFumoArmT, ParamHandLDChangePa, ParamHandR1T, ParamHandR2T, ParamMDTHandXinT, ParamMDTHandYuanT, ParamNaiZiShadowPY, ParamPaoEyeL, ParamPaoEyeR, ParamPaoFlush, ParamPaoScale, ParamSkirtDefaultT, ParamSkirtJiaoPYX, ParamSkirtJiaoPYY, ParamSkirtMubiaoT
-dump -> runs/demo/matrix/llms/deepseek_deepseek-chat/4/plan.npz  (222 frames, 104 expressive, 11 parts, mode events seed=0)
+dump -> runs/demo/matrix/llms/deepseek_deepseek-chat/4/plan.npz  (263 frames, 104 expressive, 11 parts, mode events seed=0)
 render with:
-  /home/main/venv/hongenv/bin/python -m flow.runtime --model 'live2d-models/live2d_3/model/Azue Lane(JP)/aidang_2/aidang_2.model3.json' --rig rigs/aidang_2.npz --events ev.json --probe-dir out --fps 30.0 --seed 0 --seconds 7.40 --clips clips2/aidang_2.npz --tokens-in runs/demo/matrix/llms/deepseek_deepseek-chat/4/tokens.json --size 512 --out runs/demo/matrix/llms/deepseek_deepseek-chat/4/render
+  /home/main/venv/hongenv/bin/python -m flow.runtime --model 'live2d-models/live2d_3/model/Azue Lane(JP)/aidang_2/aidang_2.model3.json' --rig rigs/aidang_2.npz --events ev.json --probe-dir out --fps 30.0 --seed 0 --seconds 8.77 --clips clips2/aidang_2.npz --tokens-in runs/demo/matrix/llms/deepseek_deepseek-chat/4/tokens.json --size 512 --out runs/demo/matrix/llms/deepseek_deepseek-chat/4/render

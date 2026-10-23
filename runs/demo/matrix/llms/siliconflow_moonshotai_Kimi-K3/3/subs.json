@@ -1,22 +1,37 @@
 [
  {
   "start": 0.0,
-  "end": 1.65,
-  "text": "Fleet admiral, you say?"
+  "end": 2.079,
+  "text": "Oh my, fleet admiral already?"
  },
  {
-  "start": 2.071,
-  "end": 7.293,
-  "text": "Ara ara, big sister is so proud of you~ But no matter how high you climb,"
+  "start": 2.5,
+  "end": 4.65,
+  "text": "I'm so proud of you, Commander."
  },
  {
-  "start": 7.514,
-  "end": 10.157,
-  "text": "you'll always be my adorable commander."
+  "start": 5.071,
+  "end": 5.571,
+  "text": "Fufu."
  },
  {
-  "start": 10.579,
-  "end": 14.3,
-  "text": "So tonight, why don't you let me reward you properly?"
+  "start": 5.707,
+  "end": 6.207,
+  "text": "."
+ },
+ {
+  "start": 6.057,
+  "end": 6.557,
+  "text": "."
+ },
+ {
+  "start": 6.479,
+  "end": 11.979,
+  "text": "I suppose this means you'll take even better care of your favorite cruiser now,"
+ },
+ {
+  "start": 12.2,
+  "end": 12.771,
+  "text": "won't you?"
  }
 ]

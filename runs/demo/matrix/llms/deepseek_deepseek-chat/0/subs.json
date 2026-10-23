@@ -1,12 +1,27 @@
 [
  {
-  "start": 0.0,
-  "end": 1.65,
-  "text": "Oh my, what a question."
+  "start": 0.5,
+  "end": 1.071,
+  "text": "Miss you?"
  },
  {
-  "start": 2.071,
-  "end": 4.436,
-  "text": "You already know I did, don't you?"
+  "start": 1.493,
+  "end": 4.493,
+  "text": "I was far too busy to notice you were gone."
+ },
+ {
+  "start": 4.843,
+  "end": 5.343,
+  "text": "."
+ },
+ {
+  "start": 5.193,
+  "end": 5.693,
+  "text": "."
+ },
+ {
+  "start": 5.614,
+  "end": 8.686,
+  "text": "though the harbor did feel a little quieter."
  }
 ]

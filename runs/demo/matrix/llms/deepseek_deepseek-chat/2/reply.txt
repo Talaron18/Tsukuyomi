@@ -1,1 +1,3 @@
-[pause:0.5] [brow:up] The whole cake? [lean:back] Oh my, that's quite the confession.
+[blink] Oh? [brow:up] The whole thing? 
+
+[tilt:right] Well... you must have been very hungry. [look:away] I did have a single slice planned...

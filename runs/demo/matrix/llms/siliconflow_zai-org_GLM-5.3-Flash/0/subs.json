@@ -1,17 +1,27 @@
 [
  {
   "start": 0.0,
-  "end": 2.15,
-  "text": "Ara ara, you even have to ask?"
+  "end": 2.221,
+  "text": "Ara, what a sweet thing to ask."
  },
  {
   "start": 2.571,
-  "end": 8.007,
-  "text": "Of course I missed you — the days without you by my side felt terribly long."
+  "end": 3.071,
+  "text": "."
  },
  {
-  "start": 8.429,
-  "end": 12.721,
-  "text": "Come here, Commander let me make up for all that time apart."
+  "start": 2.921,
+  "end": 3.421,
+  "text": "."
+ },
+ {
+  "start": 3.343,
+  "end": 8.279,
+  "text": "Of course I did — I kept wondering what you were up to all this time."
+ },
+ {
+  "start": 8.7,
+  "end": 10.493,
+  "text": "Welcome back, Commander~"
  }
 ]

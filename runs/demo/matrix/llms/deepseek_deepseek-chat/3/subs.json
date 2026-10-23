@@ -1,27 +1,17 @@
 [
  {
   "start": 0.0,
-  "end": 2.079,
-  "text": "Oh my, fleet admiral already?"
+  "end": 0.929,
+  "text": "Fleet admiral?"
  },
  {
-  "start": 2.5,
-  "end": 3.857,
-  "text": "You've grown so fast."
+  "start": 1.35,
+  "end": 3.579,
+  "text": "My, my, that's quite the climb."
  },
  {
-  "start": 4.207,
-  "end": 4.707,
-  "text": "."
- },
- {
-  "start": 4.557,
-  "end": 5.057,
-  "text": "."
- },
- {
-  "start": 4.979,
-  "end": 8.121,
-  "text": "I might just have to tease you even more now."
+  "start": 4.0,
+  "end": 7.007,
+  "text": "Should I start saluting you now, or later?"
  }
 ]

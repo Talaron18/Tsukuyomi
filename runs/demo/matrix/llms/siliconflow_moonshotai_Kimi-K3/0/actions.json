@@ -1,25 +1,29 @@
 {
- "speech_seconds": 12.929,
- "seconds": 14.429,
+ "speech_seconds": 10.071,
+ "seconds": 11.571,
  "actions": [
   {
-   "t": 0.0,
+   "t": 0.7214,
    "tag": "tilt",
    "arg": "right",
-   "at": 0
+   "at": 9
   },
   {
-   "t": 2.5857,
-   "tag": "lean",
-   "arg": "in",
+   "t": 2.7857,
+   "tag": "look",
+   "arg": "viewer",
    "at": 34
   },
   {
-   "t": 8.85,
-   "tag": "blink",
+   "t": 5.5,
+   "tag": "nod",
    "arg": null,
-   "at": 106
+   "at": 67
   }
  ],
- "warnings": []
+ "warnings": [],
+ "model_seconds": 8.463,
+ "first_text_seconds": 7.842,
+ "stop_reason": "stop",
+ "usage": {}
 }

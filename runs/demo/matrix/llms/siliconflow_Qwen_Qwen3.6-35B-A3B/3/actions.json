@@ -1,13 +1,7 @@
 {
- "speech_seconds": 16.836,
- "seconds": 18.336,
+ "speech_seconds": 14.629,
+ "seconds": 16.129,
  "actions": [
-  {
-   "t": 0.0,
-   "tag": "look",
-   "arg": "up",
-   "at": 0
-  },
   {
    "t": 1.35,
    "tag": "brow",
@@ -15,23 +9,24 @@
    "at": 15
   },
   {
-   "t": 6.1214,
-   "tag": "gesture",
-   "arg": "touch_special",
-   "at": 69
-  },
-  {
-   "t": 12.5429,
-   "tag": "lean",
-   "arg": "in",
-   "at": 144
-  },
-  {
-   "t": 12.9071,
+   "t": 8.85,
    "tag": "tilt",
    "arg": "left",
-   "at": 148
+   "at": 110
+  },
+  {
+   "t": 10.5643,
+   "tag": "look",
+   "arg": "viewer",
+   "at": 130
   }
  ],
- "warnings": []
+ "warnings": [],
+ "model_seconds": 15.605,
+ "first_text_seconds": 15.602,
+ "stop_reason": "stop",
+ "usage": {
+  "prompt_tokens": 557,
+  "completion_tokens": 1941
+ }
 }

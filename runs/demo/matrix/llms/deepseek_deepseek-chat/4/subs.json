@@ -1,27 +1,22 @@
 [
  {
   "start": 0.0,
-  "end": 0.5,
-  "text": "Oh?"
+  "end": 3.579,
+  "text": "Oh my, saying something like that without warning."
  },
  {
-  "start": 0.564,
-  "end": 2.207,
-  "text": "Saying that so suddenly."
- },
- {
-  "start": 2.557,
-  "end": 3.057,
+  "start": 3.929,
+  "end": 4.429,
   "text": "."
  },
  {
-  "start": 2.907,
-  "end": 3.407,
+  "start": 4.279,
+  "end": 4.779,
   "text": "."
  },
  {
-  "start": 3.329,
-  "end": 5.55,
-  "text": "you'll make me blush, Commander."
+  "start": 4.7,
+  "end": 6.921,
+  "text": "You'll make me blush, Commander."
  }
 ]
