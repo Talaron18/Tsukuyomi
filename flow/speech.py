@@ -74,23 +74,26 @@ MIN_COVER = 0.5
 
 # Lip sync. Level maps linearly over MOUTH_SPAN dB under the loud level, so a
 # vowel at the loud level opens fully, a consonant 10 dB down ~0.6 and
-# anything 24 dB down (-30 dB under the peak of an edge voice) is shut. The
+# anything 24 dB down (~27 dB under the peak of an edge voice) is shut. The
 # gate is separate from the VAD's and does not join gaps: the mouth should
 # close between phrases and dip between syllables. The level is read over
 # MOUTH_WIN and smoothed with a fast attack and a jaw-like release.
 #
 # Measured on the server's edge runs (runs/demo/tts/{aidang_2,Hiyori}/edge,
-# 30 fps; silent = 20 ms level 35 dB under the loud level, syllable dip = a
-# level minimum 8 dB under the peaks either side within 0.25 s): with a
-# 50 ms window (1.5 frames) and a 60 ms release the mouth was still 0.43 at
-# aidang_2's -56 dBFS gap at 1.07 s and 0.41 at the -39 dB dip at 1.47 s;
-# open > 0.1 in 8.5% / 14% of silent frames, median 0.48 / 0.43 at dips,
-# 15% / 0% of dips under 0.3. With 25 ms and 25 ms: 0.17 and 0.14 there,
-# silent frames open 2% / 2%, dips median 0.22 / 0.13, 62% / 100% of dips
-# under 0.3, correlation with the level 0.90 / 0.89 -> 0.95 / 0.95, mean
-# open while voiced 0.78 -> 0.74 / 0.81 -> 0.75. The span is unchanged: the
-# map was already linear in dB, the window and release hid the dips. A shorter release does little
-# more at 30 fps: one frame already decays to exp(-33/25) = 27%.
+# 30 fps; each frame's level over its own 33 ms; silent = under -40 dBFS;
+# a syllable dip = a level minimum 8 dB under the maxima either side within
+# 0.27 s). With a 50 ms window (1.5 frames) about the frame start and a
+# 60 ms release, aidang_2's mouth was 0.43 in the -56 dBFS gap at 1.07 s
+# and 0.41 / 0.23 at the dip at 1.47-1.50 s; open > 0.1 in 13% / 18% of
+# silent frames, median 0.42 / 0.46 at dips (14% / 31% of them under 0.3),
+# correlation with the level 0.86 / 0.87. With 25 ms over the frame's own
+# stretch and a 25 ms release: 0.06 and 0.11 / 0.00 there, 4% / 5%, median
+# 0.12 / 0.07 (79% / 77% under 0.3; the rest are shallow dips, 16-22 dB
+# under the peak, which the level map itself leaves 0.3-0.5 open),
+# correlation 0.95 / 0.96; mean open while voiced 0.77 -> 0.75 / 0.80 ->
+# 0.78. The span is unchanged: the map was already linear in dB; the long
+# window and release hid the dips. A shorter release does little more at
+# 30 fps: one frame already decays to exp(-33/25) = 27%.
 MOUTH_SPAN = 24.0
 MOUTH_WIN = 0.025
 MOUTH_GATE_DB = 30.0
@@ -653,7 +656,12 @@ def mouth_open(x, sr, fps, n_frames):
     out = np.zeros(n_frames, np.float32)
     if not len(x) or not n_frames:
         return out
-    db = _db(x, sr, t, MOUTH_WIN)
+    # Frame f is on screen from f / fps to (f + 1) / fps: read the level
+    # over that stretch (centred half a frame on), not around its start.
+    # The mouth then leads its sound by at most half a frame, the side
+    # viewers tolerate (audio late by up to ~125 ms passes, early by
+    # ~45 ms shows: ITU-R BT.1359).
+    db = _db(x, sr, t + 0.5 / fps, MOUTH_WIN)
     db[t * sr >= len(x)] = -120.0
     ref = _loud(db)
     if ref is None:

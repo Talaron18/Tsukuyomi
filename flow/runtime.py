@@ -381,6 +381,29 @@ def rig_columns(rig, model_json, clips=None, log=print):
             "expressive": expressive}
 
 
+def held_params(rig, probe_dir, pids, groups, expressive, hold="",
+                glob_=True, warn=True):
+    """The whole-model transform parameters main holds still: --hold's ids
+    plus, with glob_, those the probe output finds (whole_model_params),
+    limited to the expressive columns. Shared with flow.gestures, which
+    must not describe a held parameter as a gesture's motion."""
+    held = set(p for p in hold.split(",") if p)
+    if glob_:
+        rig_name = os.path.basename(rig).rsplit(".npz", 1)[0]
+        found = whole_model_params(probe_dir, rig_name,
+                                   groups=dict(zip(pids, groups)))
+        if found is None:
+            if warn:
+                print(f"WARNING: no probe output {probe_dir}/rig_{rig_name}"
+                      ".npz; whole-model transform parameters are not held "
+                      "(pass --probe-dir, or list them with --hold)",
+                      file=sys.stderr)
+        else:
+            # Angles and gaze are protected inside transforms.decide.
+            held |= set(found)
+    return held & {pids[i] for i in expressive}
+
+
 def bind_events(events, model_json, pids, allowed, lo, hi, motions, fps,
                 binding=None, no_snap=False, pool_only=False, log=print):
     """(stats, roles, switch roles) for an --events run: the fitted
@@ -636,19 +659,8 @@ def main(argv=None) -> int:
     # Whole-model transforms (ParamAllX, PARAM_moveY, zongtiZ ...) are for
     # staging. Driven freely they carried characters off the canvas, so they
     # are held: at the idle's first frame when it sets them, else at default.
-    held = set(p for p in a.hold.split(",") if p)
-    if not a.no_hold_global and not (a.static or a.neutral):
-        rig_name = os.path.basename(a.rig).rsplit(".npz", 1)[0]
-        found = whole_model_params(a.probe_dir, rig_name,
-                                   groups=dict(zip(pids, groups)))
-        if found is None:
-            print(f"WARNING: no probe output {a.probe_dir}/rig_{rig_name}.npz; "
-                  "whole-model transform parameters are not held (pass "
-                  "--probe-dir, or list them with --hold)", file=sys.stderr)
-        else:
-            # Angles and gaze are protected inside transforms.decide.
-            held |= set(found)
-    held &= {pids[i] for i in expressive}
+    held = held_params(a.rig, a.probe_dir, pids, groups, expressive, a.hold,
+                       not a.no_hold_global and not (a.static or a.neutral))
     if held:
         print(f"holding {len(held)} whole-model parameters still: "
               + ", ".join(sorted(held)))

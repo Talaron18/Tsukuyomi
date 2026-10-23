@@ -1405,7 +1405,7 @@ def main(argv=None) -> int:
     gpath = a.gestures or gz.override_path(a.rig)
     over = gz.load_overrides(gpath)
     measured = gz.rig_descriptions(a.model_json, a.rig, roles, a.clips,
-                                   a.fps, GESTURE_MAX)
+                                   a.fps, GESTURE_MAX, a.probe_dir)
     all_labels = labels
     labels, descriptions = gz.apply_overrides(labels, measured, over)
     if over:

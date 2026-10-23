@@ -334,7 +334,8 @@ def override_path(rig):
     """Where a rig's override file is looked for when --gestures is not
     given: next to the rig file, rigs/<name>.gestures.json for
     rigs/<name>.npz (the rig file is the per-rig thing every run names;
-    the model directory is often a read-only download)."""
+    the model directory is often a read-only download). The repository's
+    .gitignore ignores both /rigs and *.json: commit one with git add -f."""
     return rig.removesuffix(".npz") + ".gestures.json"
 
 
@@ -379,22 +380,27 @@ def apply_overrides(labels, measured, overrides):
 
 
 def rig_descriptions(model_json, rig, roles, clips=None, fps=30.0,
-                     max_seconds=None, log=print):
+                     max_seconds=None, probe_dir="out", log=print):
     """{motion name: description} for a rig on disk, measured on what the
     runtime's GesturePlayer will play: its expressive columns (rig_columns,
     following --clips as the runtime does) minus the bound `roles`
     ({role: (pid, sign, source)}, runtime.event_roles), through base_keep,
-    from the base pose base_state takes (the idle's first frame)."""
+    minus the whole-model transforms it holds still (runtime.held_params:
+    PARAM_bodyS, PARAM_moveX/Y on aidang_2, which would read as "body
+    moves"), from the base pose base_state takes (the idle's first
+    frame)."""
     try:
         from .runtime import (authored_motions, base_keep, base_state,
-                              rig_columns)
+                              held_params, rig_columns)
     except ImportError:
         from flow.runtime import (authored_motions, base_keep, base_state,
-                                  rig_columns)
+                                  held_params, rig_columns)
     col = rig_columns(rig, model_json, clips, log=lambda s: None)
     pids = col["pids"]
     expressive = {pids[i] for i in col["expressive"]}
-    role_ids = {v[0] for v in roles.values()}
+    held = held_params(rig, probe_dir, pids, col["groups"],
+                       col["expressive"], warn=False)
+    role_ids = {v[0] for v in roles.values()} | held
     bk = base_keep(role_ids, col["phys"], dict(zip(pids, col["bands"])))
 
     def keep(p):
