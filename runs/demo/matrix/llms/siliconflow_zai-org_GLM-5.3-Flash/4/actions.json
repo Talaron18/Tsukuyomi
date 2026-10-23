@@ -1,0 +1,25 @@
+{
+ "speech_seconds": 11.2,
+ "seconds": 12.7,
+ "actions": [
+  {
+   "t": 0.5,
+   "tag": "blink",
+   "arg": null,
+   "at": 7
+  },
+  {
+   "t": 3.3357,
+   "tag": "look",
+   "arg": "away",
+   "at": 35
+  },
+  {
+   "t": 6.55,
+   "tag": "lean",
+   "arg": "in",
+   "at": 75
+  }
+ ],
+ "warnings": []
+}

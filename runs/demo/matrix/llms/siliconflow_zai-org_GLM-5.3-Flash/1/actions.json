@@ -1,0 +1,25 @@
+{
+ "speech_seconds": 11.629,
+ "seconds": 13.129,
+ "actions": [
+  {
+   "t": 2.8429,
+   "tag": "tilt",
+   "arg": "right",
+   "at": 27
+  },
+  {
+   "t": 5.7643,
+   "tag": "nod",
+   "arg": null,
+   "at": 64
+  },
+  {
+   "t": 6.5571,
+   "tag": "lean",
+   "arg": "in",
+   "at": 74
+  }
+ ],
+ "warnings": []
+}

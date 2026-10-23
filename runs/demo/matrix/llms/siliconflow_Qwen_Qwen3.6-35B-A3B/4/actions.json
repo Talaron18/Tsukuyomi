@@ -1,0 +1,31 @@
+{
+ "speech_seconds": 9.564,
+ "seconds": 12.071,
+ "actions": [
+  {
+   "t": 0.0,
+   "tag": "brow",
+   "arg": "up",
+   "at": 0
+  },
+  {
+   "t": 2.0,
+   "tag": "nod",
+   "arg": null,
+   "at": 23
+  },
+  {
+   "t": 7.85,
+   "tag": "look",
+   "arg": "viewer",
+   "at": 102
+  },
+  {
+   "t": 8.5714,
+   "tag": "lean",
+   "arg": "in",
+   "at": 111
+  }
+ ],
+ "warnings": []
+}

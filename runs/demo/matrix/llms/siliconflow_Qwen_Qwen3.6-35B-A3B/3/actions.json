@@ -1,0 +1,37 @@
+{
+ "speech_seconds": 16.836,
+ "seconds": 18.336,
+ "actions": [
+  {
+   "t": 0.0,
+   "tag": "look",
+   "arg": "up",
+   "at": 0
+  },
+  {
+   "t": 1.35,
+   "tag": "brow",
+   "arg": "up",
+   "at": 15
+  },
+  {
+   "t": 6.1214,
+   "tag": "gesture",
+   "arg": "touch_special",
+   "at": 69
+  },
+  {
+   "t": 12.5429,
+   "tag": "lean",
+   "arg": "in",
+   "at": 144
+  },
+  {
+   "t": 12.9071,
+   "tag": "tilt",
+   "arg": "left",
+   "at": 148
+  }
+ ],
+ "warnings": []
+}

@@ -1,0 +1,27 @@
+director: 14 gesture labels: complete, home, idle, login, mail, main_1, main_2, main_3, mission, mission_complete, touch_body, touch_head, touch_special, wedding
+siliconflow: stop stop; usage {'prompt_tokens': 577, 'completion_tokens': 506}
+director: reply: Ara ara, you even have to ask? [tilt:right] Of course I missed you — the days without you by my side [look:away] felt terribly long. Come here, Commander [gesture:main_1] let me make up for all that time apart.
+director: 168 spoken characters, 13.07s speech, 3 actions, 3 subtitles; rendering 19.51s
+132 params: expressive 104, physics 7, autonomic 2, mouth 2, discrete 17
+seeded from clips2/aidang_2.npz
+events: switch-like role columns left to the rig's own motions: brow_la=ParamBrowLAngle, brow_r=ParamBrowRY, brow_ra=ParamBrowRAngle, gaze_x=ParamEyeBallX, gaze_y=ParamEyeBallY
+  role body_x   -> ParamBodyAngleX  [id]
+  role body_y   -> ParamBodyAngleY  [id]
+  role brow_l   -> ParamBrowLY  [id]
+  role brow_rf  -> ParamBrowRForm  [id]
+  role brow_rx  -> ParamBrowRX  [id]
+  role head_x   -> ParamAngleX  [id]
+  role head_y   -> ParamAngleY  [id]
+  role head_z   -> ParamAngleZ  [id]
+events: unbound roles (no standard id; --binding to add): body_z, brow_lf, brow_lx
+events: body adapted to the rig's own motions (weights {'body_x': 0.929, 'body_y': 0.933, 'w_hold': 0.875, 'w_move': 0.932}; own holds 34 +1 censored, 0 unanimated clips, moves 68): hold 0.16s move 1.07s p_chain 0.50
+director: 3 actions -> 3 tokens; 7 idle tokens overridden
+events: 8 roles from ev.json; tokens body_shift 16, brow 6, gesture 3, head_turn 12
+tokens -> runs/demo/matrix/llms/siliconflow_zai-org_GLM-5.3-Flash/0/tokens.json
+11 parts are switched by PartOpacity curves and the rig has no pose3 file; applying them directly (Live2D Native would ignore them and draw every variant)
+base state from idle.motion3.json: 11 part opacities, 63 held parameters
+events: 3 gesture segments from 14 motion files (arms will score as copying against the rig's own clips; novelty is judged on the role columns)
+snapping 30 switch-like parameters: ParamAcceX, ParamArmFore3InneiT, ParamArmForeL3Hand1T, ParamArmForeL3Hand2T, ParamArmForeL3X, ParamArmForeR2T, ParamArmL2Hand1T, ParamArmL2Hand3T, ParamArmL2Hand4T, ParamArmUpperRWT, ParamArmYuanT, ParamBreastBandSwitch, ParamBrowLAngle, ParamBrowRAngle, ParamBrowRY, ParamFumoArmT, ParamHandLDChangePa, ParamHandR1T, ParamHandR2T, ParamMDTHandXinT, ParamMDTHandYuanT, ParamNaiZiShadowPY, ParamPaoEyeL, ParamPaoEyeR, ParamPaoFlush, ParamPaoScale, ParamSkirtDefaultT, ParamSkirtJiaoPYX, ParamSkirtJiaoPYY, ParamSkirtMubiaoT
+dump -> runs/demo/matrix/llms/siliconflow_zai-org_GLM-5.3-Flash/0/plan.npz  (585 frames, 104 expressive, 11 parts, mode events seed=0)
+render with:
+  /home/main/venv/hongenv/bin/python -m flow.runtime --model 'live2d-models/live2d_3/model/Azue Lane(JP)/aidang_2/aidang_2.model3.json' --rig rigs/aidang_2.npz --events ev.json --probe-dir out --fps 30.0 --seed 0 --seconds 19.51 --clips clips2/aidang_2.npz --tokens-in runs/demo/matrix/llms/siliconflow_zai-org_GLM-5.3-Flash/0/tokens.json --size 512 --out runs/demo/matrix/llms/siliconflow_zai-org_GLM-5.3-Flash/0/render

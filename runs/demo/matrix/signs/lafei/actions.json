@@ -1,0 +1,73 @@
+{
+ "speech_seconds": 36.779,
+ "seconds": 38.279,
+ "actions": [
+  {
+   "t": 0.0,
+   "tag": "look",
+   "arg": "left",
+   "at": 0
+  },
+  {
+   "t": 3.2071,
+   "tag": "look",
+   "arg": "right",
+   "at": 6
+  },
+  {
+   "t": 6.4857,
+   "tag": "look",
+   "arg": "up",
+   "at": 13
+  },
+  {
+   "t": 9.55,
+   "tag": "look",
+   "arg": "down",
+   "at": 17
+  },
+  {
+   "t": 12.7571,
+   "tag": "tilt",
+   "arg": "left",
+   "at": 23
+  },
+  {
+   "t": 16.3214,
+   "tag": "tilt",
+   "arg": "right",
+   "at": 34
+  },
+  {
+   "t": 19.9571,
+   "tag": "lean",
+   "arg": "in",
+   "at": 46
+  },
+  {
+   "t": 23.3786,
+   "tag": "lean",
+   "arg": "back",
+   "at": 55
+  },
+  {
+   "t": 26.9429,
+   "tag": "nod",
+   "arg": null,
+   "at": 66
+  },
+  {
+   "t": 30.0786,
+   "tag": "shake",
+   "arg": null,
+   "at": 71
+  },
+  {
+   "t": 33.3571,
+   "tag": "brow",
+   "arg": "up",
+   "at": 78
+  }
+ ],
+ "warnings": []
+}

@@ -1,0 +1,1 @@
+[look:left] Left. [pause:2.5] [look:right] Right. [pause:2.5] [look:up] Up. [pause:2.5] [look:down] Down. [pause:2.5] [tilt:left] Tilt left. [pause:2.5] [tilt:right] Tilt right. [pause:2.5] [lean:in] Lean in. [pause:2.5] [lean:back] Lean back. [pause:2.5] [nod] Nod. [pause:2.5] [shake] Shake. [pause:2.5] [brow:up] Brows up. [pause:2.5]

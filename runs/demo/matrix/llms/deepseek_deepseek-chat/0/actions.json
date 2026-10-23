@@ -1,0 +1,25 @@
+{
+ "speech_seconds": 4.786,
+ "seconds": 14.286,
+ "actions": [
+  {
+   "t": 0.0,
+   "tag": "brow",
+   "arg": "up",
+   "at": 0
+  },
+  {
+   "t": 2.0714,
+   "tag": "lean",
+   "arg": "in",
+   "at": 24
+  },
+  {
+   "t": 4.7857,
+   "tag": "gesture",
+   "arg": "main_1",
+   "at": 58
+  }
+ ],
+ "warnings": []
+}

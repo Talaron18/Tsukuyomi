@@ -1,0 +1,57 @@
+[
+ {
+  "start": 0.0,
+  "end": 0.5,
+  "text": "Left."
+ },
+ {
+  "start": 3.207,
+  "end": 3.707,
+  "text": "Right."
+ },
+ {
+  "start": 6.486,
+  "end": 6.986,
+  "text": "Up."
+ },
+ {
+  "start": 9.55,
+  "end": 10.05,
+  "text": "Down."
+ },
+ {
+  "start": 12.757,
+  "end": 13.4,
+  "text": "Tilt left."
+ },
+ {
+  "start": 16.321,
+  "end": 17.036,
+  "text": "Tilt right."
+ },
+ {
+  "start": 19.957,
+  "end": 20.457,
+  "text": "Lean in."
+ },
+ {
+  "start": 23.379,
+  "end": 24.021,
+  "text": "Lean back."
+ },
+ {
+  "start": 26.943,
+  "end": 27.443,
+  "text": "Nod."
+ },
+ {
+  "start": 30.079,
+  "end": 30.579,
+  "text": "Shake."
+ },
+ {
+  "start": 33.357,
+  "end": 33.929,
+  "text": "Brows up."
+ }
+]
