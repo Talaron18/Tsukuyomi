@@ -1,0 +1,52 @@
+[live2d.v3] Cubism Native, Python 3.10.20
+[live2d.v3] official: https://www.live2d.com/sdk/download/native/
+[INFO]  [Pal] Init Shader Dir: /home/main/venv/hongenv/lib/python3.11/site-packages/live2d/v3/
+[INFO]  [CSM][I]Live2D Cubism Core version: 05.01.0000 (83951616)
+
+[INFO]  [CSM][I]CubismFramework::StartUp() is complete.
+
+[INFO]  [CSM][I]CubismFramework::Initialize() is complete.
+
+[INFO]  allocate: cpp Model(at=0x36773620)
+[INFO]  load modelSetting: CubismWebSamples/Samples/Resources/Natori/Natori.model3.json
+[INFO]  create model: Natori.moc3
+Live2D Cubism SDK Core Version 5.1.0
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Natori/motions/mtn_00.motion3.json => [Idle_0] 
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Natori/motions/mtn_01.motion3.json => [Idle_1] 
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Natori/motions/mtn_02.motion3.json => [Idle_2] 
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Natori/motions/mtn_03.motion3.json => [TapBody_0] 
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Natori/motions/mtn_04.motion3.json => [TapBody_1] 
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Natori/motions/mtn_05.motion3.json => [TapBody_2] 
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Natori/motions/mtn_06.motion3.json => [TapBody_3] 
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Natori/motions/mtn_07.motion3.json => [TapBody_4] 
+[INFO]  deallocate: cpp Model(at=0x36773620)
+[INFO]  deallocate: PyModelObject(at=0x7f0c67c3fbd0)
+[live2d] third-party wrapper (0.7.0.4), not affiliated with Live2D Inc.
+81 params: expressive 58, physics 12, autonomic 3, mouth 2, discrete 6
+holding 3 whole-model parameters still: ParamAllRotate, ParamAllX, ParamAllY
+seeded from clips2/Natori.npz
+events: switch-like role columns left to the rig's own motions: brow_l=ParamBrowLY, brow_r=ParamBrowRY, brow_rf=ParamBrowRForm
+  role body_x   -> ParamBodyAngleX  [id]
+  role body_y   -> ParamBodyAngleY  [id]
+  role body_z   -> ParamBodyAngleZ  [id]
+  role brow_la  -> ParamBrowLAngle  [id]
+  role brow_lx  -> ParamBrowLX  [id]
+  role brow_ra  -> ParamBrowRAngle  [id]
+  role brow_rx  -> ParamBrowRX  [id]
+  role gaze_x   -> ParamEyeBallX  [id]
+  role gaze_y   -> ParamEyeBallY  [id]
+  role head_x   -> ParamAngleX  [id]
+  role head_y   -> ParamAngleY  [id]
+  role head_z   -> ParamAngleZ  [id]
+events: unbound roles (no standard id; --binding to add): brow_lf
+events: body adapted to the rig's own motions (weights {'body_x': 0.889, 'body_y': 0.889, 'body_z': 0.889, 'w_hold': 0.821, 'w_move': 0.828}; own holds 7 +16 censored, 0 unanimated clips, moves 24): hold 1.19s move 0.97s p_chain 0.40
+events: idle profile calm; gestures from 3 of 8 motions (by group): mtn_00* 0.0042, mtn_01* 0.0092, mtn_02* 0.0421, mtn_03 0.0414, mtn_04 0.0722, mtn_05 0.0161, mtn_06 0.0169, mtn_07 0.0069  (* calm; mean speed/frame)
+events: 12 roles from ev.json; tokens blink 1, body_shift 2, brow 11, fixate 7, gesture 1, head_turn 11, saccade 7
+tokens -> runs/demo/rigs/Natori/idle_tokens.json
+base state from mtn_00.motion3.json: 8 part opacities, 60 held parameters
+events: 1 gesture segments from 8 motion files (arms will score as copying against the rig's own clips; novelty is judged on the role columns)
+snapping 21 switch-like parameters: ParamArmAR02, ParamArmAR03, ParamArmBR01, ParamArmBR02, ParamArmCLHandRoll1, ParamArmCR02, ParamArmCR03, ParamArmDLHand03Roll, ParamArmER01, ParamArmER04, ParamArmERHand04, ParamArmERHand06, ParamBrowLY, ParamBrowRForm, ParamBrowRY, ParamGrassHighlight, ParamGrassWhite, ParamWatchBOpen, ParamWatchBOpen2, ParamWatchBRoll, ParamWatchBX
+backend: order=before, timestep=fixed 0.0333s (native), parts=32 (pose-fed)
+rendered 600 frames -> runs/demo/rigs/Natori/idle/
+contact sheet -> runs/demo/rigs/Natori/idle/sheet.png
+video -> runs/demo/rigs/Natori/idle/preview.mp4

@@ -1,0 +1,463 @@
+{
+"seconds": 20.0,
+"fps": 30.0,
+"seed": 0,
+"idle_profile": "calm",
+"roles": {
+"head_x": [
+"ParamAngleX",
+1.0
+],
+"head_y": [
+"ParamAngleY",
+1.0
+],
+"head_z": [
+"ParamAngleZ",
+1.0
+],
+"body_x": [
+"ParamBodyAngleX",
+1.0
+],
+"body_y": [
+"ParamBodyAngleY",
+1.0
+],
+"body_z": [
+"ParamBodyAngleZ",
+1.0
+],
+"gaze_x": [
+"ParamEyeBallX",
+1.0
+],
+"gaze_y": [
+"ParamEyeBallY",
+1.0
+],
+"brow_l": [
+"ParamBrowLY",
+1.0
+],
+"brow_r": [
+"ParamBrowRY",
+1.0
+],
+"brow_la": [
+"ParamBrowLAngle",
+1.0
+],
+"brow_ra": [
+"ParamBrowRAngle",
+1.0
+],
+"brow_lf": [
+"ParamBrowLForm",
+1.0
+],
+"brow_rf": [
+"ParamBrowRForm",
+1.0
+]
+},
+"tokens": [
+{
+"t": 0.2132,
+"type": "brow",
+"role": "brow",
+"target": {
+"brow_l": -0.10192,
+"brow_r": -0.06182,
+"brow_la": 0.10875,
+"brow_ra": -0.11815,
+"brow_lf": -0.38647,
+"brow_rf": -0.25934
+},
+"duration": 0.6281
+},
+{
+"t": 0.2328,
+"type": "body_shift",
+"role": "body",
+"target": {
+"body_x": -0.23909,
+"body_y": -0.10827,
+"body_z": -0.09634
+},
+"duration": 1.2021
+},
+{
+"t": 0.4158,
+"type": "head_turn",
+"role": "head",
+"target": {
+"head_x": -0.03909,
+"head_y": 0.44523,
+"head_z": -0.14125
+},
+"duration": 1.2942,
+"follows": null
+},
+{
+"t": 0.7096,
+"type": "saccade",
+"role": "gaze",
+"target": {
+"gaze_x": 0.02193,
+"gaze_y": -0.17632
+},
+"duration": 0.5305,
+"hold": 2.0581
+},
+{
+"t": 1.24,
+"type": "fixate",
+"role": "gaze",
+"duration": 2.0581
+},
+{
+"t": 1.71,
+"type": "head_turn",
+"role": "head",
+"target": {
+"head_x": -0.04017,
+"head_y": -0.34622,
+"head_z": 0.1996
+},
+"duration": 1.3545,
+"follows": null
+},
+{
+"t": 2.2756,
+"type": "brow",
+"role": "brow",
+"target": {
+"brow_l": -0.09115,
+"brow_r": -0.0595,
+"brow_la": 0.18237,
+"brow_ra": -0.20349,
+"brow_lf": 0.42427,
+"brow_rf": 0.47287
+},
+"duration": 0.8328
+},
+{
+"t": 3.0645,
+"type": "head_turn",
+"role": "head",
+"target": {
+"head_x": 0.46756,
+"head_y": 0.79122,
+"head_z": 0.26282
+},
+"duration": 1.9766,
+"follows": null
+},
+{
+"t": 3.2982,
+"type": "blink",
+"role": "eyes"
+},
+{
+"t": 3.2982,
+"type": "saccade",
+"role": "gaze",
+"target": {
+"gaze_x": -0.0142,
+"gaze_y": 0.26147
+},
+"duration": 0.4919,
+"hold": 0.0
+},
+{
+"t": 3.7901,
+"type": "saccade",
+"role": "gaze",
+"target": {
+"gaze_x": -0.14583,
+"gaze_y": -0.26038
+},
+"duration": 0.5149,
+"hold": 0.0
+},
+{
+"t": 4.1525,
+"type": "gesture",
+"role": "arms",
+"motion": "Hiyori_m01.motion3.json",
+"start": 2.4977,
+"duration": 2.1048,
+"fade": 0.5
+},
+{
+"t": 4.305,
+"type": "saccade",
+"role": "gaze",
+"target": {
+"gaze_x": 0.24698,
+"gaze_y": 0.38245
+},
+"duration": 0.6206,
+"hold": 3.2936
+},
+{
+"t": 4.3946,
+"type": "brow",
+"role": "brow",
+"target": {
+"brow_l": 0.22054,
+"brow_r": 0.24123,
+"brow_la": 0.05513,
+"brow_ra": -0.08161,
+"brow_lf": -0.07111,
+"brow_rf": -0.34318
+},
+"duration": 0.4263
+},
+{
+"t": 4.9256,
+"type": "fixate",
+"role": "gaze",
+"duration": 3.2936
+},
+{
+"t": 5.0411,
+"type": "head_turn",
+"role": "head",
+"target": {
+"head_x": 0.19877,
+"head_y": -0.06356,
+"head_z": -0.0232
+},
+"duration": 0.6747,
+"follows": 10
+},
+{
+"t": 5.7158,
+"type": "head_turn",
+"role": "head",
+"target": {
+"head_x": 0.27448,
+"head_y": -0.24185,
+"head_z": 0.3726
+},
+"duration": 1.0581,
+"follows": null
+},
+{
+"t": 7.1201,
+"type": "head_turn",
+"role": "head",
+"target": {
+"head_x": -0.38839,
+"head_y": 0.20403,
+"head_z": -0.00453
+},
+"duration": 1.3382,
+"follows": null
+},
+{
+"t": 8.2192,
+"type": "saccade",
+"role": "gaze",
+"target": {
+"gaze_x": -0.47512,
+"gaze_y": -0.11026
+},
+"duration": 1.0316,
+"hold": 0.0
+},
+{
+"t": 8.4085,
+"type": "brow",
+"role": "brow",
+"target": {
+"brow_l": -0.09609,
+"brow_r": -0.06969,
+"brow_la": -0.11262,
+"brow_ra": 0.21404,
+"brow_lf": 0.1937,
+"brow_rf": 0.28484
+},
+"duration": 0.9319
+},
+{
+"t": 8.4583,
+"type": "head_turn",
+"role": "head",
+"target": {
+"head_x": 0.00862,
+"head_y": 0.05796,
+"head_z": -0.4751
+},
+"duration": 1.3606,
+"follows": 18
+},
+{
+"t": 9.2508,
+"type": "blink",
+"role": "eyes"
+},
+{
+"t": 9.2508,
+"type": "saccade",
+"role": "gaze",
+"target": {
+"gaze_x": 0.3027,
+"gaze_y": -0.2722
+},
+"duration": 0.7232,
+"hold": 0.0
+},
+{
+"t": 9.819,
+"type": "head_turn",
+"role": "head",
+"target": {
+"head_x": 0.07823,
+"head_y": -0.26137,
+"head_z": 0.06638
+},
+"duration": 0.8943,
+"follows": 22
+},
+{
+"t": 9.9741,
+"type": "saccade",
+"role": "gaze",
+"target": {
+"gaze_x": -0.09796,
+"gaze_y": 0.38245
+},
+"duration": 0.75,
+"hold": 9.9126
+},
+{
+"t": 10.7132,
+"type": "head_turn",
+"role": "head",
+"target": {
+"head_x": 0.05636,
+"head_y": 0.27445,
+"head_z": 0.039
+},
+"duration": 1.3265,
+"follows": null
+},
+{
+"t": 10.724,
+"type": "fixate",
+"role": "gaze",
+"duration": 9.9126
+},
+{
+"t": 10.7808,
+"type": "body_shift",
+"role": "body",
+"target": {
+"body_x": -0.35577,
+"body_y": -0.0161,
+"body_z": -0.14227
+},
+"duration": 1.4891
+},
+{
+"t": 12.4127,
+"type": "head_turn",
+"role": "head",
+"target": {
+"head_x": -0.29223,
+"head_y": -0.36233,
+"head_z": -0.02585
+},
+"duration": 0.8021,
+"follows": null
+},
+{
+"t": 13.2148,
+"type": "head_turn",
+"role": "head",
+"target": {
+"head_x": 0.14307,
+"head_y": -0.20805,
+"head_z": -0.49375
+},
+"duration": 1.4202,
+"follows": null
+},
+{
+"t": 14.1895,
+"type": "brow",
+"role": "brow",
+"target": {
+"brow_l": 0.01354,
+"brow_r": -0.00949,
+"brow_la": 0.00999,
+"brow_ra": -0.23281,
+"brow_lf": 0.47711,
+"brow_rf": 0.33642
+},
+"duration": 0.8807
+},
+{
+"t": 14.949,
+"type": "head_turn",
+"role": "head",
+"target": {
+"head_x": 0.02698,
+"head_y": 0.30638,
+"head_z": 0.26393
+},
+"duration": 0.8335,
+"follows": null
+},
+{
+"t": 15.8587,
+"type": "head_turn",
+"role": "head",
+"target": {
+"head_x": -0.08917,
+"head_y": -0.2782,
+"head_z": -0.37981
+},
+"duration": 1.5266,
+"follows": null
+},
+{
+"t": 17.3853,
+"type": "head_turn",
+"role": "head",
+"target": {
+"head_x": -0.07938,
+"head_y": 0.31696,
+"head_z": 0.12669
+},
+"duration": 1.8845,
+"follows": null
+},
+{
+"t": 17.5268,
+"type": "body_shift",
+"role": "body",
+"target": {
+"body_x": -0.1039,
+"body_y": -0.17177,
+"body_z": -0.23149
+},
+"duration": 1.9198
+},
+{
+"t": 19.2698,
+"type": "head_turn",
+"role": "head",
+"target": {
+"head_x": 0.54743,
+"head_y": -0.64833,
+"head_z": -0.20038
+},
+"duration": 1.1623,
+"follows": null
+}
+]
+}

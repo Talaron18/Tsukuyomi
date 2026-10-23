@@ -1,0 +1,2 @@
+--backend deepseek needs DEEPSEEK_API_KEY in the environment
+director: 10 gesture labels: hiyori_m01, hiyori_m02, hiyori_m03, hiyori_m04, hiyori_m05, hiyori_m06, hiyori_m07, hiyori_m08, hiyori_m09, hiyori_m10

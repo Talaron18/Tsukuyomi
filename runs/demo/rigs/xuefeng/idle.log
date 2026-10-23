@@ -1,0 +1,53 @@
+[live2d.v3] Cubism Native, Python 3.10.20
+[live2d.v3] official: https://www.live2d.com/sdk/download/native/
+[INFO]  [Pal] Init Shader Dir: /home/main/venv/hongenv/lib/python3.11/site-packages/live2d/v3/
+[INFO]  [CSM][I]Live2D Cubism Core version: 05.01.0000 (83951616)
+
+[INFO]  [CSM][I]CubismFramework::StartUp() is complete.
+
+[INFO]  [CSM][I]CubismFramework::Initialize() is complete.
+
+[INFO]  allocate: cpp Model(at=0x38edd280)
+[INFO]  load modelSetting: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/xuefeng.model3.json
+[INFO]  create model: xuefeng.moc3
+Live2D Cubism SDK Core Version 5.1.0
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/complete.motion3.json => [_0] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/home.motion3.json => [_1] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/idle.motion3.json => [_2] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/login.motion3.json => [_3] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/mail.motion3.json => [_4] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/main_1.motion3.json => [_5] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/main_2.motion3.json => [_6] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/main_3.motion3.json => [_7] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/mission_complete.motion3.json => [_8] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/mission.motion3.json => [_9] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/touch_body.motion3.json => [_10] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/touch_head.motion3.json => [_11] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/touch_special.motion3.json => [_12] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/motions/wedding.motion3.json => [_13] 
+[INFO]  deallocate: cpp Model(at=0x38edd280)
+[INFO]  deallocate: PyModelObject(at=0x7fe58ed40a50)
+[live2d] third-party wrapper (0.7.0.4), not affiliated with Live2D Inc.
+48 params: expressive 36, physics 1, autonomic 1, mouth 6, discrete 4
+holding 3 whole-model parameters still: PARAM_bodyS, PARAM_moveX, PARAM_moveY
+seeded from clips2/xuefeng.npz
+events: switch-like role columns left to the rig's own motions: brow_l=ParamBrowLY, brow_lx=ParamBrowLX, brow_r=ParamBrowRY, brow_rx=ParamBrowRX
+  role body_x   -> ParamBodyAngleX  [id]
+  role body_z   -> ParamBodyAngleZ  [id]
+  role gaze_x   -> ParamEyeBallX  [id]
+  role gaze_y   -> ParamEyeBallY  [id]
+  role head_x   -> ParamAngleX  [id]
+  role head_y   -> ParamAngleY  [id]
+  role head_z   -> ParamAngleZ  [id]
+events: unbound roles (no standard id; --binding to add): body_y, brow_la, brow_lf, brow_ra, brow_rf
+events: body adapted to the rig's own motions (weights {'body_x': 0.933, 'body_z': 0.933, 'w_hold': 0.844, 'w_move': 0.828}; own holds 9 +18 censored, 3 unanimated clips, moves 24): hold 1.68s move 0.61s p_chain 0.26
+events: idle profile calm; gestures from 5 of 14 motions (by label): complete 0.1316, home* 0.1316, idle* 0.0629, login 0.1248, mail 0.1316, main_1* 0.1112, main_2* 0.1389, main_3* 0.1316, mission 0.1350, mission_complete 0.1316, touch_body 0.1350, touch_head 0.1565, touch_special 0.1698, wedding 0.0629  (* calm; mean speed/frame)
+events: 7 roles from ev.json; tokens blink 2, body_shift 2, fixate 2, gesture 1, head_turn 13, saccade 6
+tokens -> runs/demo/rigs/xuefeng/idle_tokens.json
+base state from idle.motion3.json: 0 part opacities, 39 held parameters
+events: 1 gesture segments from 14 motion files (arms will score as copying against the rig's own clips; novelty is judged on the role columns)
+snapping 18 switch-like parameters: PARAM_FXeye, PARAM_FXhand, PARAM_Hand_L1, PARAM_Hand_L2, PARAM_Hand_L3, PARAM_Hand_R1, PARAM_Hand_R2, PARAM_Hand_R3, PARAM_hand_L7, PARAM_shangxia, ParamBrowLX, ParamBrowLY, ParamBrowRX, ParamBrowRY, ParamHl4, ParamHl5, ParamHr4, ParamHr5
+backend: order=sandwich, timestep=fixed 0.0333s (native), parts=13
+rendered 600 frames -> runs/demo/rigs/xuefeng/idle/
+contact sheet -> runs/demo/rigs/xuefeng/idle/sheet.png
+video -> runs/demo/rigs/xuefeng/idle/preview.mp4

@@ -1,0 +1,2 @@
+--backend deepseek needs DEEPSEEK_API_KEY in the environment
+director: 8 gesture labels: mtn_00, mtn_01, mtn_02, mtn_03, mtn_04, mtn_05, mtn_06, mtn_07

@@ -1,0 +1,3 @@
+--backend deepseek needs DEEPSEEK_API_KEY in the environment
+director: not offered on this rig: brow:* (no brow roles), lean:* (no body_y role)
+director: 14 gesture labels: complete, home, idle, login, mail, main_1, main_2, main_3, mission, mission_complete, touch_body, touch_head, touch_special, wedding
