@@ -1,0 +1,138 @@
+fitted on 31 rigs, 433 clips (3712cc44403f6c247db4d7c0edd16016, aierdeliqi_4, aimierbeierding_2, banrenma_2, beierfasite_2, biaoqiang, biaoqiang_3, bisimai_2, chuixue_3, dafeng_2, deyizhi_3, dujiaoshou_4, dunkeerke_2, heitaizi_2, huangjiafangzhou_3, huonululu_3, huonululu_5, kelifulan_3, lafei_4, lingbo, mingshi, qibolin_2, shengluyisi_2, taiyuan_2, tianlangxing_3, tierbici_2, xianghe_2, xixuegui_4, yichui_2, z23, z46_2); held out Hiyori, Natori, aidang_2, lafei, xuefeng
+  gaze  pooled hold 1.57/1.50 (median s / sigma)  move 0.80/0.65  amp 0.69/0.59  dur~amp^0.04  from aierdeliqi_4, aimierbeierding_2, banrenma_2, beierfasite_2, biaoqiang_3, bisimai_2, chuixue_3, dafeng_2, deyizhi_3, dujiaoshou_4, dunkeerke_2, heitaizi_2, huangjiafangzhou_3, kelifulan_3, lafei_4, lingbo, mingshi, qibolin_2, shengluyisi_2, taiyuan_2, tianlangxing_3, tierbici_2, xianghe_2, xixuegui_4, yichui_2, z46_2
+      aierdeliqi_4 holds   7 (+9 censored, 5 unanimated)  hold 1.73/1.89  KM median 1.80  naive 0.37  moves  25 dur 0.70/0.53 amp 0.81/0.67 peak 1.54/s
+      aimierbeierding_2 holds  27 (+17 censored, 2 unanimated)  hold 1.00/1.60  KM median 1.73  naive 0.20  moves  43 dur 0.80/0.50 amp 0.31/0.80 peak 0.44/s
+      banrenma_2 holds  10 (+9 censored, 6 unanimated)  hold 1.46/2.25  KM median 1.07  naive 0.22  moves  16 dur 0.85/0.75 amp 1.00/0.24 peak 1.87/s
+      beierfasite_2 holds  26 (+11 censored, 0 unanimated)  hold 1.61/1.68  KM median 0.77  naive 0.67  moves  25 dur 1.83/0.73 amp 0.63/0.93 peak 0.63/s
+      biaoqiang  holds   2 (+16 censored, 2 unanimated)  hold -  KM median -  naive 0.13  moves  53 dur 0.37/0.43 amp 0.41/0.29 peak 1.71/s
+      biaoqiang_3 holds   7 (+9 censored, 8 unanimated)  hold 2.92/1.11  KM median 2.77  naive 2.33  moves  15 dur 0.63/1.19 amp 0.60/0.60 peak 7.57/s
+      bisimai_2  holds  20 (+5 censored, 0 unanimated)  hold 0.38/0.96  KM median 0.37  naive 0.22  moves  53 dur 0.87/0.66 amp 0.60/0.56 peak 1.04/s
+      chuixue_3  holds   6 (+18 censored, 1 unanimated)  hold 3.33/1.02  KM median 2.20  naive 1.52  moves  41 dur 0.80/0.70 amp 0.72/0.38 peak 1.25/s
+      dafeng_2   holds  34 (+22 censored, 0 unanimated)  hold 0.92/1.67  KM median 2.13  naive 0.20  moves  44 dur 1.18/0.55 amp 0.49/0.25 peak 0.52/s
+      deyizhi_3  holds  10 (+6 censored, 4 unanimated)  hold 1.30/1.69  KM median 2.70  naive 0.58  moves  49 dur 0.73/0.58 amp 1.54/0.61 peak 2.25/s
+      dujiaoshou_4 holds  20 (+4 censored, 0 unanimated)  hold 0.35/1.21  KM median 0.17  naive 0.17  moves  58 dur 0.85/0.81 amp 0.81/0.68 peak 2.03/s
+      dunkeerke_2 holds  16 (+19 censored, 1 unanimated)  hold 1.93/1.71  KM median 2.27  naive 0.42  moves  33 dur 1.13/1.07 amp 0.80/0.57 peak 1.59/s
+      heitaizi_2 holds   6 (+4 censored, 5 unanimated)  hold 0.63/1.89  KM median 0.43  naive 0.10  moves  10 dur 0.75/0.38 amp 1.63/0.36 peak 3.11/s
+      huangjiafangzhou_3 holds  23 (+19 censored, 4 unanimated)  hold 1.54/1.33  KM median 1.63  naive 0.93  moves  46 dur 0.35/0.82 amp 0.40/0.94 peak 2.24/s
+      kelifulan_3 holds  41 (+19 censored, 0 unanimated)  hold 0.79/1.31  KM median 0.73  naive 0.60  moves  66 dur 0.60/0.87 amp 0.48/1.04 peak 2.18/s
+      lafei_4    holds  24 (+9 censored, 3 unanimated)  hold 0.64/1.73  KM median 0.30  naive 0.22  moves  37 dur 1.07/0.83 amp 0.90/0.65 peak 0.84/s
+      lingbo     holds   9 (+22 censored, 0 unanimated)  hold 3.10/1.79  KM median 4.60  naive 0.50  moves  50 dur 0.80/0.65 amp 0.69/0.51 peak 1.05/s
+      mingshi    holds  16 (+17 censored, 1 unanimated)  hold 2.47/1.31  KM median 6.20  naive 6.20  moves  53 dur 0.60/0.60 amp 0.57/0.52 peak 1.79/s
+      qibolin_2  holds  19 (+16 censored, 6 unanimated)  hold 1.65/1.47  KM median 1.80  naive 0.53  moves  31 dur 0.53/0.70 amp 0.90/0.70 peak 3.12/s
+      shengluyisi_2 holds  23 (+8 censored, 0 unanimated)  hold 0.86/1.23  KM median 0.83  naive 0.33  moves  48 dur 0.90/0.70 amp 0.69/0.62 peak 1.43/s
+      taiyuan_2  holds   9 (+18 censored, 4 unanimated)  hold 5.50/2.06  KM median -  naive 0.57  moves  24 dur 0.67/0.52 amp 0.49/0.58 peak 0.96/s
+      tianlangxing_3 holds   7 (+3 censored, 0 unanimated)  hold 0.39/1.19  KM median 0.17  naive 0.17  moves  75 dur 1.40/0.50 amp 0.68/0.31 peak 0.78/s
+      tierbici_2 holds  30 (+18 censored, 0 unanimated)  hold 1.14/1.53  KM median 1.17  naive 0.45  moves  52 dur 0.65/0.62 amp 1.59/0.59 peak 4.66/s
+      xianghe_2  holds  15 (+17 censored, 1 unanimated)  hold 2.46/1.12  KM median 3.30  naive 1.87  moves  21 dur 0.47/1.27 amp 1.41/0.36 peak 9.72/s
+      xixuegui_4 holds   4 (+5 censored, 4 unanimated)  hold 3.67/1.69  KM median -  naive 0.67  moves   4 dur 1.71/0.36 amp 0.48/0.72 peak 0.42/s
+      yichui_2   holds  19 (+18 censored, 2 unanimated)  hold 2.85/1.21  KM median 3.60  naive 2.53  moves  32 dur 0.93/0.53 amp 0.40/0.70 peak 0.70/s
+      z23        holds   0 (+0 censored, 3 unanimated)  hold -  KM median -  naive -  moves   0 dur - amp - peak -/s
+      z46_2      holds   5 (+7 censored, 4 unanimated)  hold 1.83/0.65  KM median 2.03  naive 1.77  moves  21 dur 1.43/0.62 amp 1.02/0.46 peak 1.83/s
+  head  pooled hold 0.50/1.01 (median s / sigma)  move 1.37/0.60  amp 1.01/0.57  dur~amp^0.16  from 3712cc44403f6c247db4d7c0edd16016, aierdeliqi_4, aimierbeierding_2, banrenma_2, beierfasite_2, biaoqiang, biaoqiang_3, bisimai_2, dafeng_2, deyizhi_3, dujiaoshou_4, dunkeerke_2, huangjiafangzhou_3, huonululu_3, huonululu_5, kelifulan_3, lafei_4, lingbo, mingshi, qibolin_2, shengluyisi_2, taiyuan_2, tianlangxing_3, tierbici_2, xianghe_2, z23, z46_2
+      3712cc44403f6c247db4d7c0edd16016 holds  14 (+4 censored, 0 unanimated)  hold 0.47/1.13  KM median 0.30  naive 0.28  moves  39 dur 1.30/0.52 amp 1.15/0.51 peak 1.80/s
+      aierdeliqi_4 holds   6 (+5 censored, 0 unanimated)  hold 0.34/0.67  KM median 0.30  naive 0.25  moves  18 dur 1.48/0.44 amp 1.25/0.32 peak 1.20/s
+      aimierbeierding_2 holds  16 (+1 censored, 0 unanimated)  hold 0.43/0.93  KM median 0.33  naive 0.35  moves  50 dur 1.20/0.64 amp 1.03/0.64 peak 1.54/s
+      banrenma_2 holds   3 (+8 censored, 0 unanimated)  hold 1.25/1.75  KM median 0.80  naive 0.13  moves  33 dur 2.17/0.38 amp 0.93/0.42 peak 0.93/s
+      beierfasite_2 holds  13 (+3 censored, 0 unanimated)  hold 0.69/1.35  KM median 1.13  naive 0.40  moves  38 dur 1.52/0.66 amp 0.71/0.76 peak 1.13/s
+      biaoqiang  holds   4 (+16 censored, 1 unanimated)  hold 1.90/1.49  KM median 0.83  naive 0.47  moves  53 dur 0.43/0.51 amp 0.36/0.49 peak 1.48/s
+      biaoqiang_3 holds   8 (+6 censored, 0 unanimated)  hold 0.31/0.70  KM median 0.27  naive 0.23  moves  35 dur 1.40/0.75 amp 0.95/0.48 peak 1.29/s
+      bisimai_2  holds  14 (+4 censored, 0 unanimated)  hold 0.47/1.13  KM median 0.30  naive 0.28  moves  39 dur 1.30/0.52 amp 1.15/0.51 peak 1.80/s
+      chuixue_3  holds   1 (+4 censored, 0 unanimated)  hold -  KM median 0.50  naive 0.50  moves  67 dur 0.70/0.45 amp 1.34/0.53 peak 2.66/s
+      dafeng_2   holds  15 (+7 censored, 0 unanimated)  hold 1.04/1.07  KM median 1.57  naive 1.53  moves  48 dur 1.38/0.46 amp 1.34/0.79 peak 1.14/s
+      deyizhi_3  holds   5 (+5 censored, 0 unanimated)  hold 0.20/0.60  KM median 0.10  naive 0.10  moves  40 dur 1.53/0.50 amp 1.59/0.29 peak 2.08/s
+      dujiaoshou_4 holds  10 (+8 censored, 0 unanimated)  hold 0.54/1.01  KM median 0.40  naive 0.38  moves  28 dur 1.94/0.64 amp 1.05/0.76 peak 1.17/s
+      dunkeerke_2 holds  17 (+10 censored, 0 unanimated)  hold 0.40/0.98  KM median 0.37  naive 0.23  moves  42 dur 1.55/0.78 amp 1.00/0.60 peak 0.79/s
+      heitaizi_2 holds   1 (+1 censored, 0 unanimated)  hold -  KM median 0.53  naive 0.53  moves   8 dur 1.55/0.81 amp 0.43/1.43 peak 0.96/s
+      huangjiafangzhou_3 holds  22 (+7 censored, 0 unanimated)  hold 0.66/1.32  KM median 0.73  naive 0.53  moves  54 dur 0.97/0.59 amp 0.61/0.74 peak 1.41/s
+      huonululu_3 holds   7 (+0 censored, 0 unanimated)  hold 0.53/0.77  KM median 0.53  naive 0.53  moves  95 dur 0.53/0.61 amp 1.25/0.51 peak 3.32/s
+      huonululu_5 holds  24 (+1 censored, 0 unanimated)  hold 0.52/1.11  KM median 0.60  naive 0.57  moves  66 dur 1.85/0.62 amp 1.12/0.79 peak 1.40/s
+      kelifulan_3 holds  19 (+10 censored, 0 unanimated)  hold 0.72/0.86  KM median 0.57  naive 0.53  moves  40 dur 1.25/0.64 amp 0.91/0.88 peak 1.02/s
+      lafei_4    holds  18 (+7 censored, 0 unanimated)  hold 0.79/1.50  KM median 0.80  naive 0.27  moves  61 dur 0.97/0.61 amp 1.00/0.57 peak 1.61/s
+      lingbo     holds  34 (+14 censored, 0 unanimated)  hold 0.35/1.01  KM median 0.23  naive 0.13  moves  49 dur 1.13/0.58 amp 0.66/0.48 peak 0.95/s
+      mingshi    holds  25 (+18 censored, 0 unanimated)  hold 0.70/0.96  KM median 0.50  naive 0.50  moves 101 dur 0.60/0.57 amp 0.90/0.47 peak 2.35/s
+      qibolin_2  holds   3 (+0 censored, 0 unanimated)  hold 0.13/0.21  KM median 0.13  naive 0.13  moves  44 dur 1.60/0.65 amp 1.02/0.57 peak 0.91/s
+      shengluyisi_2 holds   5 (+2 censored, 0 unanimated)  hold 0.40/1.13  KM median 0.27  naive 0.23  moves  54 dur 1.12/0.68 amp 1.29/0.71 peak 1.93/s
+      taiyuan_2  holds  16 (+15 censored, 0 unanimated)  hold 0.29/0.50  KM median 0.37  naive 0.37  moves  52 dur 1.60/0.41 amp 0.87/0.70 peak 0.85/s
+      tianlangxing_3 holds   6 (+0 censored, 0 unanimated)  hold 0.23/0.57  KM median 0.23  naive 0.25  moves  65 dur 1.43/0.46 amp 0.80/0.60 peak 0.84/s
+      tierbici_2 holds   6 (+4 censored, 0 unanimated)  hold 0.39/0.84  KM median 0.73  naive 0.55  moves  60 dur 1.35/0.55 amp 1.30/0.58 peak 1.89/s
+      xianghe_2  holds   3 (+3 censored, 0 unanimated)  hold 1.71/0.56  KM median 1.80  naive 1.03  moves  11 dur 2.20/0.78 amp 0.54/0.54 peak 0.78/s
+      xixuegui_4 holds   1 (+1 censored, 0 unanimated)  hold -  KM median 0.43  naive 0.43  moves   4 dur 2.50/0.26 amp 1.41/1.41 peak 2.19/s
+      z23        holds  20 (+20 censored, 4 unanimated)  hold 0.82/1.69  KM median 1.03  naive 0.10  moves  36 dur 0.60/0.67 amp 0.27/0.40 peak 0.70/s
+      z46_2      holds   3 (+4 censored, 0 unanimated)  hold 0.50/1.18  KM median 0.20  naive 0.20  moves  27 dur 0.90/0.69 amp 1.29/0.38 peak 2.49/s
+  body  pooled hold 0.43/0.91 (median s / sigma)  move 1.20/0.54  amp 0.93/0.64  dur~amp^0.00  from 3712cc44403f6c247db4d7c0edd16016, aimierbeierding_2, banrenma_2, beierfasite_2, biaoqiang, biaoqiang_3, bisimai_2, chuixue_3, dafeng_2, deyizhi_3, dujiaoshou_4, dunkeerke_2, heitaizi_2, huangjiafangzhou_3, huonululu_3, huonululu_5, kelifulan_3, lafei_4, lingbo, mingshi, qibolin_2, shengluyisi_2, tianlangxing_3, tierbici_2, xianghe_2, z46_2
+      3712cc44403f6c247db4d7c0edd16016 holds  13 (+1 censored, 0 unanimated)  hold 0.43/0.99  KM median 0.67  naive 0.67  moves  40 dur 1.20/0.56 amp 1.56/0.50 peak 1.86/s
+      aierdeliqi_4 holds   2 (+1 censored, 0 unanimated)  hold -  KM median 0.10  naive 0.13  moves  31 dur 1.43/0.31 amp 1.90/0.24 peak 1.76/s
+      aimierbeierding_2 holds  14 (+3 censored, 0 unanimated)  hold 0.27/0.63  KM median 0.27  naive 0.27  moves  55 dur 1.33/0.46 amp 0.75/0.84 peak 1.08/s
+      banrenma_2 holds  10 (+0 censored, 1 unanimated)  hold 0.19/0.51  KM median 0.13  naive 0.18  moves  34 dur 1.85/0.38 amp 1.16/0.75 peak 1.03/s
+      beierfasite_2 holds  58 (+10 censored, 1 unanimated)  hold 0.40/0.92  KM median 0.33  naive 0.30  moves  79 dur 1.07/0.61 amp 0.36/1.23 peak 0.33/s
+      biaoqiang  holds   7 (+17 censored, 3 unanimated)  hold 1.10/0.36  KM median 0.77  naive 0.77  moves  46 dur 0.37/0.57 amp 0.59/0.34 peak 2.44/s
+      biaoqiang_3 holds   3 (+4 censored, 0 unanimated)  hold 0.23/0.38  KM median 0.20  naive 0.20  moves  45 dur 1.13/0.54 amp 1.96/0.48 peak 2.00/s
+      bisimai_2  holds  13 (+1 censored, 0 unanimated)  hold 0.43/0.99  KM median 0.67  naive 0.67  moves  40 dur 1.20/0.56 amp 1.56/0.50 peak 1.86/s
+      chuixue_3  holds   4 (+4 censored, 0 unanimated)  hold 0.54/0.75  KM median 0.43  naive 0.38  moves  58 dur 0.67/0.56 amp 1.00/0.81 peak 2.40/s
+      dafeng_2   holds  26 (+1 censored, 0 unanimated)  hold 0.16/0.26  KM median 0.17  naive 0.17  moves  44 dur 1.85/0.34 amp 1.50/0.71 peak 0.78/s
+      deyizhi_3  holds   3 (+1 censored, 0 unanimated)  hold 0.22/0.87  KM median 0.10  naive 0.10  moves  53 dur 1.17/0.53 amp 1.40/0.40 peak 1.85/s
+      dujiaoshou_4 holds   4 (+3 censored, 0 unanimated)  hold 0.21/0.59  KM median 0.17  naive 0.15  moves  38 dur 1.83/0.52 amp 1.75/0.60 peak 1.55/s
+      dunkeerke_2 holds  16 (+6 censored, 0 unanimated)  hold 0.45/1.28  KM median 0.33  naive 0.28  moves  33 dur 1.10/0.54 amp 1.01/0.75 peak 1.16/s
+      heitaizi_2 holds   3 (+0 censored, 0 unanimated)  hold 0.26/0.17  KM median 0.23  naive 0.23  moves   3 dur 3.50/0.46 amp - peak 1.32/s
+      huangjiafangzhou_3 holds   8 (+18 censored, 4 unanimated)  hold 6.85/2.52  KM median 9.70  naive 0.27  moves  25 dur 0.67/0.35 amp 0.30/0.94 peak 0.59/s
+      huonululu_3 holds   4 (+0 censored, 0 unanimated)  hold 0.34/0.89  KM median 0.30  naive 0.33  moves  74 dur 0.75/0.63 amp 1.49/0.73 peak 3.58/s
+      huonululu_5 holds   5 (+18 censored, 4 unanimated)  hold 33.39/2.68  KM median -  naive 2.90  moves  14 dur 1.37/0.59 amp 0.10/0.53 peak 0.07/s
+      kelifulan_3 holds  76 (+5 censored, 0 unanimated)  hold 0.26/0.74  KM median 0.23  naive 0.23  moves  76 dur 1.25/0.74 amp 0.39/1.34 peak 0.33/s
+      lafei_4    holds  14 (+17 censored, 4 unanimated)  hold 2.71/1.63  KM median 1.27  naive 0.87  moves  24 dur 1.30/0.40 amp 0.12/0.78 peak 0.14/s
+      lingbo     holds   6 (+9 censored, 8 unanimated)  hold 1.21/1.27  KM median 0.83  naive 0.60  moves  17 dur 1.20/0.38 amp 0.60/0.29 peak 1.02/s
+      mingshi    holds  10 (+8 censored, 11 unanimated)  hold 0.83/1.15  KM median 1.70  naive 0.35  moves  18 dur 1.02/0.94 amp 0.81/0.69 peak 1.63/s
+      qibolin_2  holds   3 (+0 censored, 0 unanimated)  hold 0.16/0.17  KM median 0.17  naive 0.17  moves  19 dur 2.33/0.81 amp 1.05/0.75 peak 0.80/s
+      shengluyisi_2 holds  29 (+16 censored, 2 unanimated)  hold 0.70/1.36  KM median 0.33  naive 0.30  moves  35 dur 1.10/0.38 amp 0.24/0.57 peak 0.23/s
+      taiyuan_2  holds   1 (+0 censored, 0 unanimated)  hold -  KM median 0.10  naive 0.10  moves  29 dur 2.00/0.15 amp 1.00/0.11 peak 0.76/s
+      tianlangxing_3 holds  33 (+14 censored, 2 unanimated)  hold 1.06/1.50  KM median 0.97  naive 0.60  moves  40 dur 0.63/0.96 amp 0.07/1.41 peak 0.12/s
+      tierbici_2 holds  32 (+3 censored, 0 unanimated)  hold 0.23/0.78  KM median 0.20  naive 0.17  moves  49 dur 1.67/0.45 amp 0.97/0.50 peak 0.87/s
+      xianghe_2  holds   5 (+4 censored, 1 unanimated)  hold 1.74/2.55  KM median 0.27  naive 0.20  moves   6 dur 1.77/0.56 amp 0.89/0.43 peak 1.02/s
+      xixuegui_4 holds   2 (+8 censored, 5 unanimated)  hold -  KM median -  naive 0.43  moves   5 dur 3.07/0.51 amp 0.04/1.87 peak 0.73/s
+      z23        holds   0 (+0 censored, 14 unanimated)  hold -  KM median -  naive -  moves   0 dur - amp - peak -/s
+      z46_2      holds  10 (+14 censored, 1 unanimated)  hold 0.49/1.14  KM median 0.37  naive 0.13  moves  33 dur 1.00/0.58 amp 0.70/0.58 peak 0.90/s
+  brow  pooled hold 1.63/1.15 (median s / sigma)  move 0.68/0.65  amp 0.75/0.61  dur~amp^0.01  from aierdeliqi_4, aimierbeierding_2, banrenma_2, beierfasite_2, biaoqiang, biaoqiang_3, bisimai_2, chuixue_3, dafeng_2, deyizhi_3, dujiaoshou_4, dunkeerke_2, huangjiafangzhou_3, huonululu_3, huonululu_5, kelifulan_3, lafei_4, mingshi, shengluyisi_2, taiyuan_2, tianlangxing_3, xixuegui_4, yichui_2, z46_2
+      aierdeliqi_4 holds   6 (+6 censored, 7 unanimated)  hold 1.37/1.41  KM median 1.20  naive 0.73  moves   6 dur 1.47/0.57 amp 0.62/0.21 peak 0.82/s
+      aimierbeierding_2 holds   3 (+5 censored, 9 unanimated)  hold 5.64/0.74  KM median -  naive 2.77  moves  10 dur 1.02/0.39 amp 1.07/0.62 peak 1.73/s
+      banrenma_2 holds  32 (+23 censored, 0 unanimated)  hold 1.08/1.34  KM median 0.93  naive 0.48  moves  63 dur 0.60/0.56 amp 0.64/0.94 peak 1.50/s
+      beierfasite_2 holds   4 (+8 censored, 10 unanimated)  hold 7.02/0.98  KM median 23.80  naive 3.20  moves   8 dur 0.67/0.58 amp 1.04/0.26 peak 1.98/s
+      biaoqiang  holds   5 (+5 censored, 11 unanimated)  hold 1.10/0.93  KM median 1.00  naive 0.93  moves   8 dur 0.27/0.90 amp 0.08/1.59 peak 0.79/s
+      biaoqiang_3 holds  23 (+14 censored, 0 unanimated)  hold 1.31/1.03  KM median 1.53  naive 0.87  moves  61 dur 0.43/0.57 amp 0.74/0.57 peak 2.22/s
+      bisimai_2  holds  28 (+23 censored, 0 unanimated)  hold 1.35/1.25  KM median 1.23  naive 0.93  moves  70 dur 0.40/0.65 amp 1.38/0.89 peak 4.07/s
+      chuixue_3  holds  10 (+11 censored, 4 unanimated)  hold 1.41/1.60  KM median 1.27  naive 0.57  moves  14 dur 1.75/1.25 amp 0.52/0.84 peak 0.37/s
+      dafeng_2   holds  41 (+17 censored, 1 unanimated)  hold 0.82/1.04  KM median 0.70  naive 0.50  moves  76 dur 0.50/0.75 amp 0.50/0.20 peak 1.73/s
+      deyizhi_3  holds  11 (+9 censored, 4 unanimated)  hold 1.84/1.97  KM median 2.77  naive 0.23  moves  23 dur 0.80/0.86 amp 1.23/0.58 peak 1.80/s
+      dujiaoshou_4 holds  33 (+20 censored, 0 unanimated)  hold 1.02/1.02  KM median 1.23  naive 0.60  moves  93 dur 0.43/0.65 amp 1.39/0.49 peak 3.45/s
+      dunkeerke_2 holds  19 (+12 censored, 4 unanimated)  hold 1.38/1.38  KM median 1.37  naive 1.07  moves  22 dur 1.48/0.55 amp 0.45/0.93 peak 0.34/s
+      huangjiafangzhou_3 holds  19 (+24 censored, 1 unanimated)  hold 2.63/1.15  KM median 3.80  naive 1.40  moves  33 dur 0.70/0.70 amp 1.15/0.86 peak 1.40/s
+      huonululu_3 holds   9 (+8 censored, 5 unanimated)  hold 3.05/1.09  KM median 2.87  naive 2.80  moves  11 dur 0.57/0.74 amp 0.98/0.36 peak 1.90/s
+      huonululu_5 holds  14 (+22 censored, 1 unanimated)  hold 5.53/0.79  KM median 5.77  naive 4.72  moves  26 dur 0.90/0.92 amp 1.00/0.65 peak 0.69/s
+      kelifulan_3 holds  60 (+25 censored, 0 unanimated)  hold 0.83/1.16  KM median 0.90  naive 0.68  moves  83 dur 0.33/0.75 amp 0.57/0.69 peak 2.24/s
+      lafei_4    holds  35 (+13 censored, 0 unanimated)  hold 1.06/1.07  KM median 1.23  naive 1.07  moves  73 dur 0.50/0.64 amp 0.71/0.61 peak 1.60/s
+      lingbo     holds   0 (+0 censored, 14 unanimated)  hold -  KM median -  naive -  moves   0 dur - amp - peak -/s
+      mingshi    holds  19 (+20 censored, 7 unanimated)  hold 1.98/1.04  KM median -  naive 0.77  moves  38 dur 0.33/1.05 amp 0.98/0.22 peak 5.24/s
+      shengluyisi_2 holds   7 (+4 censored, 7 unanimated)  hold 4.92/1.83  KM median 4.67  naive 4.67  moves  13 dur 0.53/0.94 amp 1.00/1.06 peak 2.14/s
+      taiyuan_2  holds   5 (+12 censored, 7 unanimated)  hold 7.38/1.99  KM median -  naive 1.13  moves  12 dur 0.72/0.58 amp 0.70/0.29 peak 1.28/s
+      tianlangxing_3 holds   4 (+6 censored, 9 unanimated)  hold 5.27/2.63  KM median -  naive 0.53  moves   9 dur 1.60/0.58 amp 0.34/0.43 peak 0.61/s
+      xixuegui_4 holds   6 (+8 censored, 3 unanimated)  hold 3.71/1.56  KM median 3.77  naive 0.63  moves   7 dur 1.63/0.67 amp 1.00/0.46 peak 1.33/s
+      yichui_2   holds  13 (+15 censored, 2 unanimated)  hold 4.62/1.36  KM median 4.97  naive 2.83  moves  24 dur 0.90/0.47 amp 0.75/0.66 peak 0.90/s
+      z23        holds   0 (+0 censored, 14 unanimated)  hold -  KM median -  naive -  moves   0 dur - amp - peak -/s
+      z46_2      holds  15 (+6 censored, 5 unanimated)  hold 0.31/0.94  KM median 0.23  naive 0.13  moves  18 dur 1.33/0.65 amp 0.30/0.74 peak 0.31/s
+  head follows gaze: p 0.46  lag 0.14s (fitted 0.14)  gain 0.05/0.06 (fitted 0.05/0.06)
+  brow on saccade 0.21  body/head slope +0.10
+  head_x   centre +0.000 std 0.390 p2..p98 -0.87..+0.91  from 3712cc44403f6c247db4d7c0edd16016, aierdeliqi_4, aimierbeierding_2, banrenma_2, beierfasite_2, biaoqiang, biaoqiang_3, bisimai_2, chuixue_3, dafeng_2, deyizhi_3, dujiaoshou_4, dunkeerke_2, heitaizi_2, huangjiafangzhou_3, huonululu_3, huonululu_5, kelifulan_3, lafei_4, lingbo, mingshi, qibolin_2, shengluyisi_2, taiyuan_2, tianlangxing_3, tierbici_2, xianghe_2, xixuegui_4, z23, z46_2
+  head_y   centre -0.055 std 0.422 p2..p98 -1.00..+0.79  from 3712cc44403f6c247db4d7c0edd16016, aierdeliqi_4, aimierbeierding_2, banrenma_2, beierfasite_2, biaoqiang, biaoqiang_3, bisimai_2, chuixue_3, dafeng_2, deyizhi_3, dujiaoshou_4, dunkeerke_2, heitaizi_2, huangjiafangzhou_3, huonululu_3, huonululu_5, kelifulan_3, lafei_4, lingbo, mingshi, qibolin_2, shengluyisi_2, taiyuan_2, tianlangxing_3, tierbici_2, xianghe_2, xixuegui_4, z23, z46_2
+  head_z   centre +0.000 std 0.262 p2..p98 -0.68..+0.63  from 3712cc44403f6c247db4d7c0edd16016, aierdeliqi_4, aimierbeierding_2, banrenma_2, beierfasite_2, biaoqiang, biaoqiang_3, bisimai_2, chuixue_3, dafeng_2, deyizhi_3, dunkeerke_2, heitaizi_2, huangjiafangzhou_3, huonululu_3, huonululu_5, kelifulan_3, lingbo, mingshi, qibolin_2, shengluyisi_2, taiyuan_2, tianlangxing_3, tierbici_2, xianghe_2, xixuegui_4, z23, z46_2
+  body_x   centre +0.000 std 0.422 p2..p98 -0.89..+0.93  from 3712cc44403f6c247db4d7c0edd16016, aierdeliqi_4, aimierbeierding_2, banrenma_2, beierfasite_2, biaoqiang, biaoqiang_3, bisimai_2, chuixue_3, dafeng_2, deyizhi_3, dujiaoshou_4, dunkeerke_2, heitaizi_2, huonululu_3, kelifulan_3, lingbo, mingshi, qibolin_2, shengluyisi_2, taiyuan_2, tianlangxing_3, tierbici_2, xianghe_2, xixuegui_4, z23, z46_2
+  body_y   centre +0.000 std 0.328 p2..p98 -0.77..+0.71  from aimierbeierding_2, banrenma_2, chuixue_3, dunkeerke_2, huonululu_3, qibolin_2
+  body_z   centre +0.000 std 0.236 p2..p98 -0.47..+0.63  from 3712cc44403f6c247db4d7c0edd16016, aierdeliqi_4, aimierbeierding_2, biaoqiang, biaoqiang_3, bisimai_2, chuixue_3, dafeng_2, deyizhi_3, dujiaoshou_4, dunkeerke_2, heitaizi_2, huangjiafangzhou_3, huonululu_3, huonululu_5, kelifulan_3, lafei_4, lingbo, mingshi, qibolin_2, taiyuan_2, tianlangxing_3, tierbici_2, xixuegui_4, z23, z46_2
+  gaze_x   centre +0.000 std 0.292 p2..p98 -0.70..+0.70  from aierdeliqi_4, aimierbeierding_2, banrenma_2, beierfasite_2, biaoqiang, biaoqiang_3, bisimai_2, chuixue_3, deyizhi_3, dujiaoshou_4, dunkeerke_2, heitaizi_2, huangjiafangzhou_3, kelifulan_3, lafei_4, lingbo, mingshi, qibolin_2, shengluyisi_2, taiyuan_2, tianlangxing_3, tierbici_2, xianghe_2, xixuegui_4, yichui_2, z23, z46_2
+  gaze_y   centre +0.000 std 0.251 p2..p98 -0.83..+0.35  from aierdeliqi_4, aimierbeierding_2, banrenma_2, beierfasite_2, biaoqiang, biaoqiang_3, bisimai_2, chuixue_3, dafeng_2, deyizhi_3, dujiaoshou_4, dunkeerke_2, heitaizi_2, kelifulan_3, lafei_4, lingbo, mingshi, qibolin_2, shengluyisi_2, taiyuan_2, tianlangxing_3, xixuegui_4, yichui_2, z23, z46_2
+  brow_l   centre +0.000 std 0.180 p2..p98 -0.49..+0.40  from aierdeliqi_4, banrenma_2, biaoqiang, biaoqiang_3, bisimai_2, chuixue_3, deyizhi_3, dujiaoshou_4, huangjiafangzhou_3, huonululu_3, huonululu_5, kelifulan_3, lafei_4, lingbo, mingshi, shengluyisi_2, taiyuan_2, tianlangxing_3, yichui_2, z23, z46_2
+  brow_r   centre +0.000 std 0.162 p2..p98 -0.55..+0.28  from aierdeliqi_4, banrenma_2, beierfasite_2, biaoqiang, biaoqiang_3, bisimai_2, chuixue_3, dafeng_2, dujiaoshou_4, huangjiafangzhou_3, huonululu_3, kelifulan_3, lafei_4, lingbo, mingshi, shengluyisi_2, xixuegui_4, yichui_2
+  brow_lx  centre +0.000 std 0.044 p2..p98 +0.00..+0.01  from beierfasite_2, biaoqiang, biaoqiang_3, chuixue_3, deyizhi_3, dujiaoshou_4, kelifulan_3, lingbo, mingshi, taiyuan_2, z23, z46_2
+  brow_rx  centre +0.000 std 0.106 p2..p98 -0.28..+0.00  from banrenma_2, biaoqiang, biaoqiang_3, chuixue_3, dujiaoshou_4, kelifulan_3, lingbo, mingshi, xixuegui_4
+  brow_la  centre +0.000 std 0.134 p2..p98 -0.19..+0.40  from aierdeliqi_4, banrenma_2, beierfasite_2, biaoqiang_3, chuixue_3, deyizhi_3, dujiaoshou_4, dunkeerke_2, huonululu_3, kelifulan_3, taiyuan_2, tianlangxing_3, z46_2
+  brow_ra  centre +0.000 std 0.175 p2..p98 -0.48..+0.47  from aimierbeierding_2, banrenma_2, biaoqiang_3, chuixue_3, dafeng_2, dujiaoshou_4, huangjiafangzhou_3, kelifulan_3, yichui_2, z46_2
+  brow_lf  centre +0.000 std 0.299 p2..p98 -0.70..+0.95  from aierdeliqi_4, biaoqiang_3, chuixue_3, deyizhi_3, dujiaoshou_4, dunkeerke_2, huangjiafangzhou_3, huonululu_5, kelifulan_3, taiyuan_2, tianlangxing_3, xixuegui_4, yichui_2, z46_2
+  brow_rf  centre +0.000 std 0.406 p2..p98 -1.00..+0.99  from aimierbeierding_2, chuixue_3, dujiaoshou_4, huangjiafangzhou_3, kelifulan_3, shengluyisi_2, yichui_2
+-> ev.json
