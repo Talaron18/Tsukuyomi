@@ -433,6 +433,12 @@ class EdgeTTS:
     def __init__(self, voice=None, rate="+0%", log=print):
         self.voice, self.rate, self.log = voice, rate, log
         self.last_voice = None
+        self._now = None
+
+    def begin(self, spoken):
+        """Pick the voice from the whole reply: a piece after a [pause]
+        ("本当？") has no kana and would otherwise be read in Chinese."""
+        self._now = self.voice or EDGE_VOICES[language(spoken)]
 
     def synth(self, text):
         try:
@@ -440,7 +446,7 @@ class EdgeTTS:
         except ImportError as exc:
             raise SystemExit(f"--tts edge needs edge-tts (pip install "
                              f"edge-tts): {exc}") from exc
-        voice = self.voice or EDGE_VOICES[language(text)]
+        voice = self._now or self.voice or EDGE_VOICES[language(text)]
         self.last_voice = voice
         try:
             c = edge_tts.Communicate(text, voice, rate=self.rate,
@@ -528,6 +534,8 @@ def speak(spoken, tags, tts, weight, log=print):
     that is silent. Pause tags split the text; each piece is synthesised
     alone and followed by the pause's silence (FileTTS: not split)."""
     n = len(spoken)
+    if hasattr(tts, "begin"):
+        tts.begin(spoken)
     pauses = [(t["at"], float(t["arg"])) for t in tags if t["tag"] == "pause"]
     if tts.whole and pauses:
         log(f"speech: {len(pauses)} [pause] tags taken from the recording's "

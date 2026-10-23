@@ -1138,6 +1138,11 @@ def plan(a, reply, out_dir, motions, log=print, tts=None):
         log(f"speech: {end:.2f}s audio ({tts.last_voice}), tag times from "
             f"{said['method']} -> speech.wav")
     else:
+        # A speech.wav left by an earlier run into this folder would be
+        # muxed onto this silent one.
+        stale = os.path.join(out_dir, "speech.wav")
+        if os.path.exists(stale):
+            os.remove(stale)
         acts, spans, end = timeline(reply["spoken"], reply["tags"],
                                     a.cjk_rate, a.latin_rate)
         seconds = length(acts, end, motions, a.tail)

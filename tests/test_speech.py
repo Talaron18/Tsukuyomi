@@ -464,3 +464,35 @@ def test_vad_phrases_land_in_their_own_stretches():
     assert spans[text.index(".")] == (pytest.approx(0.6),) * 2
     # An apostrophe is no phrase break.
     assert sp._chunks("you're fine. ok", [1] * 15) == [(0, 13), (13, 15)]
+
+
+def test_edge_voice_is_chosen_once_per_reply(monkeypatch):
+    voices = []
+    _fake_edge(monkeypatch, wav_bytes(vowel(0.3)), [])
+    Comm = sys.modules["edge_tts"].Communicate
+
+    class Rec(Comm):
+        def __init__(self, text, voice, **kw):
+            voices.append(voice)
+            super().__init__(text, voice, **kw)
+    sys.modules["edge_tts"].Communicate = Rec
+    p = dr.parse("えっ、[pause:0.5] 本当？")
+    sp.speak(p.spoken, p.tags, sp.EdgeTTS(log=lambda s: None),
+             lambda ch: 1 / 6, log=lambda s: None)
+    assert voices == ["ja-JP-NanamiNeural"] * 2
+
+
+def test_silent_rerun_drops_an_old_speech_wav(tmp_path):
+    model, rig = _mouth_rig(tmp_path / "x")
+    reply = tmp_path / "reply.txt"
+    reply.write_text("Hello there. [nod] How are you?", encoding="utf-8")
+    audio = tmp_path / "said.wav"
+    audio.write_bytes(wav_bytes(two_phrases()))
+    out = tmp_path / "run"
+    base = ["--model-json", str(model), "--rig", str(rig), "--backend",
+            "file", "--reply-file", str(reply), "--out", str(out),
+            "--probe-dir", str(tmp_path)]
+    assert dr.main(base + ["--tts", "file", "--tts-file", str(audio)]) == 0
+    assert (out / "speech.wav").exists()
+    assert dr.main(base) == 0
+    assert not (out / "speech.wav").exists()
