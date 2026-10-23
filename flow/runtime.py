@@ -323,6 +323,10 @@ def main(argv=None) -> int:
                          "by flow.director) into the scheduled idle tokens; "
                          "a directed move overrides the idle on the role "
                          "groups it touches for as long as it lasts")
+    ap.add_argument("--no-idle", action="store_true",
+                    help="--events: schedule blinks only (no idle head, body, "
+                         "gaze, brow moves or gestures), so --direct tags are "
+                         "seen alone; idle sway hid them on aidang_2")
     ap.add_argument("--binding", default=None, metavar="FILE.json",
                     help="--behaviors/--events role binding override: "
                          '{"head_x": "ParamFoo"} or {"head_x": ["ParamFoo", -1]}')
@@ -592,6 +596,8 @@ def main(argv=None) -> int:
                 sw, a.fps)
             tokens = ev.schedule(stats, list(roles), a.seconds, rng, gest,
                                  start)
+            if a.no_idle:
+                tokens = [k for k in tokens if k["type"] == "blink"]
             if a.direct:
                 try:
                     from . import director as dr

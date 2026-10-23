@@ -433,3 +433,19 @@ def test_file_backend_end_to_end_replays_bit_for_bit(tmp_path, capsys):
     assert json.loads((tmp_path / "again" / "tokens.json").read_text()) == blob
     srt = (out / "subs.srt").read_text(encoding="utf-8")
     assert srt.startswith("1\n00:00:00,000 --> ") and "Oh, you're back!" in srt
+
+
+def test_no_idle_keeps_only_blinks_and_the_tags(tmp_path):
+    model, rig = _rig(tmp_path / "x")
+    reply = tmp_path / "reply.txt"
+    reply.write_text(REPLY.replace("[gesture:m]", "[gesture:home]"),
+                     encoding="utf-8")
+    out = tmp_path / "run"
+    assert dr.main(["--model-json", str(model), "--rig", str(rig),
+                    "--backend", "file", "--reply-file", str(reply),
+                    "--out", str(out), "--probe-dir", str(tmp_path),
+                    "--no-idle"]) == 0
+    toks = json.loads((out / "tokens.json").read_text())["tokens"]
+    assert any(k.get("src") == "director" for k in toks)
+    assert all(k.get("src") == "director" or k["type"] == "blink"
+               for k in toks)

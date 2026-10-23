@@ -849,6 +849,8 @@ def runtime_args(a, seconds):
         out.append("--events-pool-only")
     if a.no_snap:
         out.append("--no-snap")
+    if a.no_idle:
+        out.append("--no-idle")
     return out
 
 
@@ -946,6 +948,9 @@ def main(argv=None) -> int:
     ap.add_argument("--binding", default=None)
     ap.add_argument("--events-pool-only", action="store_true")
     ap.add_argument("--no-snap", action="store_true")
+    ap.add_argument("--no-idle", action="store_true",
+                    help="blinks only besides the tags: for checking what "
+                         "each tag does")
     ap.add_argument("--say", default=None, help="the user's message")
     ap.add_argument("--persona", default=None, help="who the character is "
                     "(first line of the system prompt)")
