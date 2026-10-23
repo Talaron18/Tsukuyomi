@@ -26,8 +26,8 @@
 #   MODELS   folders holding the .model3.json files [live2d-models:CubismWebSamples]
 #   EVENTS   event stats [ev.json]
 #   RENDER   1 = render video too [1]
-# The table's "wall s" is per reply, model call plus planning (plus the render
-# when RENDER=1, so compare models with RENDER=0 for latency).
+# The table's "model s" / "first s" are the model call alone and the wait for
+# its first spoken text (from actions.json; wall time was mostly planning).
 #   CROP     ffmpeg crop for the head close-up, w:h:x:y at --size 512
 #            [130:110:225:20, aidang_2's face]; other rigs need their own
 set -uo pipefail
@@ -129,12 +129,13 @@ root = sys.argv[1]
 if not os.path.isdir(root):
     sys.exit()
 print(f"\n{'model':<38} {'ok':>3} {'tags':>5} {'/reply':>6} {'kinds':>5} "
-      f"{'warn':>4} {'wall s':>6}  tag counts")
+      f"{'warn':>4} {'model s':>7} {'first s':>7} {'empty':>5}  tag counts")
 for tag in sorted(os.listdir(root)):
     d = os.path.join(root, tag)
     if not os.path.isdir(d):
         continue
-    ok = n = warn = 0; wall = []; kinds = collections.Counter()
+    ok = n = warn = empty = 0; ms = []; fs = []
+    kinds = collections.Counter()
     for i in sorted(os.listdir(d)):
         f = os.path.join(d, i, "actions.json")
         if not os.path.exists(f):
@@ -145,14 +146,20 @@ for tag in sorted(os.listdir(root)):
         n += len(acts); warn += len(a.get("warnings", []))
         kinds.update(x["tag"] + (":" + x["arg"] if x.get("arg") and
                                  x["tag"] != "pause" else "") for x in acts)
-        w = os.path.join(d, i, "wall_seconds.txt")
-        if os.path.exists(w):
-            wall.append(float(open(w).read() or 0))
+        empty += not acts and not open(os.path.join(d, i, "spoken.txt"),
+                                       encoding="utf-8").read().strip()
+        if a.get("model_seconds") is not None:
+            ms.append(a["model_seconds"])
+        if a.get("first_text_seconds") is not None:
+            fs.append(a["first_text_seconds"])
     per = n / ok if ok else 0
-    ws = sum(wall) / len(wall) if wall else 0
+    avg = lambda v: f"{sum(v) / len(v):7.1f}" if v else f"{'-':>7}"
     top = ", ".join(f"{k} {v}" for k, v in kinds.most_common())
     print(f"{tag:<38} {ok:>3} {n:>5} {per:>6.1f} "
-          f"{len({k.split(':')[0] for k in kinds}):>5} {warn:>4} {ws:>6.1f}  {top}")
+          f"{len({k.split(':')[0] for k in kinds}):>5} {warn:>4} {avg(ms)} "
+          f"{avg(fs)} {empty:>5}  {top}")
 EOF
 fi
-echo "Push: git add -f $OUT && git commit -m 'director matrix' && git push"
+# Not the whole folder: render/ holds every frame as a PNG (5750 of them on
+# the first run).
+echo "Push: find $OUT \\( -name '*.json' -o -name '*.txt' -o -name '*.mp4' -o -name '*.log' \\) -not -path '*/render/*.png' -print0 | xargs -0 git add -f"

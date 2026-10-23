@@ -697,7 +697,10 @@ class OllamaBackend:
         req = urllib.request.Request(
             self.url + "/api/chat", data=json.dumps(body).encode("utf-8"),
             headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=self.timeout) as fh:
+        # A proxy from the environment (http_proxy) answered localhost with
+        # 502 Bad Gateway on the server; Ollama is local, so go direct.
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(req, timeout=self.timeout) as fh:
             for line in fh:
                 line = line.strip()
                 if not line:
@@ -797,6 +800,8 @@ class OpenAICompatBackend:
 
 def make_backend(a, log=print):
     model = a.model or DEFAULT_MODEL.get(a.backend)
+    if a.max_tokens is None:
+        a.max_tokens = 8192 if a.backend in OPENAI_COMPAT else 2048
     if a.backend == "anthropic":
         return AnthropicBackend(model, a.effort, a.max_tokens, log)
     if a.backend == "ollama":
@@ -820,12 +825,22 @@ def ask(backend, system, messages, gestures, log=print):
     """Stream one reply through the parser. Returns a dict: raw tagged text,
     spoken text, tags, warnings, stop_reason, usage, refused. A refusal
     yields no spoken text and no tags, whatever streamed before it."""
+    import time
     p = TagParser(gestures)
     raw = []
+    t0 = time.monotonic()
+    first = None
     for chunk in backend.stream(system, messages):
+        if first is None:
+            first = time.monotonic() - t0
         raw.append(chunk)
         p.feed(chunk)
     p.close()
+    total = time.monotonic() - t0
+    # Time to the first spoken chunk is what a live character waits on; a
+    # reasoning model spends it thinking (Qwen3.6 once used all 2048 tokens).
+    log(f"director: model {total:.1f}s, first text after "
+        + (f"{first:.1f}s" if first is not None else "never"))
     refused = backend.stop_reason == "refusal"
     for w in p.warnings:
         log(f"director: {w}")
@@ -834,7 +849,8 @@ def ask(backend, system, messages, gestures, log=print):
     return {"raw": "".join(raw), "spoken": "" if refused else p.spoken,
             "tags": [] if refused else p.tags, "warnings": p.warnings,
             "stop_reason": backend.stop_reason, "usage": backend.usage,
-            "refused": refused}
+            "refused": refused, "model_seconds": round(total, 3),
+            "first_text_seconds": None if first is None else round(first, 3)}
 
 
 def runtime_args(a, seconds):
@@ -889,7 +905,11 @@ def plan(a, reply, out_dir, motions, log=print):
     with open(os.path.join(out_dir, "actions.json"), "w",
               encoding="utf-8") as fh:
         json.dump({"speech_seconds": round(end, 3), "seconds": round(seconds, 3),
-                   "actions": acts, "warnings": reply["warnings"]}, fh,
+                   "actions": acts, "warnings": reply["warnings"],
+                   "model_seconds": reply.get("model_seconds"),
+                   "first_text_seconds": reply.get("first_text_seconds"),
+                   "stop_reason": reply.get("stop_reason"),
+                   "usage": reply.get("usage")}, fh,
                   indent=1, ensure_ascii=False)
     with open(os.path.join(out_dir, "subs.srt"), "w", encoding="utf-8") as fh:
         fh.write(srt(segs))
@@ -961,7 +981,11 @@ def main(argv=None) -> int:
                     + ", ".join(f"{k}: {v}" for k, v in DEFAULT_MODEL.items())
                     + ")")
     ap.add_argument("--effort", default="low", help="anthropic effort")
-    ap.add_argument("--max-tokens", type=int, default=2048)
+    ap.add_argument("--max-tokens", type=int, default=None,
+                    help="reply token cap, thinking included [2048; 8192 "
+                         "for siliconflow/deepseek, whose reasoning models "
+                         "count their thinking: Qwen3.6 spent 2048 on it "
+                         "and said nothing]")
     ap.add_argument("--ollama-url", default="http://localhost:11434")
     ap.add_argument("--api-base", default=None, help="siliconflow/deepseek: "
                     "override the base URL (e.g. https://api.siliconflow.cn/v1)")

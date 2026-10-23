@@ -288,7 +288,9 @@ def test_ollama_stream(monkeypatch):
         return io.BytesIO(b"".join(json.dumps(x).encode() + b"\n"
                                    for x in lines))
 
-    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    # Ollama goes through its own proxy-less opener.
+    monkeypatch.setattr(urllib.request, "build_opener",
+                        lambda *h: types.SimpleNamespace(open=urlopen))
     be = dr.OllamaBackend("m", "http://h:1/", seed=3, log=lambda s: None)
     r = dr.ask(be, "SYS", [{"role": "user", "content": "q"}], [],
                log=lambda s: None)
