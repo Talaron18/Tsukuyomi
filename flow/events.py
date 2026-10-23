@@ -1349,8 +1349,12 @@ class GesturePlayer:
             if len(v) < 2 or np.ptp(v) <= 0:
                 continue
             # A loop authored to repeat ends where it starts; any other
-            # curve plays forward and back, never jumping at the seam.
+            # curve plays forward and back, never jumping at the seam. A
+            # last frame equal to the first (Hiyori_m01's Ahoge) is the
+            # first frame again: played twice, it stalled once per loop.
             seam = abs(v[-1] - v[0]) <= np.abs(np.diff(v)).max() + 1e-9
+            if seam and v[-1] == v[0] and len(v) > 2:
+                v = v[:-1]
             out[p] = (v, seam)
         return out
 
@@ -1358,15 +1362,14 @@ class GesturePlayer:
         """The underlay over a held pose, in place: each loose parameter
         pulled `gain` of the way toward the loop's value at t, ramped in
         (minimum-jerk over `ramp`) from rest_from, when the pose began to
-        be held, and out again by the underlay's own end."""
+        be held. No ramp out: the token spans the run, and fading out over
+        its last second stopped every preview's hair dead at the end."""
         tok, loops = und
         t0 = float(tok["t"])
-        t1 = t0 + float(tok["duration"])
-        if not loops or t < t0 or t >= t1:
+        if not loops or t < t0 or t >= t0 + float(tok["duration"]):
             return
         ramp = max(float(tok.get("ramp", 1.0)), 1.0 / self.fps)
-        e = float(min_jerk((t - max(rest_from, t0)) / ramp)
-                  * min_jerk((t1 - t) / ramp))
+        e = float(min_jerk((t - max(rest_from, t0)) / ramp))
         if e <= 0:
             return
         g = e * float(tok.get("gain", 1.0))
