@@ -576,7 +576,11 @@ def main(argv=None) -> int:
         log["heldout"][h["name"]] = {
             "eval": e, "rollout": r,
             "real_std": float(real.std(axis=0).mean()),
-            "real_frame_delta": float(np.abs(np.diff(real, axis=0)).mean())}
+            "real_frame_delta": float(np.abs(np.diff(real, axis=0)).mean()),
+            # Switches and parameters resting at an end of their range sit at
+            # +-1 in authored motion too, so a pinned fraction means nothing
+            # without this reference.
+            "real_saturation": float((np.abs(real) > 0.98).mean())}
         write_log()
         print(f"\nHELD-OUT RIG {h['name']}")
         if not e:
@@ -595,7 +599,8 @@ def main(argv=None) -> int:
         fmt = lambda v: "-" if v is None else f"{v:.2f}"  # noqa: E731
         print(f"  pinned at +-1 {r['saturation']:.2f}  (driven cols "
               f"{fmt(r['saturation_driven'])}, never-driven cols "
-              f"{fmt(r['saturation_undriven'])}, {r['undriven_cols']} of them)")
+              f"{fmt(r['saturation_undriven'])}, {r['undriven_cols']} of them)"
+              f"   authored {float((np.abs(real) > 0.98).mean()):.2f}")
         print(f"  real clips    std={real.std(axis=0).mean():.4f}  "
               f"per-frame delta={np.abs(np.diff(real, axis=0)).mean():.5f}")
     write_log()

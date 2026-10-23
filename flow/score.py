@@ -510,6 +510,18 @@ def score(traj_path: str, clips_path: str, rig_path: str,
     res["diversity"] = (diversity([traj_path] + list(seeds), div_seconds)
                         if seeds else None)
 
+    # Fraction of driven values at the ends of their range, against the clips:
+    # switches and end-of-range defaults are pinned in authored motion too.
+    def _pinned(segs):
+        n = tot = 0
+        for x, m in segs:
+            sel = m[:, driven] if m.ndim == 2 else m
+            v = np.abs(x[:, driven])[sel] if m.ndim == 2 else np.abs(x[:, driven])
+            n += int((v > 0.98).sum())
+            tot += int(v.size)
+        return n / tot if tot else float("nan")
+    res["pinned"] = {"gen": _pinned(gen["segs"]), "ref": _pinned(ref["segs"])}
+
     res["toggle"] = None
     if model_json:
         rz = np.load(rig_path, allow_pickle=True)
@@ -591,6 +603,10 @@ def print_table(res: dict) -> None:
     if dv:
         print(f"diversity  mean pairwise RMS over {dv['n_runs']} runs, first "
               f"{dv['seconds']:.0f}s: {dv['mean_pairwise_rms']:.3f}")
+    pn = res.get("pinned")
+    if pn:
+        print(f"pinned at +-1 (driven cols): gen {pn['gen']:.3f}  "
+              f"authored {pn['ref']:.3f}")
     t = res["toggle"]
     if t:
         print(f"toggle in-between ({t['n_params']} switch params): "
