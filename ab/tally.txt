@@ -1,1 +1,13 @@
-no judgments yet
+30 judged pairs
+source          win rate
+  events           80%  (15 pairs)
+  static           73%  (15 pairs)
+  beh              40%  (15 pairs)
+  flow              7%  (15 pairs)
+head to head (first source's win rate, ties count half):
+  beh vs events: 10% of 5
+  beh vs flow: 80% of 5
+  beh vs static: 30% of 5
+  events vs flow: 100% of 5
+  events vs static: 50% of 5
+  flow vs static: 0% of 5
