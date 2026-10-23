@@ -180,6 +180,25 @@ def bind(pids, allowed=None, override=None):
                       roles=ALL_ROLES)
 
 
+def drop_switch_roles(roles, switches):
+    """(kept, dropped): role bindings minus the columns the rig's own motions
+    use as switches (l2dprobe.motions.toggle_params of its motion files).
+
+    Such a column is never moved continuously by its rigger: it sits at one
+    of two authored states and jumps. xuefeng's four brow ids are switches,
+    so runtime.Switches pinned the small event brow targets to one state
+    (brow std 0.00 against authored); aidang_2's eyeballs are switches too,
+    gaze is never snapped, and saccades parked them in between (toggle
+    in-between 0.124 vs 0.068 authored). Left unbound, the column falls to
+    the gesture layer, which replays it from the rig's own motions like any
+    other switch. An explicit --binding override is kept as asked.
+    """
+    kept, dropped = {}, {}
+    for r, v in roles.items():
+        (dropped if v[0] in switches and v[2] == "id" else kept)[r] = v
+    return kept, dropped
+
+
 # ------------------------------------------------------------- extraction
 
 def _split_points(speed, a, b, dip=DIP, min_len=MIN_HOLD):

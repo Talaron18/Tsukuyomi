@@ -239,3 +239,62 @@ def test_events_dump_and_token_replay_are_identical(tmp_path):
     assert armc.std() > 0.1                           # gestures move the arm
     toks = json.loads(tok.read_text())["tokens"]
     assert any(k["type"] == "gesture" for k in toks)
+
+
+def test_switch_role_columns_go_to_the_gesture_layer():
+    roles = ev.bind(["ParamBrowLY", "ParamBrowRY", "ParamEyeBallX"])
+    kept, dropped = ev.drop_switch_roles(roles, {"ParamBrowLY": (0.0, 0, 1)})
+    assert set(dropped) == {"brow_l"} and "brow_r" in kept
+    # An explicit override is kept even on a switch.
+    o = ev.bind(["ParamBrowLY"], override={"brow_l": "ParamBrowLY"})
+    assert ev.drop_switch_roles(o, {"ParamBrowLY": (0.0, 0, 1)})[0] == o
+
+
+def test_events_leave_switch_brows_to_the_rigs_motions(tmp_path):
+    """A brow the rig's motions only ever jump between two states (xuefeng)
+    is not event-driven: it plays from the motions, at their two states,
+    instead of sitting pinned by the snapper (std 0)."""
+    from flow.runtime import main
+    from l2dprobe.analyze import group_of
+
+    # Stepped segments (type 2): -1 until 2 s, +1 until 4 s, -1 to the end.
+    brow = [0, -1, 2, 2.0, 1, 2, 4.0, -1, 2, 6.0, -1]
+    arm = [0, 0, 1, 2.0, 1, 4.0, 0, 6.0, 0]
+    motions = [{"Version": 3, "Meta": {"Duration": 6.0, "Fps": 30},
+                "Curves": [{"Target": "Parameter", "Id": "ParamBrowLY",
+                            "Segments": brow},
+                           {"Target": "Parameter", "Id": "ParamArmL",
+                            "Segments": arm}]},
+               {"Version": 3, "Meta": {"Duration": 6.0, "Fps": 30},
+                "Curves": [{"Target": "Parameter", "Id": "ParamArmL",
+                            "Segments": arm}]}]
+    refs = []
+    for i, m in enumerate(motions):
+        (tmp_path / f"m{i}.motion3.json").write_text(json.dumps(m))
+        refs.append({"File": f"m{i}.motion3.json"})
+    model = tmp_path / "x.model3.json"
+    model.write_text(json.dumps({"Version": 3, "FileReferences": {
+        "Moc": "x.moc3", "Motions": {"Idle": refs}}}))
+    pids = ["ParamAngleX", "ParamEyeBallX", "ParamBrowLY", "ParamArmL"]
+    n = len(pids)
+    rig = tmp_path / "x.npz"
+    np.savez(rig, pid=np.array(pids, dtype=object),
+             kind=np.array(["continuous"] * n, dtype=object),
+             group=np.array([group_of(p) for p in pids], dtype=object),
+             minimum=np.array([-30, -1, -1, 0], np.float32),
+             maximum=np.array([30, 1, 1, 1], np.float32),
+             default=np.array([0, 0, 0, 0], np.float32),
+             descriptor=np.zeros((n, 4), np.float32))
+    out = tmp_path / "a.npz"
+    tok = tmp_path / "t.json"
+    assert main(["--model", str(model), "--rig", str(rig), "--events",
+                 "default", "--seconds", "60", "--seed", "1", "--dump-only",
+                 "--probe-dir", str(tmp_path), "--dump", str(out),
+                 "--tokens", str(tok)]) == 0
+    a = np.load(out, allow_pickle=True)
+    b = a["traj"][:, list(a["pid"]).index("ParamBrowLY")]
+    assert "brow_l" not in json.loads(tok.read_text())["roles"]
+    assert not any(k["type"] == "brow" for k in
+                   json.loads(tok.read_text())["tokens"])
+    assert b.std() > 0.3                              # it does change...
+    assert (np.abs(np.abs(b) - 1) < 0.1).mean() > 0.8  # ...between states

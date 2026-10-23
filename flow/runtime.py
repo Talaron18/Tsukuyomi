@@ -526,10 +526,18 @@ def main(argv=None) -> int:
         stats = ev.load_stats(a.events)
         roles = ev.bind(pids, [pids[i] for i in expressive],
                         ev.load_binding(a.binding))
+        # Role columns the rig's own motions use as switches go to the
+        # gesture layer (see events.drop_switch_roles); --no-snap keeps them.
+        roles, sw_roles = ev.drop_switch_roles(
+            roles, {} if a.no_snap else toggle_params(a.model, a.fps))
+        if sw_roles:
+            print("events: switch-like role columns left to the rig's own "
+                  "motions: " + ", ".join(f"{r}={v[0]}" for r, v
+                                          in sorted(sw_roles.items())))
         for r, (p, sg, src) in sorted(roles.items()):
             print(f"  role {r:<8} -> {p}{'' if sg > 0 else ' (sign -1)'}  "
                   f"[{src}]")
-        missing = sorted(set(ev.ALL_ROLES) - set(roles))
+        missing = sorted(set(ev.ALL_ROLES) - set(roles) - set(sw_roles))
         if missing:
             print(f"events: unbound roles (no standard id; --binding to add): "
                   f"{', '.join(missing)}")
