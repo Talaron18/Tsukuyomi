@@ -60,13 +60,13 @@ import numpy as np
 # --static and --dump-only runs depend on things they never use.
 try:
     from ..l2dprobe.analyze import group_of
-    from ..l2dprobe.transforms import whole_model_params
+    from ..l2dprobe.transforms import protected, whole_model_params
     from ..l2dprobe.motions import (authored_motion, band_of, motion_files,
                                     physics_params, toggle_params)
 except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from l2dprobe.analyze import group_of
-    from l2dprobe.transforms import whole_model_params
+    from l2dprobe.transforms import protected, whole_model_params
     from l2dprobe.motions import (authored_motion, band_of, motion_files,
                                   physics_params, toggle_params)
 
@@ -83,14 +83,8 @@ def snappable(pid: str, rig_group: str) -> bool:
 
 
 def protected_from_hold(pid: str, rig_group: str) -> bool:
-    """Head and body angles and gaze are never held as whole-model transforms.
-
-    Narrower than NEVER_SNAP on purpose: analyze.GROUPS files AllRotate under
-    body, and ParamAllRotate is exactly the kind of parameter to hold.
-    """
-    low = pid.lower()
-    return ("angle" in low or "eyeball" in low
-            or rig_group in ("head", "gaze") or group_of(pid) in ("head", "gaze"))
+    """Angles and gaze are never held; see l2dprobe.transforms.protected."""
+    return protected(pid, rig_group)
 
 
 def _backend():
@@ -380,19 +374,15 @@ def main(argv=None) -> int:
     held = set(p for p in a.hold.split(",") if p)
     if not a.no_hold_global and not (a.static or a.neutral):
         rig_name = os.path.basename(a.rig).rsplit(".npz", 1)[0]
-        found = whole_model_params(a.probe_dir, rig_name)
+        found = whole_model_params(a.probe_dir, rig_name,
+                                   groups=dict(zip(pids, groups)))
         if found is None:
             print(f"WARNING: no probe output {a.probe_dir}/rig_{rig_name}.npz; "
                   "whole-model transform parameters are not held (pass "
                   "--probe-dir, or list them with --hold)", file=sys.stderr)
         else:
-            # The detector was calibrated on full-body rigs, where a body
-            # angle leaves the feet still. On a bust-up rig the bottom of the
-            # box is torso and a body angle could reach both edges; never let
-            # that freeze the head, body or gaze.
-            group_by_id = dict(zip(pids, groups))
-            held |= {p for p in found
-                     if not protected_from_hold(p, group_by_id.get(p, ""))}
+            # Angles and gaze are protected inside transforms.decide.
+            held |= set(found)
     held &= {pids[i] for i in expressive}
     if held:
         print(f"holding {len(held)} whole-model parameters still: "

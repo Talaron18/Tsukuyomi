@@ -30,3 +30,18 @@ def test_whole_model_params_reads_probe_npz(tmp_path):
              pids=np.array(["ParamAllX", "ParamAngleX"], dtype=object))
     assert set(whole_model_params(str(tmp_path), "X")) == {"ParamAllX"}
     assert whole_model_params(str(tmp_path), "missing") is None
+
+
+def test_angles_protected_and_named_transforms_hinted():
+    from l2dprobe.transforms import decide
+    held, prot = decide({
+        "ParamBodyAngleZ": 0.67,      # bust rig: high score, still an angle
+        "PARAM_BODY_ANGLE_Z": 0.51,
+        "ParamZTY": 0.21,             # whole-model Y, under the plain bar
+        "zongtiZ": 0.11,
+        "shentidaxiao": 0.06,         # "body size"
+        "ParamHairFront": 0.20,       # unhinted and under the bar
+        "ParamAllX": 0.42,
+    })
+    assert set(prot) == {"ParamBodyAngleZ", "PARAM_BODY_ANGLE_Z"}
+    assert set(held) == {"ParamZTY", "zongtiZ", "shentidaxiao", "ParamAllX"}
