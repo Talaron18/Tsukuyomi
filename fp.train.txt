@@ -1,57 +1,57 @@
-31 training rigs (3712cc44403f6c247db4d7c0edd16016, aierdeliqi_4, aimierbeierding_2, banrenma_2, beierfasite_2, biaoqiang, biaoqiang_3, bisimai_2, chuixue_3, dafeng_2, deyizhi_3, dujiaoshou_4, dunkeerke_2, heitaizi_2, huangjiafangzhou_3, huonululu_3, huonululu_5, kelifulan_3, lafei_4, lingbo, mingshi, qibolin_2, shengluyisi_2, taiyuan_2, tianlangxing_3, tierbici_2, xianghe_2, xixuegui_4, yichui_2, z23, z46_2); held out aidang_2, Natori, Hiyori, lafei, xuefeng -- present here: aidang_2, Natori, Hiyori, lafei, xuefeng
+36 training rigs (3712cc44403f6c247db4d7c0edd16016, Haru, Mao, Mark, Rice, Wanko, aierdeliqi_4, aimierbeierding_2, banrenma_2, beierfasite_2, biaoqiang, biaoqiang_3, bisimai_2, chuixue_3, dafeng_2, deyizhi_3, dujiaoshou_4, dunkeerke_2, heitaizi_2, huangjiafangzhou_3, huonululu_3, huonululu_5, kelifulan_3, lafei_4, lingbo, mingshi, qibolin_2, shengluyisi_2, taiyuan_2, tianlangxing_3, tierbici_2, xianghe_2, xixuegui_4, yichui_2, z23, z46_2); held out aidang_2, Natori, Hiyori, lafei, xuefeng -- present here: aidang_2, Natori, Hiyori, lafei, xuefeng
 model: 0.96M params  chunk=12 frames (0.40s)  solver=6 steps  device=cpu
-residual scale (rms of chunk minus 'hold' baseline): 0.20414
-  epoch 0 31s -> ~21 min
-  epoch   0  loss 2.04544
-  epoch  10  loss 1.11738
-  epoch  20  loss 1.04198
-  epoch  30  loss 0.96631
-  epoch  39  loss 0.99525
+residual scale (rms of chunk minus 'hold' baseline): 0.18344
+  epoch 0 30s -> ~20 min
+  epoch   0  loss 2.28351
+  epoch  10  loss 1.09381
+  epoch  20  loss 1.12347
+  epoch  30  loss 1.05642
+  epoch  39  loss 1.05711
 saved -> fp.pt
 
 HELD-OUT RIG Hiyori
-  chunk MSE   best-of-8 0.04209   mean 0.05077
+  chunk MSE   best-of-8 0.04114   mean 0.04975
   baselines   hold 0.04015   damped 0.02845   velocity 0.06042   -> best is damped
-  best-of-8 vs damped  -48.0%
-  sample diversity  0.0736   (0 means it ignores the noise)
-  free rollout  std=0.5213  per-frame delta=0.07405
-  pinned at +-1 0.12  (driven cols 0.12, never-driven cols -, 0 of them)
+  best-of-8 vs damped  -44.6%
+  sample diversity  0.0708   (0 means it ignores the noise)
+  free rollout  std=0.4939  per-frame delta=0.07049
+  pinned at +-1 0.13  (driven cols 0.13, never-driven cols -, 0 of them)   authored 0.18
   real clips    std=0.3801  per-frame delta=0.01388
 
 HELD-OUT RIG Natori
-  chunk MSE   best-of-8 0.00543   mean 0.00939
+  chunk MSE   best-of-8 0.00525   mean 0.00869
   baselines   hold 0.00309   damped 0.00154   velocity 0.00339   -> best is damped
-  best-of-8 vs damped  -253.5%
-  sample diversity  0.0514   (0 means it ignores the noise)
-  free rollout  std=0.4609  per-frame delta=0.06652
-  pinned at +-1 0.14  (driven cols 0.14, never-driven cols -, 0 of them)
+  best-of-8 vs damped  -241.8%
+  sample diversity  0.0476   (0 means it ignores the noise)
+  free rollout  std=0.4463  per-frame delta=0.04942
+  pinned at +-1 0.13  (driven cols 0.13, never-driven cols -, 0 of them)   authored 0.24
   real clips    std=0.1854  per-frame delta=0.00215
 
 HELD-OUT RIG aidang_2
-  chunk MSE   best-of-8 0.03157   mean 0.03644
+  chunk MSE   best-of-8 0.02860   mean 0.03104
   baselines   hold 0.02756   damped 0.02496   velocity 0.06638   -> best is damped
-  best-of-8 vs damped  -26.5%
-  sample diversity  0.0633   (0 means it ignores the noise)
-  free rollout  std=0.4690  per-frame delta=0.07257
-  pinned at +-1 0.16  (driven cols 0.16, never-driven cols 0.12, 6 of them)
+  best-of-8 vs damped  -14.6%
+  sample diversity  0.0392   (0 means it ignores the noise)
+  free rollout  std=0.3773  per-frame delta=0.04105
+  pinned at +-1 0.13  (driven cols 0.13, never-driven cols 0.08, 6 of them)   authored 0.27
   real clips    std=0.3122  per-frame delta=0.01036
 
 HELD-OUT RIG lafei
-  chunk MSE   best-of-8 0.00629   mean 0.00728
+  chunk MSE   best-of-8 0.00626   mean 0.00767
   baselines   hold 0.00635   damped 0.00403   velocity 0.00426   -> best is damped
-  best-of-8 vs damped  -56.0%
-  sample diversity  0.0097   (0 means it ignores the noise)
-  free rollout  std=0.1955  per-frame delta=0.01342
-  pinned at +-1 0.34  (driven cols 0.34, never-driven cols -, 0 of them)
+  best-of-8 vs damped  -55.4%
+  sample diversity  0.0119   (0 means it ignores the noise)
+  free rollout  std=0.2139  per-frame delta=0.01137
+  pinned at +-1 0.37  (driven cols 0.37, never-driven cols -, 0 of them)   authored 0.58
   real clips    std=0.1660  per-frame delta=0.00282
 
 HELD-OUT RIG xuefeng
-  chunk MSE   best-of-8 0.03464   mean 0.03719
+  chunk MSE   best-of-8 0.03528   mean 0.03639
   baselines   hold 0.03592   damped 0.06544   velocity 0.24086   -> best is hold
-  best-of-8 vs hold  +3.6%
-  sample diversity  0.0170   (0 means it ignores the noise)
-  free rollout  std=0.3147  per-frame delta=0.02140
-  pinned at +-1 0.30  (driven cols 0.30, never-driven cols -, 0 of them)
+  best-of-8 vs hold  +1.8%
+  sample diversity  0.0072   (0 means it ignores the noise)
+  free rollout  std=0.2079  per-frame delta=0.00769
+  pinned at +-1 0.31  (driven cols 0.31, never-driven cols -, 0 of them)   authored 0.54
   real clips    std=0.3589  per-frame delta=0.00758
 
 log -> fp.log.json

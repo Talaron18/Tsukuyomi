@@ -1,0 +1,14 @@
+runs/Natori.flow.0.npz  [dump:flow steps=6 seed=0]  vs  clips2/Natori.npz
+group      n    std    |d|    p95   jerk    still g/a   period g/a
+arm       24   2.38  21.83  12.95 751.17   0.00/ 0.16   0.00/ 0.00
+body       3   4.78  11.24   9.52 720.49   0.00/ 0.18   0.00/ 0.00
+brow       3   1.39    inf    inf    inf   0.45/ 1.00   0.00/ 0.00
+gaze       2   4.01   8.80   5.67 158.80   0.00/ 0.55   0.01/ 0.00
+head       4   3.58   8.02   6.02 332.37   0.00/ 0.05   0.00/ 0.00
+other     10   3.52   7.84  19.98  47.96   0.00/ 0.66   0.00/ 0.00
+OVERALL   46   2.83  12.71  10.48 195.93   0.00/ 0.05   0.02/ 0.00
+novelty  nearest-window RMS, median: gen 0.433  authored 0.136  (ratio 3.17; vs 34 reference rigs; 10 role cols)
+diversity  mean pairwise RMS over 3 runs, first 10s: 0.939
+toggle in-between (21 switch params): gen 0.030  authored 0.053
+checks: std=FAIL  jerk=FAIL  toggle=ok  period=ok   => FAIL
+-> runs/Natori.flow.json

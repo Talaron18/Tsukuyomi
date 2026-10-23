@@ -1,15 +1,15 @@
 runs/xuefeng.events.0.npz  [dump:events seed=0]  vs  clips2/xuefeng.npz
 group      n    std    |d|    p95   jerk    still g/a   period g/a
-arm       12   0.52   0.81   2.05   0.04   0.15/ 0.24   0.19/ 0.00
-body       2   0.64   1.54   1.07   0.25   0.07/ 0.59   0.34/ 0.00
-brow       4   0.00   0.00      -   0.00   1.00/ 0.94   0.00/ 0.00
-gaze       2   0.51   0.15   0.26   0.06   0.67/ 0.04   0.00/ 0.00
-head       3   0.89   0.63   0.55   0.10   0.05/ 0.00   0.29/ 0.16
-other      7   0.91   1.05    inf   0.04   0.43/ 0.65   0.17/ 0.00
-OVERALL   30   0.64   0.75   1.90   0.04   0.00/ 0.00   0.13/ 0.00
-novelty  nearest-window RMS, median: gen 0.163  authored 0.230  (ratio 0.71; vs 31 reference rigs; 9 role cols)
-diversity  mean pairwise RMS over 3 runs, first 10s: 0.297
-pinned at +-1 (driven cols): gen 0.547  authored 0.536
-toggle in-between (18 switch params): gen 0.021  authored 0.005
-checks: std=FAIL  jerk=ok  toggle=ok  period=ok  face=FAIL  holds=FAIL  stiff=ok   => FAIL   (groups: body, brow)
+arm       12   0.77   0.75   1.38   0.04   0.10/ 0.24   0.27/ 0.00
+body       2   0.90   1.04   1.22   0.63   0.48/ 0.59   0.17/ 0.00
+brow       4   1.06   1.04      -   0.74   0.95/ 0.94   0.00/ 0.00
+gaze       2   0.51   0.15   0.22   0.07   0.53/ 0.04   0.00/ 0.00
+head       3   0.96   0.70   0.61   0.12   0.00/ 0.00   0.25/ 0.16
+other      7   0.87   0.81    inf   0.04   0.55/ 0.65   0.23/ 0.00
+OVERALL   30   0.82   0.67   1.44   0.04   0.00/ 0.00   0.17/ 0.00
+novelty  nearest-window RMS, median: gen 0.196  authored 0.230  (ratio 0.85; vs 36 reference rigs; 9 role cols)
+diversity  mean pairwise RMS over 3 runs, first 10s: 0.403
+pinned at +-1 (driven cols): gen 0.553  authored 0.536
+toggle in-between (18 switch params): gen 0.020  authored 0.005
+checks: std=ok  jerk=ok  toggle=ok  period=ok  face=ok  holds=ok  stiff=ok   => PASS
 -> runs/xuefeng.events.json
