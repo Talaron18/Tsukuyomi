@@ -1,20 +1,8 @@
 1
-00:00:00,000 --> 00:00:00,500
-Oh?
+00:00:00,000 --> 00:00:02,293
+Oh my, such a sudden compliment.
 
 2
-00:00:00,564 --> 00:00:02,207
-Saying that so suddenly.
-
-3
-00:00:02,557 --> 00:00:03,057
-.
-
-4
-00:00:02,907 --> 00:00:03,407
-.
-
-5
-00:00:03,329 --> 00:00:05,550
-you'll make me blush, Commander.
+00:00:02,714 --> 00:00:06,721
+Are you sure you're looking at the right ship, Commander?
 

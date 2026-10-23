@@ -1,24 +1,12 @@
 1
-00:00:00,000 --> 00:00:00,929
-Fleet Admiral?
+00:00:00,000 --> 00:00:03,357
+I heard you finally earned that shiny new title,
 
 2
-00:00:01,350 --> 00:00:01,850
-Hoo~!
+00:00:03,579 --> 00:00:08,371
+fleet admiral, though I suppose I shouldn't be completely surprised.
 
 3
-00:00:02,057 --> 00:00:05,279
-My silly Admiral, you really climbed so fast!
-
-4
-00:00:06,121 --> 00:00:10,979
-But big titles don't mean you can ignore your favorite cruiser,
-
-5
-00:00:11,200 --> 00:00:11,700
-do they?
-
-6
-00:00:12,543 --> 00:00:16,836
-So, hurry up and give Atago a reward for her happy Admiral~
+00:00:09,071 --> 00:00:13,214
+But don't think a fancy rank changes how I get to spoil you.
 

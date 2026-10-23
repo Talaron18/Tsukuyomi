@@ -1,24 +1,32 @@
 1
-00:00:00,000 --> 00:00:02,586
-Ara ara, so you're the culprit, hmm?
+00:00:00,000 --> 00:00:00,500
+Ara ara.
 
 2
-00:00:03,007 --> 00:00:03,650
-Well then.
+00:00:00,850 --> 00:00:01,350
+.
 
 3
-00:00:04,000 --> 00:00:04,500
+00:00:01,200 --> 00:00:01,700
 .
 
 4
-00:00:04,350 --> 00:00:04,850
-.
+00:00:01,621 --> 00:00:03,486
+so you're the culprit, hmm?
 
 5
-00:00:04,771 --> 00:00:10,993
-you'll just have to help me bake a new one, and be my taste-tester for every single step,
+00:00:03,907 --> 00:00:06,636
+Fufu, don't look so guilty, Commander.
 
 6
-00:00:11,214 --> 00:00:11,714
-okay?
+00:00:06,986 --> 00:00:07,486
+.
+
+7
+00:00:07,336 --> 00:00:07,836
+.
+
+8
+00:00:07,757 --> 00:00:12,979
+I'll simply bake a new one, and this time you'll share it with me properly.
 

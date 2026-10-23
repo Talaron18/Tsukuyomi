@@ -1,24 +1,36 @@
 1
-00:00:00,000 --> 00:00:01,721
-Ara, the beach together.
+00:00:00,000 --> 00:00:02,579
+Ara ara, an invitation to the beach.
 
 2
-00:00:02,071 --> 00:00:02,571
+00:00:02,929 --> 00:00:03,429
 .
 
 3
-00:00:02,421 --> 00:00:02,921
+00:00:03,279 --> 00:00:03,779
 .
 
 4
-00:00:02,843 --> 00:00:05,343
-how could I possibly say no to that?
+00:00:03,700 --> 00:00:04,771
+how bold of you.
 
 5
-00:00:05,764 --> 00:00:10,771
-But fufu, you'd better be ready to spend the whole day right beside me,
+00:00:05,193 --> 00:00:08,843
+I'd be delighted to keep you company tomorrow, fufu.
 
 6
-00:00:10,993 --> 00:00:11,493
-hmm~?
+00:00:09,193 --> 00:00:09,693
+.
+
+7
+00:00:09,543 --> 00:00:10,043
+.
+
+8
+00:00:09,964 --> 00:00:14,321
+just try not to stare too much when you see me in my swimsuit.
+
+9
+00:00:14,743 --> 00:00:16,179
+It's a promise, okay?
 

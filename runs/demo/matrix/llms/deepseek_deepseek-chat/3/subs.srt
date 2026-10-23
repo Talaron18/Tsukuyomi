@@ -1,20 +1,12 @@
 1
-00:00:00,000 --> 00:00:02,079
-Oh my, fleet admiral already?
+00:00:00,000 --> 00:00:00,929
+Fleet admiral?
 
 2
-00:00:02,500 --> 00:00:03,857
-You've grown so fast.
+00:00:01,350 --> 00:00:03,364
+My, my, that's quite a jump.
 
 3
-00:00:04,207 --> 00:00:04,707
-.
-
-4
-00:00:04,557 --> 00:00:05,057
-.
-
-5
-00:00:04,979 --> 00:00:08,121
-I might just have to tease you even more now.
+00:00:03,786 --> 00:00:07,143
+Does this mean I have to start saluting you now?
 

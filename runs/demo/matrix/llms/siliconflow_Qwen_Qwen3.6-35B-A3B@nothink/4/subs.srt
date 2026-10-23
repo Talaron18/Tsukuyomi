@@ -1,0 +1,12 @@
+1
+00:00:00,000 --> 00:00:00,500
+Oh?
+
+2
+00:00:00,564 --> 00:00:04,571
+You’re quite bold with your compliments today, Commander.
+
+3
+00:00:05,621 --> 00:00:08,693
+But I suppose I can’t blame you for noticing.
+

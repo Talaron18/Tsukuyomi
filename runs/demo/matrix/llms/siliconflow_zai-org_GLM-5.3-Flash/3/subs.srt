@@ -1,28 +1,28 @@
 1
-00:00:00,000 --> 00:00:02,436
-Ara~ Fleet admiral, how wonderful!
+00:00:00,000 --> 00:00:02,079
+Oh my, fleet admiral already?
 
 2
-00:00:02,857 --> 00:00:06,857
-I always knew my dear commander would reach the very top.
+00:00:02,500 --> 00:00:04,436
+Congratulations, Commander.
 
 3
-00:00:07,279 --> 00:00:07,779
-Though.
+00:00:04,786 --> 00:00:05,286
+.
 
 4
-00:00:08,057 --> 00:00:08,557
+00:00:05,136 --> 00:00:05,636
 .
 
 5
-00:00:08,407 --> 00:00:08,907
-.
+00:00:05,557 --> 00:00:07,214
+I mean, Admiral, fufu.
 
 6
-00:00:08,829 --> 00:00:12,829
-I can't have you getting too important to keep me company,
+00:00:07,636 --> 00:00:11,493
+You simply must let me pamper you tonight to celebrate,
 
 7
-00:00:13,050 --> 00:00:13,621
-you know?
+00:00:11,714 --> 00:00:12,214
+okay?
 

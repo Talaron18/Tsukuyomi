@@ -1,0 +1,14 @@
+runs/demo/aidang_2_calm_idle/plan.npz  [dump:events seed=0]  vs  clips2/aidang_2.npz
+group      n    std    |d|    p95   jerk    still g/a   period g/a
+arm        9   0.67   0.44   0.57   0.60   0.50/ 0.00   0.00/ 0.88
+body       2   0.09   0.02   0.06   0.01   0.80/ 0.00   0.00/ 0.00
+brow       5   0.56   0.60   0.91   0.37   0.60/ 0.65   0.00/ 0.00
+gaze       3   0.00   0.00   0.00   0.00   1.00/ 0.85   0.00/ 0.00
+hair       6   0.49   0.27   0.31   0.22   0.50/ 0.00   0.00/ 0.97
+head       3   0.58   0.73   0.75   0.31   0.05/ 0.00   0.22/ 0.00
+other     25   0.54   0.36   0.41   0.25   0.50/ 0.00   0.00/ 0.31
+OVERALL   53   0.52   0.37   0.44   0.26   0.00/ 0.00   0.24/ 0.82
+novelty  nearest-window RMS, median: gen 0.198  authored 0.168  (ratio 1.17; vs own clips (leave-one-clip-out for authored); 9 role cols)
+pinned at +-1 (driven cols): gen 0.086  authored 0.169
+toggle in-between (37 switch params): gen 0.001  authored 0.068
+checks: std=FAIL  jerk=ok  toggle=ok  period=ok  face=FAIL  holds=ok  stiff=FAIL   => FAIL   (groups: arm, body, gaze)

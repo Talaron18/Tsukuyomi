@@ -1,24 +1,24 @@
 1
-00:00:00,000 --> 00:00:02,150
-Oh my, an invitation from you?
+00:00:00,000 --> 00:00:01,007
+My, the beach?
 
 2
-00:00:02,571 --> 00:00:05,364
-How could I possibly refuse, Commander.
+00:00:01,429 --> 00:00:03,857
+Is someone asking me out on a date?
 
 3
-00:00:05,714 --> 00:00:06,214
-.
+00:00:04,279 --> 00:00:06,207
+Of course I'll come with you.
 
 4
-00:00:06,064 --> 00:00:06,564
+00:00:06,557 --> 00:00:07,057
 .
 
 5
-00:00:06,486 --> 00:00:10,986
-Just make sure you don't stare too much when you see my swimsuit,
+00:00:06,907 --> 00:00:07,407
+.
 
 6
-00:00:11,207 --> 00:00:11,707
-ufufu.
+00:00:07,329 --> 00:00:11,186
+and maybe I'll even let you help me pick out a swimsuit.
 

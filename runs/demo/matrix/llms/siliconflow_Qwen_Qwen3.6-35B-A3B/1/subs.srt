@@ -1,12 +1,20 @@
 1
-00:00:00,000 --> 00:00:02,643
-A surprise trip to the beach tomorrow?
+00:00:00,000 --> 00:00:04,300
+Oh, are you finally asking me out to the shore, my darling?
 
 2
-00:00:03,064 --> 00:00:06,786
-You really know how to make a girl smile, Commander.
+00:00:04,721 --> 00:00:08,300
+well, I suppose I can make some time just for you.
 
 3
-00:00:07,207 --> 00:00:13,714
-I'd love to go with you, just promise you'll stay close so I don't get lost chasing the waves.
+00:00:08,650 --> 00:00:09,150
+.
+
+4
+00:00:09,000 --> 00:00:09,500
+.
+
+5
+00:00:09,421 --> 00:00:13,921
+but only if you promise to keep a close eye on me while I relax.
 

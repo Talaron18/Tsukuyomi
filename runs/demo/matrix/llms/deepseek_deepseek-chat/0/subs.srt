@@ -1,8 +1,16 @@
 1
-00:00:00,000 --> 00:00:01,650
-Oh my, what a question.
+00:00:00,000 --> 00:00:01,079
+Oh, you're back!
 
 2
-00:00:02,071 --> 00:00:04,436
-You already know I did, don't you?
+00:00:01,500 --> 00:00:02,500
+Did I miss you?
+
+3
+00:00:02,921 --> 00:00:05,493
+Only every single hour you were gone.
+
+4
+00:00:05,914 --> 00:00:08,421
+Not that I was counting, of course.
 

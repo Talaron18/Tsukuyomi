@@ -1,12 +1,12 @@
 1
-00:00:00,000 --> 00:00:01,221
-Oh my, the beach?
+00:00:00,000 --> 00:00:00,643
+The beach?
 
 2
-00:00:01,643 --> 00:00:03,579
-Just the two of us, I hope?
+00:00:01,064 --> 00:00:03,000
+Just the two of us, I hope.
 
 3
-00:00:04,000 --> 00:00:06,364
-I'd love to come along, Commander.
+00:00:03,421 --> 00:00:04,921
+I'd love to come along.
 
