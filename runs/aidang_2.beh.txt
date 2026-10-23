@@ -10,6 +10,7 @@ other     37   0.01   0.00   0.00   0.00   0.67/ 0.00   0.09/ 0.31
 OVERALL   93   0.03   0.02   0.04   0.00   0.05/ 0.00   0.13/ 0.82
 novelty  nearest-window RMS, median: gen 0.116  authored 0.260  (ratio 0.45; vs 31 reference rigs; 9 role cols)
 diversity  mean pairwise RMS over 3 runs, first 10s: 0.191
+pinned at +-1 (driven cols): gen 0.296  authored 0.169
 toggle in-between (37 switch params): gen 0.037  authored 0.068
 checks: std=FAIL  jerk=ok  toggle=ok  period=ok   => FAIL
 -> runs/aidang_2.beh.json
