@@ -542,6 +542,13 @@ def pool(per_rig):
         # eyes by 100-300 ms, and that bound is kept.
         st["head_follow"]["lag"] = float(np.clip(st["head_follow"]["lag"],
                                                  0.1, 0.3))
+        # Likewise the head follows the eyes with a smaller amplitude: gain in
+        # [0, 0.95]. The fitted gain went negative (-0.22) once moves were
+        # split: heads rest ~5% of the time, so nearly every saccade has some
+        # head sub-move nearby and the pairing (and p) is close to chance.
+        st["head_follow"]["gain_fitted"] = list(st["head_follow"]["gain"])
+        st["head_follow"]["gain"] = [float(np.clip(g, 0.0, 0.95))
+                                     for g in st["head_follow"]["gain"]]
     v = _median([p.get("brow_on_saccade") for p in rigs])
     if v is not None:
         st["brow_on_saccade"] = v
@@ -1013,7 +1020,8 @@ def report(st):
                 f"{f(pg['amp'])} peak {f(pg['peak_vel'])}/s")
     hf = st["head_follow"]
     lines.append(f"  head follows gaze: p {hf['p']:.2f}  lag {hf['lag']:.2f}s "
-                 f"(fitted {f(hf.get('lag_fitted'))})  gain {f(hf['gain'])}")
+                 f"(fitted {f(hf.get('lag_fitted'))})  gain {f(hf['gain'])} (fitted "
+                 f"{f(hf.get('gain_fitted'))})")
     lines.append(f"  brow on saccade {st['brow_on_saccade']:.2f}  "
                  f"body/head slope {st['body_head_slope']:+.2f}")
     for r in ALL_ROLES:
