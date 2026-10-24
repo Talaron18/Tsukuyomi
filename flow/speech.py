@@ -40,6 +40,24 @@ lip-sync curve. numpy and the standard library only; ffmpeg decodes mp3.
              Optional vowel weights (a/i/u/e/o) from the first two spectral
              envelope peaks, or with VOICEVOX from the moras (mora_track:
              a/i/u/e/o/N/pau per frame, pauses and ッ closing the mouth).
+  mood       mood_of(): happy, sad, annoyed, whisper or neutral per
+             sentence, read from the tags the language model put in it --
+             the prompt itself defines [brow:down] as "serious, sad",
+             [brow:furrow] as "annoyed, doubtful", [brow:up] as "surprise,
+             interest" -- plus a few words and the punctuation. No new tag:
+             the prompt stays byte-stable, a model that never heard of moods
+             still gets them, and a --backend file reply written before
+             this works too. The voice then takes that mood: VOICEVOX a
+             style of the same character found by its name (mood_style:
+             明るい/喜び for happy, 哀しみ/悲しみ for sad, 呆れ/怒り/ツンツン
+             for annoyed, ささやき for whisper, おどろき for surprised,
+             こわがり for shy, へろへろ for sleepy; where the character has
+             none, the base style with speed/pitch/intonation/volume
+             offsets on its AudioQuery), edge-tts rate/pitch/volume offsets
+             (EDGE_MOODS; the free endpoint takes no SSML styles). A voice
+             config's "moods" names them explicitly, or false turns it off.
+             speak() splits the text where the mood changes, as it does at
+             a [pause].
 """
 
 from __future__ import annotations
@@ -408,6 +426,225 @@ def speech_end(spans, segs, dur):
     return min(max(ends) if ends else 0.0, dur)
 
 
+# ------------------------------------------------------------------ mood
+
+MOODS = ("neutral", "happy", "sad", "annoyed", "whisper", "surprised",
+         "shy", "sleepy")
+# Evidence per mood, in points; the strongest mood with at least MOOD_MIN
+# wins, else neutral. A brow tag is the model's own label for the sentence
+# (the prompt's TAG_LINES: down "serious, sad", furrow "annoyed, doubtful",
+# up "surprise, interest") and decides alone; a nod, a shake, a glance
+# away ("shy, thinking, evasive") or a single "!" only tips a sentence that
+# has another sign. Hand-set.
+MOOD_TAGS = {"brow:down": {"sad": 2.0}, "brow:furrow": {"annoyed": 2.0},
+             "brow:up": {"surprised": 1.5, "happy": 0.5},
+             "nod": {"happy": 0.5}, "shake": {"annoyed": 0.5, "sad": 0.5},
+             "lean:in": {"whisper": 0.5}, "look:away": {"shy": 0.75}}
+MOOD_WORD = 1.5
+MOOD_MIN = 1.5
+# Words that carry a mood, matched case-insensitively (Latin at word
+# starts, CJK anywhere). Short and conservative: a wrong style is worse
+# than the base one. "もう" is left out ("もう少し"), "ふん" needs its
+# small tsu ("ふんわり").
+MOOD_WORDS = {
+    "happy": ("yay", "great", "glad", "love", "wonderful", "happy", "fun",
+              "haha", "awesome", "thank", "嬉し", "うれし", "楽し", "たのし",
+              "やった", "わーい", "好き", "ありがと", "よかった", "开心",
+              "高兴", "太好了", "喜欢", "谢谢", "哈哈"),
+    "sad": ("sorry", "sad", "miss you", "lonely", "unfortunately", "cry",
+            "ごめん", "悲し", "かなし", "寂し", "さびし", "残念", "泣",
+            "对不起", "难过", "伤心", "可惜", "寂寞", "抱歉"),
+    "annoyed": ("hmph", "ugh", "seriously", "idiot", "baka", "whatever",
+                "annoying", "ふんっ", "フン", "バカ", "ばか", "うるさい",
+                "べつに", "別に", "なによ", "哼", "笨蛋", "讨厌"),
+    "whisper": ("secret", "whisper", "between us", "内緒", "ないしょ",
+                "秘密", "こっそり", "ひそひそ", "悄悄"),
+    "surprised": ("wow", "whoa", "no way", "what?!", "えっ", "まさか",
+                  "びっくり", "うそ", "哇", "天哪", "竟然"),
+    "shy": ("embarrass", "blush", "恥ずかし", "はずかし", "照れ", "てれ",
+            "怖い", "こわい", "害羞", "不好意思"),
+    "sleepy": ("sleepy", "tired", "yawn", "zzz", "nap", "眠", "ねむ", "ふぁ",
+               "疲れ", "つかれ", "困", "累"),
+}
+# A sentence end, and what may follow one and still belong to it (as
+# flow.director's subtitles; it takes these from here).
+SENT_END = set(".!?。！？…\n")
+SENT_TAIL = SENT_END - {"\n"} | set("\"'”’」』)）")
+
+
+def _has_word(low, w):
+    if not w.isascii():
+        return w in low
+    i = low.find(w)
+    while i >= 0:
+        if i == 0 or not low[i - 1].isalnum():
+            return True
+        i = low.find(w, i + 1)
+    return False
+
+
+def mood_of(text, tags=()):
+    """(mood, points) for one sentence: its spoken text and its tags
+    ({"tag", "arg"}, as director.TagParser gives them)."""
+    pts = dict.fromkeys(MOODS[1:], 0.0)
+    for t in tags:
+        key = f"{t['tag']}:{t['arg']}" if t.get("arg") else t["tag"]
+        for m, v in MOOD_TAGS.get(key, {}).items():
+            pts[m] += v
+    low = text.lower()
+    for m, words in MOOD_WORDS.items():
+        if any(_has_word(low, w) for w in words):
+            pts[m] += MOOD_WORD
+    if "!" in text or "！" in text:
+        pts["happy" if pts["annoyed"] <= 0 else "annoyed"] += 0.75
+    if "..." in text or "…" in text:
+        pts["sad"] += 0.5
+    best = max(pts, key=lambda m: (pts[m], -MOODS.index(m)))
+    return (best if pts[best] >= MOOD_MIN else "neutral"), pts
+
+
+def sentences(spoken):
+    """[(start, end)] character ranges of the sentences in `spoken`: each
+    runs through its run of sentence ends ("...", "?!", a closing quote)."""
+    out, a, i, n = [], 0, 0, len(spoken)
+    while i < n:
+        if spoken[i] in SENT_END:
+            j = i + 1
+            while j < n and spoken[j] in SENT_TAIL:
+                j += 1
+            out.append((a, j))
+            while j < n and spoken[j].isspace():
+                j += 1
+            a = i = j
+            continue
+        i += 1
+    if a < n and spoken[a:].strip():
+        out.append((a, n))
+    return out
+
+
+def sentence_moods(spoken, tags):
+    """[(at, mood)]: where each sentence's mood starts, one entry per change
+    (the first at 0). A tag belongs to the sentence whose span holds its
+    offset; one at a sentence's start (written after the previous one's
+    full stop) to that new sentence."""
+    out = []
+    for a, b in sentences(spoken):
+        mine = [t for t in tags if a <= t["at"] < b
+                or (b == len(spoken) and t["at"] == b)]
+        m, _ = mood_of(spoken[a:b], mine)
+        if not out or out[-1][1] != m:
+            out.append((0 if not out else a, m))
+    return out or [(0, "neutral")]
+
+
+# Style names by mood, VOICEVOX (mood_style): the first family with a hit
+# in the character's own style names wins. Names vary per character
+# (夜語トバリ: ノーマル 明るい 哀しみ 呆れ; 四国めたん: ノーマル あまあま
+# ツンツン セクシー ささやき ヒソヒソ; ずんだもん: ... 喜び 怒り 悲しみ ...).
+MOOD_STYLE_KEYS = {
+    "happy": (("喜", "明", "楽", "嬉", "うきうき"), ("あまあま", "甘")),
+    "sad": (("悲", "哀", "泣", "しょんぼり", "かなし"), ("落", "弱")),
+    "annoyed": (("怒", "呆", "ツン", "不機嫌", "イラ"),),
+    "whisper": (("ささやき", "囁"), ("ヒソヒソ", "ひそひそ")),
+    "surprised": (("おどろき", "驚", "びっくり"),),
+    "shy": (("こわがり", "怖", "おどおど", "恥", "照", "てれ"),),
+    "sleepy": (("へろへろ", "ヘロヘロ", "眠", "ねむ", "だる", "けだる"),),
+}
+# A mood with no style of its own on a character falls back to the next
+# one here before the base style: a surprise sounds like the happy style,
+# a shy line like the whisper.
+MOOD_FALLBACK = {"surprised": "happy", "shy": "whisper"}
+
+
+def mood_style(styles, character, mood, base=None):
+    """The style id of `character` for `mood`, from [(id, character,
+    style)] (VoicevoxTTS.styles): by MOOD_STYLE_KEYS on the style names;
+    `base` (the configured style's id) for neutral and where nothing
+    matches."""
+    if not mood or mood == "neutral":
+        return base
+    mine = [s for s in styles if s[1] == character]
+    while mood:
+        for family in MOOD_STYLE_KEYS.get(mood, ()):
+            for key in family:
+                hit = next((s for s in mine if key in s[2]), None)
+                if hit is not None:
+                    return hit[0]
+        mood = MOOD_FALLBACK.get(mood)
+    return base
+
+
+# VOICEVOX AudioQuery offsets for a mood the character has no style for
+# (櫻歌ミコ: ノーマル, 第二形態, ロリ -- nothing emotional): speedScale,
+# intonationScale and volumeScale multiplied, pitchScale added (its useful
+# range is about +-0.15). Hand-set, small, UNVERIFIED by ear; a voice
+# config's "moods" may give {mood: {"speed": 0.9, "pitch": -0.02, ...}}.
+VOICEVOX_MOODS = {
+    "happy": {"speed": 1.05, "pitch": 0.03, "intonation": 1.2},
+    "sad": {"speed": 0.9, "pitch": -0.03, "intonation": 0.8,
+            "volume": 0.9},
+    "annoyed": {"speed": 1.05, "pitch": -0.02, "intonation": 1.15},
+    "whisper": {"speed": 0.92, "intonation": 0.7, "volume": 0.6},
+    "surprised": {"speed": 1.05, "pitch": 0.05, "intonation": 1.3},
+    "shy": {"speed": 0.95, "pitch": 0.02, "intonation": 0.9,
+            "volume": 0.8},
+    "sleepy": {"speed": 0.85, "pitch": -0.03, "intonation": 0.7,
+               "volume": 0.9},
+}
+
+
+def voicevox_mood_query(q, off):
+    """AudioQuery `q` with mood offsets `off` applied, in place."""
+    for k, v in (off or {}).items():
+        key = VOICEVOX_KNOBS.get(k)
+        if key is None or v is None:
+            continue
+        base = float(q.get(key, 0.0 if k == "pitch" else 1.0))
+        q[key] = base + float(v) if k == "pitch" else base * float(v)
+    return q
+
+
+# edge-tts offsets per mood: rate and volume in percent, pitch in Hz,
+# added to the voice's own (--tts-rate / the config's "rate"). The free
+# endpoint has no styles (mstts:express-as needs custom SSML, which
+# edge-tts escapes), so this is all a mood can change there. Hand-set and
+# small -- 10 Hz is under a semitone on a 220 Hz voice -- UNVERIFIED by ear.
+EDGE_MOODS = {"happy": {"rate": 6, "pitch": 12, "volume": 0},
+              "sad": {"rate": -10, "pitch": -10, "volume": -10},
+              "annoyed": {"rate": 4, "pitch": -6, "volume": 5},
+              "whisper": {"rate": -8, "pitch": -4, "volume": -35},
+              "surprised": {"rate": 5, "pitch": 18, "volume": 5},
+              "shy": {"rate": -5, "pitch": 4, "volume": -20},
+              "sleepy": {"rate": -15, "pitch": -8, "volume": -15}}
+
+
+def _edge_num(v, unit):
+    """"+6%" / "-10Hz" / 6 -> 6.0; None/"" -> 0."""
+    if v is None or v == "":
+        return 0.0
+    if isinstance(v, (int, float)):
+        return float(v)
+    s = str(v).strip()
+    if s.endswith(unit):
+        s = s[:-len(unit)]
+    return float(s)
+
+
+def edge_prosody(rate, mood, moods=None):
+    """(rate, pitch, volume) strings for edge_tts.Communicate, in the forms
+    it validates (a sign, digits, then % or Hz): the base rate plus the mood's
+    offsets (`moods`: a voice config's {mood: {"rate": "+8%", "pitch":
+    "+15Hz", "volume": "-20%"}}, else EDGE_MOODS)."""
+    off = ((moods or {}).get(mood) if moods else None) or \
+        EDGE_MOODS.get(mood or "neutral", {})
+    r = _edge_num(rate, "%") + _edge_num(off.get("rate"), "%")
+    p = _edge_num(off.get("pitch"), "Hz")
+    v = _edge_num(off.get("volume"), "%")
+    return (f"{int(round(r)):+d}%", f"{int(round(p)):+d}Hz",
+            f"{int(round(max(v, -100))):+d}%")
+
+
 # ------------------------------------------------------------------- TTS
 
 def language(text):
@@ -459,17 +696,27 @@ class EdgeTTS:
 
     whole = False
 
-    def __init__(self, voice=None, rate="+0%", log=print):
+    def __init__(self, voice=None, rate="+0%", log=print, moods=None):
         self.voice, self.rate, self.log = voice, rate, log
+        # A voice config's "moods" ({mood: {rate, pitch, volume}}), or
+        # False to speak every mood in the plain voice.
+        self.moods = moods
         self.last_voice = None
         self._now = None
+
+    def mood_voice(self, mood):
+        """What `mood` does to this voice, for the log; None: nothing."""
+        if self.moods is False or not mood or mood == "neutral":
+            return None
+        r, p, v = edge_prosody(self.rate, mood, self.moods or None)
+        return f"rate {r} pitch {p} volume {v}"
 
     def begin(self, spoken):
         """Pick the voice from the whole reply: a piece after a [pause]
         ("本当？") has no kana and would otherwise be read in Chinese."""
         self._now = self.voice or EDGE_VOICES[language(spoken)]
 
-    def synth(self, text):
+    def synth(self, text, mood=None):
         try:
             import edge_tts               # lazy: only this backend needs it
         except ImportError as exc:
@@ -477,11 +724,20 @@ class EdgeTTS:
                              f"edge-tts): {exc}") from exc
         voice = self._now or self.voice or EDGE_VOICES[language(text)]
         self.last_voice = voice
+        kw = {"rate": self.rate}
+        if self.mood_voice(mood):
+            # Communicate(text, voice, *, rate, volume, pitch, boundary, ...)
+            # in edge-tts 7.3.1 (communicate.py), each checked by
+            # TTSConfig against a signed integer with its unit.
+            kw["rate"], kw["pitch"], kw["volume"] = edge_prosody(
+                self.rate, mood, self.moods or None)
         try:
-            c = edge_tts.Communicate(text, voice, rate=self.rate,
-                                     boundary="WordBoundary")
+            c = edge_tts.Communicate(text, voice, boundary="WordBoundary",
+                                     **kw)
         except TypeError:
-            c = edge_tts.Communicate(text, voice, rate=self.rate)
+            # Before 7.0: no boundary argument (and, older still, no pitch
+            # or volume); the rate is all that is kept.
+            c = edge_tts.Communicate(text, voice, rate=kw["rate"])
         if hasattr(c, "stream_sync"):
             items = c.stream_sync()
         else:
@@ -519,7 +775,8 @@ class SiliconFlowTTS:
         self.voice = v if ":" in v else f"{self.model}:{v}"
         self.last_voice, self.log = self.voice, log
 
-    def synth(self, text):
+    def synth(self, text, mood=None):
+        # No styles to choose from (mood ignored).
         key = os.environ.get(self.key_env)
         if not key:
             raise SystemExit(f"--tts siliconflow needs {self.key_env} in the "
@@ -560,7 +817,7 @@ class FileTTS:
         self.path = path
         self.last_voice = os.path.basename(path)
 
-    def synth(self, text):
+    def synth(self, text, mood=None):
         x, sr = read_audio(self.path)
         return x, sr, None
 
@@ -778,9 +1035,13 @@ class VoicevoxTTS:
     timing = "moras"
 
     def __init__(self, url=VOICEVOX_URL, voice=None, knobs=None, log=print,
-                 timeout=120, opener=None):
+                 timeout=120, opener=None, moods=None):
         self.url = (url or VOICEVOX_URL).rstrip("/")
         self.voice, self.knobs = voice, dict(knobs or {})
+        # A voice config's "moods": {mood: style name of this character,
+        # "character/style" or an id}; False: the base style always.
+        self.moods = moods
+        self._mood_ids = {}
         self.log, self.timeout = log, timeout
         self.opener = opener or _open_url(self.url)
         self._speakers = None
@@ -895,8 +1156,70 @@ class VoicevoxTTS:
         self.last_voice = f"{hit[1]}/{hit[2]} ({hit[0]})"
         return self.speaker
 
-    def query(self, text):
-        sid = self.resolve()
+    def mood_id(self, mood):
+        """The style id for `mood`: the voice config's choice, else the
+        character's own style for it by name (mood_style), else the base
+        style. The base speaker and the credit stay as resolved."""
+        base = self.resolve()
+        if self.moods is False or not mood or mood == "neutral":
+            return base
+        if mood not in self._mood_ids:
+            want = (self.moods or {}).get(mood)
+            sid, st = base, self.styles()
+            if isinstance(want, dict):
+                pass                     # offsets, not a style (mood_knobs)
+            elif want is not None:
+                w = str(want).strip()
+                if w.isdigit():
+                    sid = int(w)
+                else:
+                    name, _, style = (w.rpartition("/") if "/" in w
+                                      else (self.character, "", w))
+                    hit = next((x for x in st if x[1] == name
+                                and x[2] == style), None)
+                    if hit is None:
+                        self.log(f"voicevox: mood {mood}: no style {w!r}; "
+                                 "the base style speaks it")
+                    else:
+                        sid = hit[0]
+            else:
+                sid = mood_style(st, self.character, mood, base)
+            self._mood_ids[mood] = sid
+            name = next((f"{x[1]}/{x[2]}" for x in st if x[0] == sid),
+                        str(sid))
+            off = self.mood_knobs(mood)
+            self.log(f"voicevox: mood {mood} -> {name} ({sid})"
+                     + (" (no style for it: the base one with "
+                        + ", ".join(f"{k} {v:+g}" if k == "pitch"
+                                    else f"{k} x{v:g}"
+                                    for k, v in off.items()) + ")"
+                        if sid == base else ""))
+        return self._mood_ids[mood]
+
+    def mood_knobs(self, mood):
+        """AudioQuery offsets for `mood` when it speaks in the base style
+        (the character has no style for it): the voice config's dict, else
+        VOICEVOX_MOODS. {} where a style of its own carries the mood."""
+        if self.moods is False or not mood or mood == "neutral":
+            return {}
+        want = (self.moods or {}).get(mood)
+        if self.mood_id(mood) != self.speaker:
+            return {}
+        return dict(want) if isinstance(want, dict) else \
+            dict(VOICEVOX_MOODS.get(mood, {}))
+
+    def mood_voice(self, mood):
+        sid = self.mood_id(mood)
+        if sid == self.speaker:
+            off = self.mood_knobs(mood)
+            return ("base style, " + ", ".join(
+                f"{k} {v:+g}" if k == "pitch" else f"{k} x{v:g}"
+                for k, v in off.items())) if off else None
+        return next((f"{x[1]}/{x[2]} ({x[0]})" for x in self.styles()
+                     if x[0] == sid), f"style {sid}")
+
+    def query(self, text, sid=None):
+        sid = self.resolve() if sid is None else sid
         raw = self._req("POST", "/audio_query",
                         {"text": text, "speaker": sid})
         try:
@@ -909,12 +1232,13 @@ class VoicevoxTTS:
                 q[VOICEVOX_KNOBS[k]] = float(v)
         return q
 
-    def synth(self, text):
+    def synth(self, text, mood=None):
         """(audio, sr, words, moras): words from align_moras over the mora
-        times, which are rescaled to the audio's length."""
-        q = self.query(text)
-        data = self._req("POST", "/synthesis", {"speaker": self.speaker},
-                         body=q)
+        times, which are rescaled to the audio's length. `mood`: speak in
+        that mood's style (mood_id), the same id for query and synthesis."""
+        sid = self.mood_id(mood)
+        q = voicevox_mood_query(self.query(text, sid), self.mood_knobs(mood))
+        data = self._req("POST", "/synthesis", {"speaker": sid}, body=q)
         if data[:4] != b"RIFF":
             raise RuntimeError("voicevox /synthesis did not send a wav: "
                                + data[:500].decode("utf-8", "replace"))
@@ -927,11 +1251,17 @@ class VoicevoxTTS:
 # ---------------------------------------------------------- voice config
 
 # Per-language voice settings, from rigs/<rig>.voice.json or --voice-config:
-#   {"ja": {"tts": "voicevox", "voice": "冥鳴ひまり/ノーマル", "speed": 1.0},
-#    "en": {"tts": "edge", "voice": "en-US-AnaNeural", "rate": "+0%"},
+#   {"ja": {"tts": "voicevox", "voice": "冥鳴ひまり/ノーマル", "speed": 1.0,
+#           "moods": {"sad": "しくしく"}},
+#    "en": {"tts": "edge", "voice": "en-US-AnaNeural", "rate": "+0%",
+#           "moods": {"happy": {"rate": "+8%", "pitch": "+15Hz"}}},
 #    "default": {...}}
+# "moods" (optional) picks the voice per sentence mood (mood_of): VOICEVOX
+# style names of the same character, edge offsets; moods it leaves out are
+# found by name (VOICEVOX) or from EDGE_MOODS; false: no mood voices.
 # Languages are language()'s: ja, zh, ko, en; "default" covers the rest.
-VOICE_KEYS = {"tts", "voice", "rate", "model", *VOICEVOX_KNOBS}
+VOICE_KEYS = {"tts", "voice", "rate", "model", "moods",
+              *VOICEVOX_KNOBS}
 VOICE_LANGS = ("ja", "zh", "ko", "en", "default")
 TTS_KINDS = ("edge", "siliconflow", "voicevox", "file")
 
@@ -1031,23 +1361,34 @@ class VoiceRouter:
     def credit(self):
         return getattr(self.cur, "credit", None)
 
-    def synth(self, text):
+    def mood_voice(self, mood):
+        fn = getattr(self.cur, "mood_voice", None)
+        return fn(mood) if fn is not None else None
+
+    def synth(self, text, mood=None):
         if self.cur is None:
             self.begin(text)
-        return self.cur.synth(text)
+        if mood is None:
+            return self.cur.synth(text)
+        return self.cur.synth(text, mood=mood)
 
 
 # ----------------------------------------------------------------- speak
 
-def speak(spoken, tags, tts, weight, log=print):
+def speak(spoken, tags, tts, weight, log=print, moods=None):
     """Synthesize `spoken` and time it. Returns {audio, sr, spans (per
     character, seconds), acts (non-pause tags with t, as timeline()), end
     (audio seconds), speech_end, method, moras (VOICEVOX: query_moras of
-    every piece on the joined audio's clock, else None)}.
+    every piece on the joined audio's clock, else None), moods ([(at,
+    mood)] as spoken)}.
 
     `weight(ch)`: seconds a character takes in the rate model, 0 for one
     that is silent. Pause tags split the text; each piece is synthesised
-    alone and followed by the pause's silence (FileTTS: not split)."""
+    alone and followed by the pause's silence (FileTTS: not split).
+    `moods`: [(at, mood)] (sentence_moods); the text is split where the
+    mood changes too (no silence added: the cut is at a sentence end) and
+    each piece is spoken with mood= its mood. None, or one neutral mood,
+    makes exactly the calls of before."""
     n = len(spoken)
     if hasattr(tts, "begin"):
         tts.begin(spoken)
@@ -1056,17 +1397,35 @@ def speak(spoken, tags, tts, weight, log=print):
         log(f"speech: {len(pauses)} [pause] tags taken from the recording's "
             "own silences")
         pauses = []
-    cuts = [0] + [at for at, _ in pauses] + [n]
+    if tts.whole:
+        moods = None
+    moods = sorted(moods or [(0, None)])
+    at_pause = {at for at, _ in pauses}
+    # A mood change where a pause already cuts needs no cut of its own.
+    mcuts = [at for at, _ in moods[1:] if at not in at_pause and 0 < at < n]
+    # (position, silence before the piece starting there)
+    cuts = sorted([(at, sec, 0) for at, sec in pauses]
+                  + [(at, 0.0, 1) for at in mcuts],
+                  key=lambda c: (c[0], c[2]))
+
+    def mood_at(i):
+        m = None
+        for at, mm in moods:
+            if at <= i:
+                m = mm
+        return None if m == "neutral" else m
     w_all = [0.0 if (ch.isspace() or unicodedata.category(ch)[0] == "P")
              else weight(ch) for ch in spoken]
     pieces, spans, seg_end, methods = [], [None] * n, [], []
     moras = None
     clock, sr = 0.0, None
-    for k in range(len(cuts) - 1):
-        if k > 0:
-            pieces.append(("sil", pauses[k - 1][1]))
-            clock += pauses[k - 1][1]
-        a, b = cuts[k], cuts[k + 1]
+    bounds = [0] + [c[0] for c in cuts] + [n]
+    spoke = []
+    for k in range(len(bounds) - 1):
+        if k > 0 and cuts[k - 1][1] > 0:
+            pieces.append(("sil", cuts[k - 1][1]))
+            clock += cuts[k - 1][1]
+        a, b = bounds[k], bounds[k + 1]
         text = spoken[a:b]
         body = text.strip()
         if not body:
@@ -1075,7 +1434,10 @@ def speak(spoken, tags, tts, weight, log=print):
             seg_end.append(clock)
             continue
         lead = len(text) - len(text.lstrip())
-        res = tts.synth(body)
+        m = mood_at(a)
+        res = tts.synth(body) if m is None else tts.synth(body, mood=m)
+        if not spoke or spoke[-1][1] != (m or "neutral"):
+            spoke.append((a, m or "neutral"))
         x, xsr, words = res[:3]
         if len(res) > 3 and res[3] is not None:
             moras = (moras or []) + [
@@ -1123,8 +1485,10 @@ def speak(spoken, tags, tts, weight, log=print):
             k += 1 if not tts.whole else 0
             continue
         i = t["at"]
-        kk = min(k, len(seg_end) - 1)
-        if i < cuts[kk + 1] and i < n:
+        # Its piece: the pauses written before it, and the mood cuts at or
+        # before its offset (a tag at a sentence start opens that sentence).
+        kk = min(k + sum(1 for c in mcuts if c <= i), len(seg_end) - 1)
+        if i < bounds[kk + 1] and i < n:
             tt = spans[i][0]
         else:
             tt = seg_end[kk] if seg_end else 0.0
@@ -1136,7 +1500,7 @@ def speak(spoken, tags, tts, weight, log=print):
             "acts": acts, "end": end,
             "speech_end": max(seg_end) if seg_end else 0.0,
             "method": "+".join(sorted(set(methods))) or "none",
-            "moras": moras}
+            "moras": moras, "moods": spoke}
 
 
 # -------------------------------------------------------------- lip sync

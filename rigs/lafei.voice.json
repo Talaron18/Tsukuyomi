@@ -1,0 +1,7 @@
+{
+ "_comment": "Per-language TTS for lafei (Laffey: sleepy, soft). flow.director/flow.live --tts auto; flags win. ja chosen by ear on the server engine: 中国うさぎ/ノーマル (id 61 there); its styles carry Laffey's moods (おどろき 62, こわがり 63, へろへろ 64), named here so a renamed style says so in the log; moods without a style (happy, sad, annoyed, whisper) speak in ノーマル with AudioQuery offsets (speech.VOICEVOX_MOODS). en/zh edge voices and rates are guesses, to be chosen by ear. Credit 'VOICEVOX:中国うさぎ' when publishing the audio.",
+ "ja": {"tts": "voicevox", "voice": "中国うさぎ/ノーマル", "speed": 0.95,
+        "moods": {"surprised": "おどろき", "shy": "こわがり", "sleepy": "へろへろ"}},
+ "en": {"tts": "edge", "voice": "en-US-AnaNeural", "rate": "-8%"},
+ "zh": {"tts": "edge", "voice": "zh-CN-XiaoxiaoNeural", "rate": "-8%"}
+}

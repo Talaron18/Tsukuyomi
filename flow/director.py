@@ -1173,10 +1173,14 @@ def make_tts(a, log=print):
     cli = {"voice": g("voice"), "rate": g("tts_rate"), "model": g("tts_model"),
            "speed": g("tts_speed"), "pitch": g("tts_pitch")}
 
+    def moods(st):
+        # --mood off speaks every sentence in the base voice.
+        return False if g("mood") == "off" else st.get("moods")
+
     def make(kind, st):
         if kind == "edge":
             return sp.EdgeTTS(st.get("voice"), st.get("rate") or "+0%",
-                              log=log)
+                              log=log, moods=moods(st))
         if kind == "siliconflow":
             base, env = OPENAI_COMPAT["siliconflow"]
             # The chat --api-base/--api-key-env are SiliconFlow's only when
@@ -1192,7 +1196,7 @@ def make_tts(a, log=print):
             return sp.VoicevoxTTS(g("voicevox_url") or sp.VOICEVOX_URL,
                                   st.get("voice"),
                                   {k: st.get(k) for k in sp.VOICEVOX_KNOBS},
-                                  log=log)
+                                  log=log, moods=moods(st))
         if kind == "file":
             if not g("tts_file"):
                 raise SystemExit("--tts file needs --tts-file")
@@ -1224,9 +1228,13 @@ def plan(a, reply, out_dir, motions, log=print, tts=None):
         fh.write(reply["spoken"] + "\n")
     extra = {}
     if tts is not None and reply["spoken"]:
+        moods = None
+        if getattr(a, "mood", None) != "off":
+            moods = sp.sentence_moods(reply["spoken"], reply["tags"])
         said = sp.speak(reply["spoken"], reply["tags"], tts,
                         lambda ch: 1.0 / (a.cjk_rate if _is_cjk(ch)
-                                          else a.latin_rate), log=log)
+                                          else a.latin_rate), log=log,
+                        moods=moods)
         acts, spans, end = said["acts"], said["spans"], said["end"]
         sp.write_wav(os.path.join(out_dir, "speech.wav"), said["audio"],
                      said["sr"])
@@ -1238,6 +1246,13 @@ def plan(a, reply, out_dir, motions, log=print, tts=None):
         credit = getattr(tts, "credit", None)
         if credit:
             extra["tts"]["credit"] = credit
+        if any(m != "neutral" for _, m in said["moods"]):
+            extra["tts"]["moods"] = said["moods"]
+            log("speech: moods " + ", ".join(
+                f"{m} from {reply['spoken'][at:at + 12]!r}"
+                + (f" ({v})" if (v := getattr(tts, "mood_voice", lambda m:
+                                               None)(m)) else "")
+                for at, m in said["moods"]))
         lipsync = getattr(a, "lipsync", None) or "auto"
         if lipsync != "off":
             # Sampled at the run's own frame times (runtime n_frames is
@@ -1346,8 +1361,9 @@ def mux_cmd(vid, wav, subs, dest):
     return ["ffmpeg", "-y"] + ins + maps + codecs + [dest]
 
 
-def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+def add_args(ap):
+    """The arguments flow.director and flow.live share: the rig, the
+    language model, speech and lip sync."""
     ap.add_argument("--model-json", required=True, help="the rig's .model3.json")
     ap.add_argument("--rig", required=True, help="rigs/<name>.npz")
     ap.add_argument("--clips", default=None, help="clips/<name>.npz (column "
@@ -1366,7 +1382,6 @@ def main(argv=None) -> int:
                     help="the idle between and under the tags (flow.runtime "
                          "--idle-profile); authored: as before the calm "
                          "profile")
-    ap.add_argument("--say", default=None, help="the user's message")
     ap.add_argument("--persona", default=None, help="who the character is "
                     "(first line of the system prompt)")
     ap.add_argument("--backend", default="anthropic",
@@ -1461,28 +1476,29 @@ def main(argv=None) -> int:
     ap.add_argument("--mouth-gain", type=float, default=1.0,
                     help="scale on the mouth opening (1: the utterance's "
                          "loud level opens it fully)")
-    ap.add_argument("--tail", type=float, default=1.5,
-                    help="seconds rendered after the last speech or motion")
     ap.add_argument("--fps", type=float, default=30.0)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--size", type=int, default=512)
-    ap.add_argument("--out", required=True)
-    ap.add_argument("--render", action="store_true",
-                    help="render after planning (needs GL); otherwise print "
-                         "the render command")
-    ap.add_argument("--chat", action="store_true",
-                    help="keep talking: read user lines from stdin, one turn "
-                         "directory each (turn01, ...)")
-    ap.add_argument("--print-system", action="store_true",
-                    help="print the system prompt and stop")
     ap.add_argument("--gestures", default=None, metavar="FILE.json",
                     help="per-rig gesture descriptions: a JSON object label "
                          "-> text, or label -> {\"desc\": text, \"hide\": "
                          "true}; wins over the measured lines (flow."
                          "gestures). Default: <rig without .npz>.gestures."
                          "json when it exists")
-    a = ap.parse_args(argv)
+    ap.add_argument("--mood", default="auto", choices=("auto", "off"),
+                    help="with --tts: speak each sentence in its mood "
+                         "(speech.mood_of: from its brow/nod/shake tags, "
+                         "words and punctuation) -- a VOICEVOX style of the "
+                         "same character found by name, or edge rate/pitch/"
+                         "volume offsets; a voice config's \"moods\" names "
+                         "them. off: the base voice always")
 
+
+def prepare(a, info=sys.stdout):
+    """What a director run needs before its first turn, from add_args'
+    arguments: {"labels", "offered", "system", "motions", "stats",
+    "roles"}. Prints what it offers and what each gesture shows to
+    `info`; flow.live calls it too."""
     try:
         from ..l2dprobe.motions import motion_files
     except ImportError:
@@ -1500,14 +1516,13 @@ def main(argv=None) -> int:
                                a.binding, a.fps, a.no_snap,
                                a.events_pool_only, log=lambda s: None)
     offered, out = offer(st, roles)
-    info = sys.stderr if a.print_system else sys.stdout
     if out:
         print("director: not offered on this rig: " + left_out_text(out),
               file=info)
     # What each gesture shows, measured on what the runtime will play with
     # these roles bound (flow.gestures), then the rig's override file.
     if a.gestures and not os.path.exists(a.gestures):
-        ap.error(f"--gestures {a.gestures}: no such file")
+        raise SystemExit(f"--gestures {a.gestures}: no such file")
     gpath = a.gestures or gz.override_path(a.rig)
     over = gz.load_overrides(gpath)
     measured, groups = gz.rig_descriptions(a.model_json, a.rig, roles,
@@ -1532,23 +1547,61 @@ def main(argv=None) -> int:
         print(f"director: gesture {lab} [{src}]: "
               + (text or "(label only)"), file=info)
     system = system_prompt(a.persona, labels, offered, descriptions, same)
-    if a.print_system:
-        print(system)
-        return 0
     motions = {n: m["frames"] / a.fps
                for n, m in authored_motions(a.model_json, a.fps)}
     print(f"director: {len(labels)} gesture labels: "
-          + (", ".join(sorted(labels)) or "none"))
-    backend = make_backend(a)
-    tts = make_tts(a)
+          + (", ".join(sorted(labels)) or "none"), file=info)
+    return {"labels": labels, "offered": offered, "system": system,
+            "motions": motions, "stats": st, "roles": roles,
+            "descriptions": descriptions}
+
+
+def make_voice(a, log=print):
+    """make_tts, plus the rig's mouth calibration in a.mouth_cal under
+    --lipsync auto (flow.mouth). Returns the TTS or None."""
+    tts = make_tts(a, log)
     if tts is not None and (a.lipsync or "auto") == "auto":
         try:
             from .mouth import calibrate, describe
         except ImportError:
             from flow.mouth import calibrate, describe
+        try:
+            from .runtime import authored_motions
+        except ImportError:
+            from flow.runtime import authored_motions
         a.mouth_cal = calibrate(a.model_json, a.rig, a.fps,
                                 authored_motions(a.model_json, a.fps))
-        print(describe(a.mouth_cal))
+        log(describe(a.mouth_cal))
+    return tts
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    add_args(ap)
+    ap.add_argument("--say", default=None, help="the user's message")
+    ap.add_argument("--tail", type=float, default=1.5,
+                    help="seconds rendered after the last speech or motion")
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--render", action="store_true",
+                    help="render after planning (needs GL); otherwise print "
+                         "the render command")
+    ap.add_argument("--chat", action="store_true",
+                    help="keep talking: read user lines from stdin, one turn "
+                         "directory each (turn01, ...)")
+    ap.add_argument("--print-system", action="store_true",
+                    help="print the system prompt and stop")
+    a = ap.parse_args(argv)
+    if a.gestures and not os.path.exists(a.gestures):
+        ap.error(f"--gestures {a.gestures}: no such file")
+    info = sys.stderr if a.print_system else sys.stdout
+    run = prepare(a, info)
+    if a.print_system:
+        print(run["system"])
+        return 0
+    labels, offered, system = run["labels"], run["offered"], run["system"]
+    motions = run["motions"]
+    backend = make_backend(a)
+    tts = make_voice(a)
     messages = []
 
     def turn(text, out_dir):
