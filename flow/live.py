@@ -667,6 +667,8 @@ class Performer:
             for k_ in pz.tokens(poses, self.rig.roles, arms):
                 k_["t"] = round(float(k_["t"]) + t_start, 4)
                 directed.append(k_)
+            for rec in poses:                  # stream time, for the log
+                rec["start"] = round(rec["start"] + t_start, 4)
             lat_solve = self.clock.now() - t_s
         gone = self.stream.direct(directed) if directed else 0
         if mouth is not None:
