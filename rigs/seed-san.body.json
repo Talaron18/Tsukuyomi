@@ -1,0 +1,1070 @@
+{
+ "format": "tsukuyomi.body/2",
+ "kind": "vrm",
+ "rig": "VRM1_Constraint_Twist_Sample",
+ "vrm_file": "VRM1_Constraint_Twist_Sample.vrm",
+ "frame": {
+  "origin": [
+   -0.0,
+   1.352182,
+   0.054689
+  ],
+  "unit": 0.246066,
+  "unit_name": "hu (head height)",
+  "axes": "x toward the character's left, y up, z toward the viewer"
+ },
+ "vrm": {
+  "file": "VRM1_Constraint_Twist_Sample.vrm",
+  "version": "1",
+  "faces": "+z",
+  "license": {
+   "name": "VRM Public License 1.0",
+   "url": "https://vrm.dev/licenses/1.0/",
+   "redistribution": true,
+   "modification": "allowModificationRedistribution",
+   "credit": "unnecessary",
+   "authors": [
+    "pixiv Inc."
+   ],
+   "copyright": "(c) 2022 pixiv Inc.",
+   "title": "VRM1_Constraint_Twist_Sample"
+  },
+  "bones": {
+   "hips": {
+    "rest": [
+     0.0,
+     0.908076,
+     0.003576
+    ],
+    "parent": null,
+    "node": 4
+   },
+   "spine": {
+    "rest": [
+     -0.0,
+     0.960148,
+     0.016094
+    ],
+    "parent": "hips",
+    "node": 21
+   },
+   "chest": {
+    "rest": [
+     -0.0,
+     1.07316,
+     0.019143
+    ],
+    "parent": "spine",
+    "node": 22
+   },
+   "upperChest": {
+    "rest": [
+     -0.0,
+     1.180803,
+     0.004497
+    ],
+    "parent": "chest",
+    "node": 23
+   },
+   "neck": {
+    "rest": [
+     -0.0,
+     1.313093,
+     -0.03386
+    ],
+    "parent": "upperChest",
+    "node": 24
+   },
+   "head": {
+    "rest": [
+     -0.0,
+     1.386267,
+     -0.024711
+    ],
+    "parent": "neck",
+    "node": 25
+   },
+   "leftShoulder": {
+    "rest": [
+     0.022395,
+     1.286491,
+     -0.025472
+    ],
+    "parent": "upperChest",
+    "node": 88
+   },
+   "leftUpperArm": {
+    "rest": [
+     0.108556,
+     1.27423,
+     -0.025472
+    ],
+    "parent": "leftShoulder",
+    "node": 96
+   },
+   "leftLowerArm": {
+    "rest": [
+     0.328409,
+     1.274232,
+     -0.025472
+    ],
+    "parent": "leftUpperArm",
+    "node": 97
+   },
+   "leftHand": {
+    "rest": [
+     0.543094,
+     1.274234,
+     -0.025847
+    ],
+    "parent": "leftLowerArm",
+    "node": 98
+   },
+   "rightShoulder": {
+    "rest": [
+     -0.022395,
+     1.286491,
+     -0.025472
+    ],
+    "parent": "upperChest",
+    "node": 122
+   },
+   "rightUpperArm": {
+    "rest": [
+     -0.108556,
+     1.27423,
+     -0.025472
+    ],
+    "parent": "rightShoulder",
+    "node": 130
+   },
+   "rightLowerArm": {
+    "rest": [
+     -0.328409,
+     1.27423,
+     -0.025472
+    ],
+    "parent": "rightUpperArm",
+    "node": 131
+   },
+   "rightHand": {
+    "rest": [
+     -0.543094,
+     1.27423,
+     -0.025098
+    ],
+    "parent": "rightLowerArm",
+    "node": 132
+   }
+  },
+  "palm": {
+   "L": [
+    0.576285,
+    1.277899,
+    -0.02485
+   ],
+   "R": [
+    -0.576281,
+    1.277896,
+    -0.023985
+   ]
+  },
+  "torso_box": {
+   "x": 0.6060641110362456,
+   "y0": -1.8048248433009422,
+   "y1": -0.16679108174874577,
+   "z": 0.310329610002175
+  },
+  "head_box": {
+   "x": 0.4085338745784066,
+   "y0": -0.15,
+   "y1": 1.1,
+   "z": 0.1259758220296557
+  },
+  "face_map": {
+   "eye.L.smile": {
+    "+": [
+     [
+      "morph:Face_Blendshape.Fcl_EYE_Joy_L",
+      1.0
+     ]
+    ]
+   },
+   "brow.L.lift": {
+    "+": [
+     [
+      "morph:Face_Blendshape.Fcl_BRW_Surprised",
+      1.0
+     ]
+    ],
+    "-": [
+     [
+      "morph:Face_Blendshape.Fcl_BRW_Angry",
+      0.7
+     ]
+    ]
+   },
+   "brow.L.form": {
+    "+": [
+     [
+      "morph:Face_Blendshape.Fcl_BRW_Fun",
+      1.0
+     ]
+    ],
+    "-": [
+     [
+      "morph:Face_Blendshape.Fcl_BRW_Angry",
+      1.0
+     ]
+    ]
+   },
+   "eye.R.smile": {
+    "+": [
+     [
+      "morph:Face_Blendshape.Fcl_EYE_Joy_R",
+      1.0
+     ]
+    ]
+   },
+   "brow.R.lift": {
+    "+": [
+     [
+      "morph:Face_Blendshape.Fcl_BRW_Surprised",
+      1.0
+     ]
+    ],
+    "-": [
+     [
+      "morph:Face_Blendshape.Fcl_BRW_Angry",
+      0.7
+     ]
+    ]
+   },
+   "brow.R.form": {
+    "+": [
+     [
+      "morph:Face_Blendshape.Fcl_BRW_Fun",
+      1.0
+     ]
+    ],
+    "-": [
+     [
+      "morph:Face_Blendshape.Fcl_BRW_Angry",
+      1.0
+     ]
+    ]
+   },
+   "mouth.form": {
+    "+": [
+     [
+      "morph:Face_Blendshape.Fcl_MTH_Fun",
+      1.0
+     ]
+    ],
+    "-": [
+     [
+      "morph:Face_Blendshape.Fcl_MTH_Sorrow",
+      0.8
+     ]
+    ]
+   }
+  },
+  "visemes": {
+   "a": "aa",
+   "i": "ih",
+   "u": "ou",
+   "e": "ee",
+   "o": "oh"
+  },
+  "blink": {
+   "L": "blinkLeft",
+   "R": "blinkRight"
+  },
+  "look_at": {
+   "type": "bone",
+   "h": 90.0,
+   "v_up": 90.0,
+   "v_down": 90.0,
+   "offset": [
+    0.059,
+    0.061,
+    0
+   ]
+  },
+  "springs": 22,
+  "expressions": [
+   "aa",
+   "angry",
+   "blink",
+   "blinkLeft",
+   "blinkRight",
+   "ee",
+   "happy",
+   "ih",
+   "neutral",
+   "oh",
+   "ou",
+   "relaxed",
+   "sad",
+   "surprised"
+  ],
+  "morphs": 57,
+  "breath": {
+   "shoulder_deg": 1.388,
+   "chest_deg": 0.4627,
+   "target_hu": 0.0075
+  },
+  "camera": {
+   "fov": 24.0,
+   "target": [
+    0.0,
+    1.2825,
+    0.0547
+   ],
+   "position": [
+    0.0,
+    1.2825,
+    2.6015
+   ]
+  }
+ },
+ "landmarks": {
+  "chin": [
+   0.0,
+   0.0
+  ],
+  "head": [
+   0.0,
+   0.5
+  ],
+  "shoulder.L": [
+   0.4412,
+   -0.3168
+  ],
+  "shoulder.R": [
+   -0.4412,
+   -0.3168
+  ],
+  "shoulder.y": -0.3168,
+  "chest": [
+   0.0,
+   -0.988
+  ],
+  "hips": [
+   0.0,
+   -1.8048
+  ],
+  "hand.L": [
+   0.6148,
+   -2.1664
+  ],
+  "hand.R": [
+   -0.6148,
+   -2.1664
+  ]
+ },
+ "depth": {
+  "chin": 0.0,
+  "head": 0.126,
+  "face": 0.126,
+  "chest": 0.3103,
+  "shoulder": -0.3258
+ },
+ "params": {
+  "head.yaw": {
+   "min": -50.0,
+   "max": 50.0,
+   "default": 0.0,
+   "band": "expressive",
+   "role": "solvable",
+   "unit": "deg",
+   "declares": "head.yaw"
+  },
+  "head.pitch": {
+   "min": -35.0,
+   "max": 35.0,
+   "default": 0.0,
+   "band": "expressive",
+   "role": "solvable",
+   "unit": "deg",
+   "declares": "head.pitch"
+  },
+  "head.tilt": {
+   "min": -30.0,
+   "max": 30.0,
+   "default": 0.0,
+   "band": "expressive",
+   "role": "solvable",
+   "unit": "deg",
+   "declares": "head.tilt"
+  },
+  "torso.yaw": {
+   "min": -25.0,
+   "max": 25.0,
+   "default": 0.0,
+   "band": "expressive",
+   "role": "solvable",
+   "unit": "deg",
+   "declares": "torso.yaw"
+  },
+  "torso.pitch": {
+   "min": -15.0,
+   "max": 15.0,
+   "default": 0.0,
+   "band": "expressive",
+   "role": "solvable",
+   "unit": "deg",
+   "declares": "torso.pitch"
+  },
+  "torso.tilt": {
+   "min": -12.0,
+   "max": 12.0,
+   "default": 0.0,
+   "band": "expressive",
+   "role": "solvable",
+   "unit": "deg",
+   "declares": "torso.tilt"
+  },
+  "shoulders.up": {
+   "min": -1.0,
+   "max": 1.0,
+   "default": 0.0,
+   "band": "expressive",
+   "role": "solvable",
+   "unit": "unit",
+   "declares": "shoulders.up"
+  },
+  "shoulder.L.up": {
+   "min": -1.0,
+   "max": 1.0,
+   "default": 0.0,
+   "band": "expressive",
+   "role": "solvable",
+   "unit": "unit",
+   "declares": "shoulder.L.up"
+  },
+  "shoulder.R.up": {
+   "min": -1.0,
+   "max": 1.0,
+   "default": 0.0,
+   "band": "expressive",
+   "role": "solvable",
+   "unit": "unit",
+   "declares": "shoulder.R.up"
+  },
+  "upper_arm.L.elev": {
+   "min": 0.0,
+   "max": 170.0,
+   "default": 8.0,
+   "band": "expressive",
+   "role": "solvable",
+   "unit": "deg",
+   "declares": "upper_arm.L.elev"
+  },
+  "upper_arm.L.plane": {
+   "min": -30.0,
+   "max": 130.0,
+   "default": 20.0,
+   "band": "expressive",
+   "role": "solvable",
+   "unit": "deg",
+   "declares": "upper_arm.L.plane"
+  },
+  "upper_arm.L.twist": {
+   "min": -70.0,
+   "max": 70.0,
+   "default": 0.0,
+   "band": "expressive",
+   "role": "solvable",
+   "unit": "deg",
+   "declares": "upper_arm.L.twist"
+  },
+  "forearm.L.bend": {
+   "min": 0.0,
+   "max": 145.0,
+   "default": 14.0,
+   "band": "expressive",
+   "role": "solvable",
+   "unit": "deg",
+   "declares": "forearm.L.bend"
+  },
+  "upper_arm.R.elev": {
+   "min": 0.0,
+   "max": 170.0,
+   "default": 8.0,
+   "band": "expressive",
+   "role": "solvable",
+   "unit": "deg",
+   "declares": "upper_arm.R.elev"
+  },
+  "upper_arm.R.plane": {
+   "min": -30.0,
+   "max": 130.0,
+   "default": 20.0,
+   "band": "expressive",
+   "role": "solvable",
+   "unit": "deg",
+   "declares": "upper_arm.R.plane"
+  },
+  "upper_arm.R.twist": {
+   "min": -70.0,
+   "max": 70.0,
+   "default": 0.0,
+   "band": "expressive",
+   "role": "solvable",
+   "unit": "deg",
+   "declares": "upper_arm.R.twist"
+  },
+  "forearm.R.bend": {
+   "min": 0.0,
+   "max": 145.0,
+   "default": 14.0,
+   "band": "expressive",
+   "role": "solvable",
+   "unit": "deg",
+   "declares": "forearm.R.bend"
+  },
+  "gaze.x": {
+   "min": -1.0,
+   "max": 1.0,
+   "default": 0.0,
+   "band": "expressive",
+   "role": "solvable",
+   "unit": "unit",
+   "declares": "gaze.x"
+  },
+  "gaze.y": {
+   "min": -1.0,
+   "max": 1.0,
+   "default": 0.0,
+   "band": "expressive",
+   "role": "solvable",
+   "unit": "unit",
+   "declares": "gaze.y"
+  },
+  "eye.L.open": {
+   "min": 0.0,
+   "max": 1.0,
+   "default": 1.0,
+   "band": "autonomic",
+   "role": "solvable",
+   "unit": "unit",
+   "declares": "eye.L.open"
+  },
+  "eye.R.open": {
+   "min": 0.0,
+   "max": 1.0,
+   "default": 1.0,
+   "band": "autonomic",
+   "role": "solvable",
+   "unit": "unit",
+   "declares": "eye.R.open"
+  },
+  "eye.L.smile": {
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.0,
+   "band": "expressive",
+   "role": "solvable",
+   "unit": "unit",
+   "declares": "eye.L.smile"
+  },
+  "eye.R.smile": {
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.0,
+   "band": "expressive",
+   "role": "solvable",
+   "unit": "unit",
+   "declares": "eye.R.smile"
+  },
+  "brow.L.lift": {
+   "min": -1.0,
+   "max": 1.0,
+   "default": 0.0,
+   "band": "expressive",
+   "role": "solvable",
+   "unit": "unit",
+   "declares": "brow.L.lift"
+  },
+  "brow.R.lift": {
+   "min": -1.0,
+   "max": 1.0,
+   "default": 0.0,
+   "band": "expressive",
+   "role": "solvable",
+   "unit": "unit",
+   "declares": "brow.R.lift"
+  },
+  "brow.L.form": {
+   "min": -1.0,
+   "max": 1.0,
+   "default": 0.0,
+   "band": "expressive",
+   "role": "solvable",
+   "unit": "unit",
+   "declares": "brow.L.form"
+  },
+  "brow.R.form": {
+   "min": -1.0,
+   "max": 1.0,
+   "default": 0.0,
+   "band": "expressive",
+   "role": "solvable",
+   "unit": "unit",
+   "declares": "brow.R.form"
+  },
+  "mouth.form": {
+   "min": -1.0,
+   "max": 1.0,
+   "default": 0.0,
+   "band": "expressive",
+   "role": "solvable",
+   "unit": "unit",
+   "declares": "mouth.form"
+  },
+  "mouth.open": {
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.0,
+   "band": "mouth",
+   "role": "solvable",
+   "unit": "unit",
+   "declares": "mouth.open"
+  },
+  "breath": {
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.0,
+   "band": "autonomic",
+   "role": "held",
+   "unit": "unit"
+  },
+  "viseme.a": {
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.0,
+   "band": "mouth",
+   "role": "held",
+   "unit": "unit"
+  },
+  "viseme.i": {
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.0,
+   "band": "mouth",
+   "role": "held",
+   "unit": "unit"
+  },
+  "viseme.u": {
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.0,
+   "band": "mouth",
+   "role": "held",
+   "unit": "unit"
+  },
+  "viseme.e": {
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.0,
+   "band": "mouth",
+   "role": "held",
+   "unit": "unit"
+  },
+  "viseme.o": {
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.0,
+   "band": "mouth",
+   "role": "held",
+   "unit": "unit"
+  }
+ },
+ "declared": {
+  "head.yaw": [
+   "head.yaw",
+   1.0
+  ],
+  "head.pitch": [
+   "head.pitch",
+   1.0
+  ],
+  "head.tilt": [
+   "head.tilt",
+   1.0
+  ],
+  "torso.yaw": [
+   "torso.yaw",
+   1.0
+  ],
+  "torso.pitch": [
+   "torso.pitch",
+   1.0
+  ],
+  "torso.tilt": [
+   "torso.tilt",
+   1.0
+  ],
+  "shoulders.up": [
+   "shoulders.up",
+   1.0
+  ],
+  "shoulder.L.up": [
+   "shoulder.L.up",
+   1.0
+  ],
+  "shoulder.R.up": [
+   "shoulder.R.up",
+   1.0
+  ],
+  "upper_arm.L.elev": [
+   "upper_arm.L.elev",
+   1.0
+  ],
+  "upper_arm.L.plane": [
+   "upper_arm.L.plane",
+   1.0
+  ],
+  "upper_arm.L.twist": [
+   "upper_arm.L.twist",
+   1.0
+  ],
+  "forearm.L.bend": [
+   "forearm.L.bend",
+   1.0
+  ],
+  "upper_arm.R.elev": [
+   "upper_arm.R.elev",
+   1.0
+  ],
+  "upper_arm.R.plane": [
+   "upper_arm.R.plane",
+   1.0
+  ],
+  "upper_arm.R.twist": [
+   "upper_arm.R.twist",
+   1.0
+  ],
+  "forearm.R.bend": [
+   "forearm.R.bend",
+   1.0
+  ],
+  "gaze.x": [
+   "gaze.x",
+   1.0
+  ],
+  "gaze.y": [
+   "gaze.y",
+   1.0
+  ],
+  "eye.L.open": [
+   "eye.L.open",
+   1.0
+  ],
+  "eye.R.open": [
+   "eye.R.open",
+   1.0
+  ],
+  "eye.L.smile": [
+   "eye.L.smile",
+   1.0
+  ],
+  "eye.R.smile": [
+   "eye.R.smile",
+   1.0
+  ],
+  "brow.L.lift": [
+   "brow.L.lift",
+   1.0
+  ],
+  "brow.R.lift": [
+   "brow.R.lift",
+   1.0
+  ],
+  "brow.L.form": [
+   "brow.L.form",
+   1.0
+  ],
+  "brow.R.form": [
+   "brow.R.form",
+   1.0
+  ],
+  "mouth.form": [
+   "mouth.form",
+   1.0
+  ],
+  "mouth.open": [
+   "mouth.open",
+   1.0
+  ]
+ },
+ "meaning": {
+  "head.yaw": "+ turns the face toward the character's left (screen right)",
+  "head.pitch": "+ looks up",
+  "head.tilt": "+ tilts the head counter-clockwise as seen, like head.roll",
+  "torso.yaw": "+ turns the upper body toward the character's left",
+  "torso.pitch": "+ leans back (head rises); - leans in",
+  "torso.tilt": "+ tilts the upper body counter-clockwise as seen",
+  "shoulders.up": "",
+  "shoulder.L.up": "",
+  "shoulder.R.up": "",
+  "upper_arm.L.elev": "0 hanging, 90 out level with the shoulder, 170 overhead",
+  "upper_arm.L.plane": "0 out to your side, 90 forward, 130 across your body, -30 behind",
+  "upper_arm.L.twist": "+ turns the upper arm outward",
+  "forearm.L.bend": "0 straight, 145 fully bent",
+  "upper_arm.R.elev": "0 hanging, 90 out level with the shoulder, 170 overhead",
+  "upper_arm.R.plane": "0 out to your side, 90 forward, 130 across your body, -30 behind",
+  "upper_arm.R.twist": "+ turns the upper arm outward",
+  "forearm.R.bend": "0 straight, 145 fully bent",
+  "gaze.x": "",
+  "gaze.y": "",
+  "eye.L.open": "",
+  "eye.R.open": "",
+  "eye.L.smile": "",
+  "eye.R.smile": "",
+  "brow.L.lift": "",
+  "brow.R.lift": "",
+  "brow.L.form": "",
+  "brow.R.form": "",
+  "mouth.form": "",
+  "mouth.open": ""
+ },
+ "features": [
+  "head.yaw",
+  "head.pitch",
+  "head.tilt",
+  "torso.yaw",
+  "torso.pitch",
+  "torso.tilt",
+  "shoulders.up",
+  "shoulder.L.up",
+  "shoulder.R.up",
+  "upper_arm.L.elev",
+  "upper_arm.L.plane",
+  "upper_arm.L.twist",
+  "forearm.L.bend",
+  "upper_arm.R.elev",
+  "upper_arm.R.plane",
+  "upper_arm.R.twist",
+  "forearm.R.bend",
+  "gaze.x",
+  "gaze.y",
+  "eye.L.open",
+  "eye.R.open",
+  "eye.L.smile",
+  "eye.R.smile",
+  "brow.L.lift",
+  "brow.R.lift",
+  "brow.L.form",
+  "brow.R.form",
+  "mouth.form",
+  "mouth.open",
+  "hand.L.x",
+  "hand.L.y",
+  "hand.L.z",
+  "hand.R.x",
+  "hand.R.y",
+  "hand.R.z"
+ ],
+ "regions": {
+  "face": {
+   "drawables": [],
+   "vertices": null,
+   "confidence": {}
+  },
+  "eye.L": {
+   "drawables": [],
+   "vertices": null,
+   "confidence": {}
+  },
+  "eye.R": {
+   "drawables": [],
+   "vertices": null,
+   "confidence": {}
+  },
+  "mouth": {
+   "drawables": [],
+   "vertices": null,
+   "confidence": {}
+  },
+  "neck": {
+   "drawables": [],
+   "vertices": null,
+   "confidence": {}
+  },
+  "torso": {
+   "drawables": [],
+   "vertices": null,
+   "confidence": {}
+  },
+  "hips": {
+   "drawables": [],
+   "vertices": null,
+   "confidence": {}
+  },
+  "upper_arm.L": {
+   "drawables": [],
+   "vertices": null,
+   "confidence": {}
+  },
+  "upper_arm.R": {
+   "drawables": [],
+   "vertices": null,
+   "confidence": {}
+  },
+  "forearm.L": {
+   "drawables": [],
+   "vertices": null,
+   "confidence": {}
+  },
+  "forearm.R": {
+   "drawables": [],
+   "vertices": null,
+   "confidence": {}
+  },
+  "hand.L": {
+   "drawables": [],
+   "vertices": null,
+   "confidence": {}
+  },
+  "hand.R": {
+   "drawables": [],
+   "vertices": null,
+   "confidence": {}
+  },
+  "brow.L": {
+   "drawables": [],
+   "vertices": null,
+   "confidence": {}
+  },
+  "brow.R": {
+   "drawables": [],
+   "vertices": null,
+   "confidence": {}
+  },
+  "hair": {
+   "drawables": [],
+   "vertices": null,
+   "confidence": {}
+  }
+ },
+ "variants": [
+  {
+   "name": "rest",
+   "parts": {},
+   "switches": {},
+   "weight": 1.0,
+   "front": {},
+   "rest": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    8.0,
+    20.0,
+    0.0,
+    14.0,
+    8.0,
+    20.0,
+    0.0,
+    14.0,
+    0.0,
+    0.0,
+    1.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.61479,
+    -2.16638,
+    0.00119,
+    -0.6148,
+    -2.16638,
+    0.00119
+   ],
+   "present": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ],
+   "sweeps": {},
+   "pairs": []
+  }
+ ],
+ "rest_parts": {},
+ "side_naming": null,
+ "reach": {
+  "hand.L": {
+   "x": [
+    -1.13,
+    2.342
+   ],
+   "y": [
+    -2.218,
+    1.558
+   ],
+   "z": [
+    -1.272,
+    1.575
+   ]
+  },
+  "hand.R": {
+   "x": [
+    -2.342,
+    1.13
+   ],
+   "y": [
+    -2.218,
+    1.558
+   ],
+   "z": [
+    -1.272,
+    1.575
+   ]
+  }
+ },
+ "limits_source": "human active ranges (AAOS norms, Greene & Heckman 1994) cut to a talking avatar; flow/vrmbody.py LIMITS"
+}

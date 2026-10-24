@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>VRM render</title>
+<style>
+  :root { --bg: #1e1f24; }
+  html, body { margin: 0; background: var(--bg); }
+  canvas { display: block; }
+</style>
+<script type="importmap">
+{"imports": {
+  "three": "./vendor/three/build/three.module.min.js",
+  "three/addons/": "./vendor/three/examples/jsm/",
+  "@pixiv/three-vrm": "./vendor/three-vrm/three-vrm.module.min.js"
+}}
+</script>
+</head>
+<body>
+<canvas id="cv" width="512" height="512"></canvas>
+<script type="module">
+// The offline renderer's page (flow.vrmrender): Playwright loads it with
+// ?vrm=<avatar url>&cfg=<config url>&size=N, waits for window.TSK.ready,
+// then for every frame calls TSK.frame(state, dt) and gets the canvas back
+// as a JPEG data URL. No clock: frames advance by dt exactly.
+import { loadAvatar, applyState, draw, positions, eyeDir } from "./vrm.js";
+const P = new URLSearchParams(location.search);
+const cv = document.getElementById("cv");
+const size = parseInt(P.get("size") || "512", 10);
+cv.width = cv.height = size;
+const TSK = window.TSK = { error: null };
+TSK.ready = (async () => {
+  try {
+    const cfg = await (await fetch(P.get("cfg"))).json();
+    const av = await loadAvatar(P.get("vrm"), cv, cfg.camera, { preserve: true, bg: cfg.bg });
+    TSK.av = av;
+    TSK.frame = (st, dt, quality) => {
+      applyState(av, st, dt);
+      draw(av);
+      return quality === 0 ? null : cv.toDataURL("image/jpeg", quality || 0.92);
+    };
+    TSK.positions = names => positions(av, names);
+    TSK.eyeDir = () => eyeDir(av);
+    TSK.version = av.v0 ? "0" : "1";
+    return true;
+  } catch (e) { TSK.error = String(e && e.stack || e); return false; }
+})();
+</script>
+</body>
+</html>

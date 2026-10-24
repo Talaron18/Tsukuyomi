@@ -218,7 +218,11 @@ def feature_unit(name: str) -> str:
         if n == name:
             return unit
     q = name.rsplit(".", 1)[-1]
-    return {"x": "hu", "y": "hu", "roll": "deg", "scale": "pct"}.get(q, "unit")
+    # z and the joint angles are flow.vrmbody's (a VRM body); no Live2D
+    # feature ends in them.
+    return {"x": "hu", "y": "hu", "roll": "deg", "scale": "pct", "z": "hu",
+            "elev": "deg", "plane": "deg", "twist": "deg",
+            "bend": "deg"}.get(q, "unit")
 
 
 def canon_spec() -> dict:
@@ -1520,6 +1524,13 @@ def load(path: str) -> "BodyModel":
     if blob.get("format") not in (FORMAT, FORMAT_V1):
         raise ValueError(f"{path}: not a {FORMAT} file "
                          f"(format {blob.get('format')!r})")
+    if blob.get("kind") == "vrm":
+        # A VRM avatar's body (flow.vrmbody): skeleton, not sweeps.
+        try:
+            from .vrmbody import VRMBody
+        except ImportError:
+            from flow.vrmbody import VRMBody
+        return VRMBody(blob)
     feats = blob["features"]
     fidx = {f: k for k, f in enumerate(feats)}
     for v in blob["variants"]:

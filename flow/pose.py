@@ -615,7 +615,7 @@ def describe_body(bm) -> str:
 BODY_TEMPLATE = """\
 You are {persona}
 
-You are a Live2D character talking with the user face to face. Reply with \
+You are {kind} talking with the user face to face. Reply with \
 exactly what you say aloud: one to three short spoken sentences, in the \
 user's language. You move your own body by writing pose markers inline, at \
 the moment in your speech where the move happens. Markers are silent; they \
@@ -738,7 +738,10 @@ def system_prompt(bm, persona=None, images=False, gestures="") -> str:
     here. gestures: the [gesture:NAME] entry (director.gesture_lines) when
     body mode offers the rig's own motions (--body-gestures)."""
     persona = (persona or "a friendly, expressive character.").strip()
+    # A VRM body says what it is (flow.vrmbody); a Live2D one is the
+    # default, its prompt the same bytes as before E3.
     return BODY_TEMPLATE.format(
+        kind=getattr(bm, "prompt_kind", "a Live2D character"),
         persona=persona, body=describe_body(bm), hold=POSE_HOLD,
         image=(", and with it a picture of how you look right now, as the "
                "viewer sees you (your left is on the picture's right)"
