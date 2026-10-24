@@ -619,3 +619,39 @@ def test_underlay_keeps_loose_params_alive_during_rests_only():
     # what moves is keyed (the scorer reads the dump's mask)
     assert "ParamHairBack" in k_under[int(2 * FPS)]   # before any gesture
     assert k_plain[int(2 * FPS)] == set()
+
+
+def test_idle_streams_in_windows_without_a_seam():
+    """flow.live generates the idle ahead in rolling windows. Advanced in
+    windows of any size, the schedulers emit exactly the tokens one call
+    emits: the state (each group's next onset, a head turn due after its
+    saccade, the brow expression, the last gesture's switch states) carries
+    over, so a window edge cannot show -- no group restarts its first move
+    at 0.2-1 s past every seam as a fresh schedule() would."""
+    st = ev.load_stats("default")
+    roles = list(ev.ALL_ROLES)
+    lib = [{"name": "idle.motion3.json", "seconds": 8.0},
+           {"name": "home.motion3.json", "seconds": 5.0}]
+    for prof in ("calm", "authored"):
+        s = json.loads(json.dumps(st))
+        s["idle"]["profile"] = prof
+        one = ev.IdleScheduler(s, roles, np.random.default_rng(3))
+        whole = one.advance(90.0)
+        g_whole = ev.GestureScheduler(one.st, lib,
+                                      np.random.default_rng(4)).advance(90.0)
+        for win in (7.0, 10.0, 13.0):
+            sc = ev.IdleScheduler(s, roles, np.random.default_rng(3))
+            gs = ev.GestureScheduler(sc.st, lib, np.random.default_rng(4))
+            got, g_got, t = [], [], 0.0
+            while t < 90.0:
+                t = min(t + win, 90.0)
+                got += sc.advance(t)
+                sc.toks.clear()            # a stream keeps no history
+                g_got += gs.advance(t)
+            assert got == whole, (prof, win)
+            assert g_got == g_whole, (prof, win)
+    # schedule() is the same machinery run once, then sorted.
+    toks = ev.schedule(st, roles, 30.0, np.random.default_rng(0))
+    raw = ev.IdleScheduler(st, roles, np.random.default_rng(0)).advance(30.0)
+    assert [(k["t"], k["type"]) for k in toks] == sorted(
+        (k["t"], k["type"]) for k in raw)

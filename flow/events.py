@@ -1009,101 +1009,15 @@ def schedule(st, roles, seconds, rng, gestures=None, start=None):
     gestures: [(name, n_seconds)] of the rig's motions, or None.
     start: {role: value} initial positions (default the centres).
     Planned with idle_view(st): the calm idle profile unless stats["idle"]
-    says "authored".
+    says "authored". IdleScheduler and GestureScheduler run to `seconds`
+    on the one generator, the gestures after the rest, as always.
     """
-    st = idle_view(st)
-    roles = [r for r in roles if r in ALL_ROLES]
-    have = {g: [r for r in rs if r in roles] for g, rs in GROUPS.items()}
-    pos = {r: (start or {}).get(r, st["roles"][r]["center"]) for r in roles}
-    toks = []
-    busy = {g: 0.0 for g in GROUPS}       # when the group's current move ends
-    hf = st["head_follow"]
-
-    def emit(tok):
-        toks.append(tok)
-        return len(toks) - 1
-
-    def move(g, t, target, extra=None, typ=None):
-        amp = float(np.sqrt(sum((target[r] - pos[r]) ** 2 for r in target)))
-        d = _move_dur(st, g, amp, rng)
-        typ = typ or {"gaze": "saccade", "head": "head_turn",
-                      "body": "body_shift", "brow": "brow"}[g]
-        tok = {"t": round(t, 4), "type": typ, "role": g,
-               "target": {r: round(v, 5) for r, v in target.items()},
-               "duration": round(d, 4)}
-        tok.update(extra or {})
-        pos.update(target)
-        busy[g] = t + d
-        return emit(tok), amp, d
-
-    nxt = {g: (rng.uniform(0.2, 1.0) if have[g] else math.inf)
-           for g in GROUPS}
-    rho = {g: _rho(st, g, have[g]) for g in GROUPS}
-    bstate = {}
-
-    def dwell(g):
-        """Hold after a move: none when the move chains straight into the
-        next sub-movement (fitted p_chain), else a fitted hold."""
-        if rng.random() < st["groups"][g].get("p_chain", 0.0):
-            return 0.0
-        return _lognormal(rng, st["groups"][g]["hold"])
-    head_due = []
-    t = 0.0
-    while True:
-        t = min(min(nxt.values()), min((h[0] for h in head_due), default=math.inf))
-        if t >= seconds:
-            break
-        if head_due and head_due[0][0] <= t:
-            due, idx, gt = head_due.pop(0)
-            t = max(due, busy["head"])
-            gc = {"gaze_x": 0, "gaze_y": 1}
-            dev = {}
-            for gr, hr in (("gaze_x", "head_x"), ("gaze_y", "head_y")):
-                if gr in gt and hr in have["head"]:
-                    dev[hr] = hf["gain"][gc[gr]] * (
-                        gt[gr] - st["roles"][gr]["center"])
-            tgt = _ar_target(st, have["head"], pos, rho["head"], rng, dev)
-            _, _, d = move("head", t, tgt, {"follows": idx})
-            nxt["head"] = t + d + dwell("head")
-            continue
-        g = min(nxt, key=nxt.get)
-        t = max(nxt[g], busy[g])
-        if g == "gaze":
-            tgt = _ar_target(st, have["gaze"], pos, rho["gaze"], rng)
-            idx, amp, d = move("gaze", t, tgt)
-            hold = dwell("gaze")
-            toks[idx]["hold"] = round(hold, 4)
-            if hold > 0:
-                emit({"t": round(t + d, 4), "type": "fixate", "role": "gaze",
-                      "duration": round(hold, 4)})
-            if amp > BLINK_AMP and rng.random() < P_BLINK:
-                emit({"t": round(t, 4), "type": "blink", "role": "eyes"})
-            # min_amp: idle_view's calm head joins large saccades only. The
-            # draw comes first so the authored stream is draw for draw.
-            if (have["head"] and rng.random() < hf["p"]
-                    and amp >= hf.get("min_amp", 0.0)):
-                head_due.append((t + hf["lag"], idx, tgt))
-                head_due.sort(key=lambda h: h[0])
-            if (have["brow"] and amp > BLINK_AMP and t >= busy["brow"]
-                    and rng.random() < st["brow_on_saccade"]):
-                _brow(st, have["brow"], t, rng, move, nxt, rho, dwell, bstate)
-            nxt["gaze"] = t + d + hold
-        elif g == "head":
-            tgt = _ar_target(st, have["head"], pos, rho["head"], rng)
-            _, _, d = move("head", t, tgt, {"follows": None})
-            nxt["head"] = t + d + dwell("head")
-        elif g == "body":
-            dev = {}
-            if "body_x" in have["body"] and "head_x" in pos:
-                dev["body_x"] = st["body_head_slope"] * (
-                    pos["head_x"] - st["roles"]["head_x"]["center"])
-            tgt = _ar_target(st, have["body"], pos, rho["body"], rng, dev)
-            _, _, d = move("body", t, tgt)
-            nxt["body"] = t + d + dwell("body")
-        elif g == "brow":
-            _brow(st, have["brow"], t, rng, move, nxt, rho, dwell, bstate)
+    sched = IdleScheduler(st, roles, rng, start)
+    sched.advance(seconds)
+    toks = sched.toks
     if gestures:
-        toks.extend(schedule_gestures(st, gestures, seconds, rng))
+        toks.extend(GestureScheduler(sched.st, gestures, rng)
+                    .advance(seconds))
     # "follows" was the saccade's index at emission; renumber it for the
     # sorted list (left as is, a third of them pointed at blinks and brows).
     order = sorted(range(len(toks)), key=lambda i: (toks[i]["t"],
@@ -1114,6 +1028,128 @@ def schedule(st, roles, seconds, rng, gestures=None, start=None):
         if k.get("follows") is not None:
             k["follows"] = new[k["follows"]]
     return toks
+
+
+class IdleScheduler:
+    """schedule()'s semi-Markov loop with its state kept between calls:
+    advance(until) emits every move, fixation and blink with onset before
+    `until` and returns them (in emission order, unsorted), and the next
+    call carries on where it stopped. Run to a time in one call or in any
+    number of windows, the tokens are the same draw for draw (flow.live
+    streams the idle this way): there is no seam to show at a window edge.
+
+    `toks` keeps what was emitted (schedule() sorts it); a caller that only
+    streams may empty it. A head turn's "follows" is the saccade's emission
+    number.
+    """
+
+    def __init__(self, st, roles, rng, start=None):
+        self.st = st = idle_view(st)
+        self.rng = rng
+        roles = [r for r in roles if r in ALL_ROLES]
+        self.have = have = {g: [r for r in rs if r in roles]
+                            for g, rs in GROUPS.items()}
+        self.pos = {r: (start or {}).get(r, st["roles"][r]["center"])
+                    for r in roles}
+        self.toks, self.n = [], 0
+        self.busy = {g: 0.0 for g in GROUPS}   # when the group's move ends
+        self.hf = st["head_follow"]
+        self.nxt = {g: (rng.uniform(0.2, 1.0) if have[g] else math.inf)
+                    for g in GROUPS}
+        self.rho = {g: _rho(st, g, have[g]) for g in GROUPS}
+        self.bstate = {}
+        self.head_due = []
+
+    def emit(self, tok):
+        self.toks.append(tok)
+        self.n += 1
+        return self.n - 1
+
+    def move(self, g, t, target, extra=None, typ=None):
+        pos = self.pos
+        amp = float(np.sqrt(sum((target[r] - pos[r]) ** 2 for r in target)))
+        d = _move_dur(self.st, g, amp, self.rng)
+        typ = typ or {"gaze": "saccade", "head": "head_turn",
+                      "body": "body_shift", "brow": "brow"}[g]
+        tok = {"t": round(t, 4), "type": typ, "role": g,
+               "target": {r: round(v, 5) for r, v in target.items()},
+               "duration": round(d, 4)}
+        tok.update(extra or {})
+        pos.update(target)
+        self.busy[g] = t + d
+        return self.emit(tok), amp, d
+
+    def dwell(self, g):
+        """Hold after a move: none when the move chains straight into the
+        next sub-movement (fitted p_chain), else a fitted hold."""
+        if self.rng.random() < self.st["groups"][g].get("p_chain", 0.0):
+            return 0.0
+        return _lognormal(self.rng, self.st["groups"][g]["hold"])
+
+    def advance(self, until):
+        st, rng, have, pos = self.st, self.rng, self.have, self.pos
+        nxt, busy, rho, hf = self.nxt, self.busy, self.rho, self.hf
+        head_due, move, dwell = self.head_due, self.move, self.dwell
+        first = len(self.toks)
+        while True:
+            t = min(min(nxt.values()),
+                    min((h[0] for h in head_due), default=math.inf))
+            if t >= until:
+                break
+            if head_due and head_due[0][0] <= t:
+                due, idx, gt = head_due.pop(0)
+                t = max(due, busy["head"])
+                gc = {"gaze_x": 0, "gaze_y": 1}
+                dev = {}
+                for gr, hr in (("gaze_x", "head_x"), ("gaze_y", "head_y")):
+                    if gr in gt and hr in have["head"]:
+                        dev[hr] = hf["gain"][gc[gr]] * (
+                            gt[gr] - st["roles"][gr]["center"])
+                tgt = _ar_target(st, have["head"], pos, rho["head"], rng, dev)
+                _, _, d = move("head", t, tgt, {"follows": idx})
+                nxt["head"] = t + d + dwell("head")
+                continue
+            g = min(nxt, key=nxt.get)
+            t = max(nxt[g], busy[g])
+            if g == "gaze":
+                tgt = _ar_target(st, have["gaze"], pos, rho["gaze"], rng)
+                idx, amp, d = move("gaze", t, tgt)
+                hold = dwell("gaze")
+                self.toks[-1]["hold"] = round(hold, 4)   # the saccade's
+                if hold > 0:
+                    self.emit({"t": round(t + d, 4), "type": "fixate",
+                               "role": "gaze", "duration": round(hold, 4)})
+                if amp > BLINK_AMP and rng.random() < P_BLINK:
+                    self.emit({"t": round(t, 4), "type": "blink",
+                               "role": "eyes"})
+                # min_amp: idle_view's calm head joins large saccades only.
+                # The draw comes first so the authored stream is draw for
+                # draw.
+                if (have["head"] and rng.random() < hf["p"]
+                        and amp >= hf.get("min_amp", 0.0)):
+                    head_due.append((t + hf["lag"], idx, tgt))
+                    head_due.sort(key=lambda h: h[0])
+                if (have["brow"] and amp > BLINK_AMP and t >= busy["brow"]
+                        and rng.random() < st["brow_on_saccade"]):
+                    _brow(st, have["brow"], t, rng, move, nxt, rho, dwell,
+                          self.bstate)
+                nxt["gaze"] = t + d + hold
+            elif g == "head":
+                tgt = _ar_target(st, have["head"], pos, rho["head"], rng)
+                _, _, d = move("head", t, tgt, {"follows": None})
+                nxt["head"] = t + d + dwell("head")
+            elif g == "body":
+                dev = {}
+                if "body_x" in have["body"] and "head_x" in pos:
+                    dev["body_x"] = st["body_head_slope"] * (
+                        pos["head_x"] - st["roles"]["head_x"]["center"])
+                tgt = _ar_target(st, have["body"], pos, rho["body"], rng, dev)
+                _, _, d = move("body", t, tgt)
+                nxt["body"] = t + d + dwell("body")
+            elif g == "brow":
+                _brow(st, have["brow"], t, rng, move, nxt, rho, dwell,
+                      self.bstate)
+        return self.toks[first:]
 
 
 def _brow(st, cols, t, rng, move, nxt, rho, dwell, state):
@@ -1176,8 +1212,16 @@ def _flips(a, b):
 
 def schedule_gestures(st, gestures, seconds, rng):
     """Gesture tokens: segments of the rig's own motions, back to back with
-    occasional short rests. Segment starts are random so replay does not loop,
-    never the same motion twice in a row when there is a choice.
+    occasional short rests (GestureScheduler run to `seconds`)."""
+    return GestureScheduler(st, gestures, rng).advance(seconds)
+
+
+class GestureScheduler:
+    """Gesture tokens, resumable like IdleScheduler: segments of the rig's
+    own motions, back to back with occasional short rests. Segment starts
+    are random so replay does not loop, never the same motion twice in a row
+    when there is a choice. advance(until) returns the segments starting
+    before `until`.
 
     gestures: gesture_library() entries, or plain (name, seconds) pairs.
     With switch states known, a candidate segment is weighted by exp(-flips):
@@ -1186,51 +1230,61 @@ def schedule_gestures(st, gestures, seconds, rng):
     velocities known, a segment starts at the calmest frame of a few drawn,
     so the cross-fade joins two poses rather than two moves.
     """
-    G = st["gesture"]
-    lib = [g if isinstance(g, dict) else {"name": g[0], "seconds": g[1]}
-           for g in gestures]
-    lib = [g for g in lib if g["seconds"] > 0.3]
-    out, t, last, cur_state = [], 0.0, None, None
-    if not lib:
+
+    def __init__(self, st, gestures, rng):
+        self.G = G = st["gesture"]
+        self.rng = rng
+        lib = [g if isinstance(g, dict) else {"name": g[0], "seconds": g[1]}
+               for g in gestures or ()]
+        self.lib = [g for g in lib if g["seconds"] > 0.3]
+        self.t, self.last, self.cur_state = 0.0, None, None
+        if self.lib and G.get("lead"):
+            # Calm profile: the run opens at rest (the base state is the
+            # idle's first frame), not with a gesture at t = 0.
+            self.t = _lognormal(rng, G["lead"])
+
+    def advance(self, until):
+        G, rng, lib = self.G, self.rng, self.lib
+        out = []
+        if not lib:
+            return out
+        while self.t < until:
+            t = self.t
+            pool = [g for g in lib if g["name"] != self.last] or lib
+            cands = []
+            for g in pool:
+                length = g["seconds"]
+                seg = min(_lognormal(rng, G["seg"]), length)
+                seg = max(seg, min(length, 1.0))
+                starts = rng.uniform(0, max(length - seg, 0),
+                                     max(int(G.get("calm_of", 1)), 1))
+                if "vel" in g:
+                    fps = g["fps"]
+                    k = [min(int(s * fps), len(g["vel"]) - 1) for s in starts]
+                    s0 = float(starts[int(np.argmin(g["vel"][k]))])
+                else:
+                    s0 = float(starts[0])
+                st0 = (g["states"][min(int(s0 * g["fps"]),
+                                       len(g["states"]) - 1)]
+                       if "states" in g else None)
+                cands.append((g, s0, seg, _flips(self.cur_state, st0)))
+            w = np.exp(-G.get("flip_cost", 1.0)
+                       * np.array([c[3] for c in cands], float))
+            g, s0, seg, _ = cands[int(rng.choice(len(cands), p=w / w.sum()))]
+            out.append({"t": round(t, 4), "type": "gesture", "role": "arms",
+                        "motion": g["name"], "start": round(s0, 4),
+                        "duration": round(seg, 4), "fade": G["fade"]})
+            if "states" in g:
+                row = g["states"][min(int((s0 + seg) * g["fps"]),
+                                      len(g["states"]) - 1)]
+                self.cur_state = row if self.cur_state is None else np.where(
+                    row >= 0, row, self.cur_state)
+            self.last = g["name"]
+            t += seg
+            if rng.random() < G["p_rest"]:
+                t += _lognormal(rng, G["rest"])
+            self.t = t
         return out
-    if G.get("lead"):
-        # Calm profile: the run opens at rest (the base state is the idle's
-        # first frame), not with a gesture at t = 0.
-        t = _lognormal(rng, G["lead"])
-    while t < seconds:
-        pool = [g for g in lib if g["name"] != last] or lib
-        cands = []
-        for g in pool:
-            length = g["seconds"]
-            seg = min(_lognormal(rng, G["seg"]), length)
-            seg = max(seg, min(length, 1.0))
-            starts = rng.uniform(0, max(length - seg, 0),
-                                 max(int(G.get("calm_of", 1)), 1))
-            if "vel" in g:
-                fps = g["fps"]
-                k = [min(int(s * fps), len(g["vel"]) - 1) for s in starts]
-                s0 = float(starts[int(np.argmin(g["vel"][k]))])
-            else:
-                s0 = float(starts[0])
-            st0 = (g["states"][min(int(s0 * g["fps"]), len(g["states"]) - 1)]
-                   if "states" in g else None)
-            cands.append((g, s0, seg, _flips(cur_state, st0)))
-        w = np.exp(-G.get("flip_cost", 1.0)
-                   * np.array([c[3] for c in cands], float))
-        g, s0, seg, _ = cands[int(rng.choice(len(cands), p=w / w.sum()))]
-        out.append({"t": round(t, 4), "type": "gesture", "role": "arms",
-                    "motion": g["name"], "start": round(s0, 4),
-                    "duration": round(seg, 4), "fade": G["fade"]})
-        if "states" in g:
-            row = g["states"][min(int((s0 + seg) * g["fps"]),
-                                  len(g["states"]) - 1)]
-            cur_state = row if cur_state is None else np.where(
-                row >= 0, row, cur_state)
-        last = g["name"]
-        t += seg
-        if rng.random() < G["p_rest"]:
-            t += _lognormal(rng, G["rest"])
-    return out
 
 
 # --------------------------------------------------------- movement layer
@@ -1410,53 +1464,59 @@ class GesturePlayer:
         """
         ges = sorted((k for k in tokens if k["type"] == "gesture"),
                      key=lambda k: k["t"])
-        und = next((k for k in tokens if k["type"] == "underlay"), None)
-        und = (und, self._loops(und)) if und is not None else None
+        und = self.underlay(next((k for k in tokens
+                                  if k["type"] == "underlay"), None))
         out, self.keyed = [], []
         gi = -1
         for f in range(n_frames):
             t = f / self.fps
             while gi + 1 < len(ges) and float(ges[gi + 1]["t"]) <= t + 1e-9:
                 gi += 1
-            if gi < 0:
-                if und is None:
-                    out.append(self.base())
-                    self.keyed.append(set())
-                else:
-                    params, parts, keyed = self._held(None, t, und)
-                    out.append((params, parts))
-                    self.keyed.append(keyed)
-                continue
-            cur = ges[gi]
-            if und is None:
-                new = self.sample(cur, t)
-                keyed = self.keys(cur)
-            else:
-                *new, keyed = self._held(cur, t, und)
-                new = tuple(new)
-            fade = max(float(cur.get("fade", 0.5)), 0.0)
-            el = t - float(cur["t"])
-            if fade > 0 and el < fade:
-                if und is None:
-                    old = (self.sample(ges[gi - 1], t) if gi > 0
-                           else self.base())
-                    if gi > 0:
-                        keyed = keyed | self.keys(ges[gi - 1])
-                else:
-                    *old, k_old = self._held(ges[gi - 1] if gi > 0 else None,
-                                             t, und)
-                    keyed = keyed | k_old
-                w = float(min_jerk(el / fade))
-                # Parameters blend; part visibility switches at the midpoint.
-                # Blended, both arm variants were half visible through the
-                # fade -- "a frame with 4 hands" in the server A/B (lafei).
-                params = {p: (1 - w) * old[0][p] + w * new[0][p] for p in new[0]}
-                parts = new[1] if w >= 0.5 else {
-                    p: old[1].get(p, v) for p, v in new[1].items()}
-                new = (params, parts)
-            out.append(new)
+            params, parts, keyed = self.at(
+                t, ges[gi] if gi >= 0 else None,
+                ges[gi - 1] if gi > 0 else None, und)
+            out.append((params, parts))
             self.keyed.append(keyed)
         return out
+
+    def underlay(self, tok):
+        """An underlay token as at() takes it: (token, its loops), or None."""
+        return (tok, self._loops(tok)) if tok is not None else None
+
+    def at(self, t, cur, prev, und=None):
+        """(params, parts, keyed) at time t, with `cur` the latest gesture
+        that has started (None: none yet), `prev` the one before it and
+        `und` underlay(). frames() is this per frame; flow.live calls it
+        with the gestures streamed so far."""
+        if cur is None:
+            if und is None:
+                return (*self.base(), set())
+            return self._held(None, t, und)
+        if und is None:
+            new = self.sample(cur, t)
+            keyed = self.keys(cur)
+        else:
+            *new, keyed = self._held(cur, t, und)
+            new = tuple(new)
+        fade = max(float(cur.get("fade", 0.5)), 0.0)
+        el = t - float(cur["t"])
+        if fade > 0 and el < fade:
+            if und is None:
+                old = self.sample(prev, t) if prev is not None else self.base()
+                if prev is not None:
+                    keyed = keyed | self.keys(prev)
+            else:
+                *old, k_old = self._held(prev, t, und)
+                keyed = keyed | k_old
+            w = float(min_jerk(el / fade))
+            # Parameters blend; part visibility switches at the midpoint.
+            # Blended, both arm variants were half visible through the
+            # fade -- "a frame with 4 hands" in the server A/B (lafei).
+            params = {p: (1 - w) * old[0][p] + w * new[0][p] for p in new[0]}
+            parts = new[1] if w >= 0.5 else {
+                p: old[1].get(p, v) for p, v in new[1].items()}
+            new = (params, parts)
+        return new[0], new[1], keyed
 
 
 # ---------------------------------------------------------------- report
