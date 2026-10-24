@@ -1,0 +1,51 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/main/yachiyo/flow/director.py", line 1596, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/home/main/yachiyo/flow/director.py", line 1574, in main
+    return turn(a.say or "", a.out)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/main/yachiyo/flow/director.py", line 1558, in turn
+    res = plan(a, reply, out_dir, motions, tts=tts)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/main/yachiyo/flow/director.py", line 1227, in plan
+    said = sp.speak(reply["spoken"], reply["tags"], tts,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/main/yachiyo/flow/speech.py", line 1055, in speak
+    res = tts.synth(body)
+          ^^^^^^^^^^^^^^^
+  File "/home/main/yachiyo/flow/speech.py", line 1014, in synth
+    return self.cur.synth(text)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/main/yachiyo/flow/speech.py", line 892, in synth
+    q = self.query(text)
+        ^^^^^^^^^^^^^^^^
+  File "/home/main/yachiyo/flow/speech.py", line 876, in query
+    sid = self.resolve()
+          ^^^^^^^^^^^^^^
+  File "/home/main/yachiyo/flow/speech.py", line 868, in resolve
+    raise RuntimeError(
+RuntimeError: voicevox: no voice '冥鳴ひまり/ノーマル'; available: 
+director: not offered on this rig: lean:in (body_y centre 0.93, no room: the lean moves +0.031)
+director: gesture complete [measured, same motion as home / login / mail / mission / mission_complete]: body swings back and forth; left arm moves widely; switches arm pose; 8.0 s
+director: gesture home [measured, same motion as complete / login / mail / mission / mission_complete]: body swings back and forth; left arm moves widely; switches arm pose; 8.0 s
+director: gesture idle [measured]: body swings back and forth; shoulders swing back and forth; eyes change; 8.0 s
+director: gesture login [measured, same motion as complete / home / mail / mission / mission_complete]: body swings back and forth; left arm moves widely; switches arm pose; 8.0 s
+director: gesture mail [measured, same motion as complete / home / login / mission / mission_complete]: body swings back and forth; left arm moves widely; switches arm pose; 8.0 s
+director: gesture main_1 [measured]: left arm moves; eyes move less than in the other gestures; switches left hand pose; 8.0 s
+director: gesture main_2 [measured]: left arm swings back and forth; switches left arm pose; a part switches; 8.0 s
+director: gesture main_3 [measured]: eyes swing back and forth; left arm moves widely; switches left hand pose; 8.0 s
+director: gesture mission [measured, same motion as complete / home / login / mail / mission_complete]: body swings back and forth; left arm moves widely; switches arm pose; 8.0 s
+director: gesture mission_complete [measured, same motion as complete / home / login / mail / mission]: body swings back and forth; left arm moves widely; switches arm pose; 8.0 s
+director: gesture touch_body [measured]: body swings back and forth; switches right arm pose; a part switches; 8.0 s, lively
+director: gesture touch_head [measured]: 2.9 s, short, lively
+director: gesture touch_special [measured]: left arm moves widely; switches arm pose; a part switches; 8.0 s, lively
+director: gesture wedding [measured]: eyes swing back and forth; left arm moves widely; switches hand pose; 8.0 s
+director: 14 gesture labels: complete, home, idle, login, mail, main_1, main_2, main_3, mission, mission_complete, touch_body, touch_head, touch_special, wedding
+speech: voice config rigs/aidang_2.voice.json: ja voicevox 冥鳴ひまり/ノーマル; en edge en-US-AriaNeural; zh edge zh-CN-XiaoxiaoNeural
+mouth: aidang_2: no talking curves in 14 motions (no lip flaps on the open/vowel parameters) -> open-only on the mouth-open parameter, rest to maximum (as before)
+deepseek: stop stop; usage {'prompt_tokens': 779, 'completion_tokens': 60, 'prompt_cache_hit_tokens': 0}
+director: model 1.0s, first text after 0.5s
+director: reply: [look:viewer] あら、おかえりなさい、指揮官。[tilt:right] 会いたかったかって…もちろんですよ、ずっと待っていたんですからね。[look:away] そんなこと聞くのは意地悪ですわ。
