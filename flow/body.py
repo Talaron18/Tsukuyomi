@@ -265,8 +265,9 @@ JOINT_WRIST = re.compile(r"hand|wrist|finger|手|shou(?!ld)")
 JOINT_ELBOW = re.compile(r"elbow|肘|fore|前腕")
 SIDE_JA = re.compile(r"([左右])")
 # A joint or rotation in a parameter's id or display name: continuous, even
-# when its motions park it (Natori's ParamArmAL01 左腕A 肩 is in
-# toggle_params' list, and is the shoulder).
+# when its motions park it or the probe called it categorical (Natori's
+# ParamArmAL02 左肩A 肘回転, the elbow, is in toggle_params' list, and the rig
+# file bands ParamArmAL01 左腕A 肩, the shoulder, as discrete).
 JOINT_NAME = re.compile(r"肩|肘|手首|回転|前後|角度|rotat|angle|angel|elbow|"
                         r"shoulder|wrist")
 SWITCH_NAME = re.compile(r"表示|切替|切り替え|switch|toggle|show|visible|"
@@ -732,9 +733,11 @@ def measure(core, info: dict, log=print) -> dict:
             flip = np.nonzero(np.abs(O1 - O0) > 0.5)[0]
             # Opacity that changes with a parameter is a switch only when
             # the rig uses it as one (its motions jump between two states,
-            # or its name says show / switch) and it is not a limb rotation:
-            # Natori's elbow and shoulder parameters swap forearm meshes as
-            # they turn, and are continuous joints (runtime.snappable).
+            # or its name says show / switch) and it is not a joint: a rig
+            # may swap meshes as a limb turns, and that limb is still
+            # continuous (runtime.snappable, JOINT_NAME). Natori's flips
+            # are all real switches (hand and teeth 表示); a rig whose joints
+            # flip opacity shows them in describe()'s opacity-flip line.
             nm = (pids[i] + " " + info.get("param_names", {}).get(
                 pids[i], "")).lower()
             is_switch = snappable(pids[i], info.get("groups", {}).get(
