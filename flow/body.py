@@ -53,6 +53,11 @@ File format (rigs/<rig>.body.json, FORMAT "tsukuyomi.body/1"):
               not say
   params      {pid: {min, max, default, band, role, name, declares}}: role is
               solvable / held / physics / switch / variant / inert
+  declared    {variable: [pid, scale]}: value = parameter x scale (scale < 0
+              where the rig's sign is the other way, see meaning)
+  meaning     {variable: which way + goes, and the measured evidence}
+  rest_parts  part opacities of the measured rest (pose3 first members, or
+              the calm motion's first frame for parts switched directly)
   features    names "<region>.<x|y|roll|scale>" (hu, hu, deg CCW, percent
               log-scale) and declared variables ("head.yaw", "mouth.open"...)
   variants    [{name, parts, switches, rest, present, sweeps, pairs}]: one
@@ -64,6 +69,9 @@ File format (rigs/<rig>.body.json, FORMAT "tsukuyomi.body/1"):
               interaction residual at the four corners (- = toward min, + =
               toward max from the default), applied bilinearly
   regions     {region: {drawables, vertices, confidence}} summary
+
+Measuring takes 3 s on Hiyori (2 variants) and 35 s on Natori (12); a solve
+0.2-3 s; the files are 0.34 and 3.2 MB.
 
 Usage:
     python -m flow.body --model-json M --rig rigs/Hiyori.npz --measure
