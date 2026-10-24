@@ -1,0 +1,12 @@
+runs/e2b/lafei/tags/0/plan.npz  [dump:events seed=0]  vs  clips2/lafei.npz
+group      n    std    |d|    p95   jerk    still g/a   period g/a
+body       2   0.28   0.09   0.15   0.09   0.60/ 0.32   0.00/ 0.00
+gaze       2   0.30   0.09   0.25   0.03   0.80/ 0.06   0.00/ 0.43
+head       3   0.21   0.07   0.10   0.03   0.60/ 0.00   0.00/ 0.00
+other      1   0.46   0.40   0.18   0.02   0.11/ 0.20   0.00/ 0.00
+OVERALL    8   0.28   0.11   0.15   0.04   0.00/ 0.00   0.00/ 0.00
+novelty  nearest-window RMS, median: gen 0.149  authored 0.000  (ratio  inf; vs own clips (leave-one-clip-out for authored); 9 role cols)
+pinned at +-1 (driven cols): gen 0.000  authored 0.575
+toggle in-between (16 switch params): gen nan  authored 0.038
+checks: std=FAIL  jerk=ok  toggle=ok  period=ok  face=FAIL  holds=ok  stiff=FAIL   => FAIL   (groups: body, gaze, head)
+-> runs/e2b/lafei/tags/0/score.json

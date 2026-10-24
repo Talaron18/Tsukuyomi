@@ -1,0 +1,243 @@
+{
+ "traj": "runs/e2b/Hiyori/body/2/plan.npz",
+ "kind": "dump:events seed=0",
+ "clips": "clips2/Hiyori.npz",
+ "fps": 30.0,
+ "groups": {
+  "body": {
+   "n": 3,
+   "std": 0.16633693062355678,
+   "std_gen": 0.07344886536399524,
+   "std_ref": 0.4415667951107025,
+   "dmean": 0.08821197128238588,
+   "dmean_gen": 0.0020739207102451473,
+   "dmean_ref": 0.02351064917941888,
+   "dp95": 0.1713403980756441,
+   "dp95_gen": 0.016169126145541668,
+   "dp95_ref": 0.09436844040950139,
+   "jerk": 0.1050450229167369,
+   "jerk_gen": 0.0002889728467986667,
+   "jerk_ref": 0.0027509427745826542,
+   "still_gen": 0.42857142857142855,
+   "still_ref": 0.02631578947368421,
+   "period_gen": 0.0,
+   "period_gen_plain": 0.021081313490867615,
+   "period_gen_n": 1,
+   "period_ref": 0.3742007911205292,
+   "period_ref_plain": 0.3742007911205292,
+   "period_ref_n": 1,
+   "params": [
+    "ParamBodyAngleX",
+    "ParamBodyAngleY",
+    "ParamBodyAngleZ"
+   ]
+  },
+  "brow": {
+   "n": 6,
+   "std": 0.682966792278067,
+   "std_gen": 0.2361040155713757,
+   "std_ref": 0.3457035074631373,
+   "dmean": 1.969877567118279,
+   "dmean_gen": 0.007310418732231483,
+   "dmean_ref": 0.003711103093034277,
+   "dp95": 2.215077321659938,
+   "dp95_gen": 0.038570744528745614,
+   "dp95_ref": 0.0174128208309412,
+   "jerk": 0.7519836512306143,
+   "jerk_gen": 0.0007962267718539806,
+   "jerk_ref": 0.0010588352160993963,
+   "still_gen": 0.42857142857142855,
+   "still_ref": 0.5789473684210527,
+   "period_gen": 0.0,
+   "period_gen_plain": 0.0,
+   "period_gen_n": 1,
+   "period_ref": 0.0,
+   "period_ref_plain": 0.0,
+   "period_ref_n": 1,
+   "params": [
+    "ParamBrowLY",
+    "ParamBrowRY",
+    "ParamBrowLX",
+    "ParamBrowRX",
+    "ParamBrowLAngle",
+    "ParamBrowRAngle",
+    "ParamBrowLForm",
+    "ParamBrowRForm"
+   ]
+  },
+  "gaze": {
+   "n": 2,
+   "std": 0.48915553460626965,
+   "std_gen": 0.1964207887649536,
+   "std_ref": 0.4015507847070694,
+   "dmean": 0.4171819723033909,
+   "dmean_gen": 0.004755864851176739,
+   "dmean_ref": 0.011399976909160614,
+   "dp95": 0.5397353606622501,
+   "dp95_gen": 0.025744842365384102,
+   "dp95_ref": 0.047699009999632835,
+   "jerk": 0.06517560857238668,
+   "jerk_gen": 0.00019071724818786606,
+   "jerk_ref": 0.002926205866970122,
+   "still_gen": 0.2857142857142857,
+   "still_ref": 0.18421052631578946,
+   "period_gen": 0.0,
+   "period_gen_plain": 0.0,
+   "period_gen_n": 1,
+   "period_ref": 0.0,
+   "period_ref_plain": 0.0,
+   "period_ref_n": 1,
+   "params": [
+    "ParamEyeBallX",
+    "ParamEyeBallY"
+   ]
+  },
+  "hair": {
+   "n": 1,
+   "std": 0.42357398570273985,
+   "std_gen": 0.2338176816701889,
+   "std_ref": 0.5520114302635193,
+   "dmean": 0.4856979404475303,
+   "dmean_gen": 0.03703276440501213,
+   "dmean_ref": 0.07624649256467819,
+   "dp95": 0.4555209460200327,
+   "dp95_gen": 0.107652947306633,
+   "dp95_ref": 0.23632930219173431,
+   "jerk": 0.32783878950920947,
+   "jerk_gen": 0.004333010874688625,
+   "jerk_ref": 0.013216895051300526,
+   "still_gen": 0.0,
+   "still_ref": 0.10526315789473684,
+   "period_gen": 0.0,
+   "period_gen_plain": 0.0,
+   "period_gen_n": 0,
+   "period_ref": 0.3626190423965454,
+   "period_ref_plain": 0.3626190423965454,
+   "period_ref_n": 1,
+   "params": [
+    "ParamHairAhoge"
+   ]
+  },
+  "head": {
+   "n": 3,
+   "std": 0.22528192476814593,
+   "std_gen": 0.09977998336156209,
+   "std_ref": 0.44291162490844727,
+   "dmean": 0.23254726812133236,
+   "dmean_gen": 0.003620740996363262,
+   "dmean_ref": 0.015569914132356644,
+   "dp95": 0.2530321204069829,
+   "dp95_gen": 0.018251211770499747,
+   "dp95_ref": 0.07213001946608226,
+   "jerk": 0.2850695918553412,
+   "jerk_gen": 0.00039568246317382244,
+   "jerk_ref": 0.0013880205903357516,
+   "still_gen": 0.14285714285714285,
+   "still_ref": 0.05263157894736842,
+   "period_gen": 0.0,
+   "period_gen_plain": 0.054117944091558456,
+   "period_gen_n": 1,
+   "period_ref": 0.0,
+   "period_ref_plain": 0.0,
+   "period_ref_n": 1,
+   "params": [
+    "ParamAngleX",
+    "ParamAngleY",
+    "ParamAngleZ"
+   ]
+  }
+ },
+ "overall": {
+  "n": 15,
+  "std": 0.4213491866119402,
+  "std_gen": 0.1708646599203348,
+  "std_ref": 0.4055179536342621,
+  "dmean": 0.4505925345156656,
+  "dmean_gen": 0.007166066108038649,
+  "dmean_ref": 0.01590365032510211,
+  "dp95": 0.5277635031714707,
+  "dp95_gen": 0.03292187419719994,
+  "dp95_ref": 0.06237997512022654,
+  "jerk": 0.3051272076895102,
+  "jerk_gen": 0.0007697181288070472,
+  "jerk_ref": 0.002522613878439491,
+  "still_gen": 0.0,
+  "still_ref": 0.0,
+  "period_gen": 0.0,
+  "period_gen_plain": 0.0,
+  "period_gen_n": 1,
+  "period_ref": 0.0,
+  "period_ref_plain": 0.2559730112552643,
+  "period_ref_n": 1
+ },
+ "novelty": {
+  "ref": "own clips (leave-one-clip-out for authored)",
+  "files": [],
+  "gen_median": 0.28519377834605564,
+  "authored_median": 0.4090649287972154,
+  "ratio": 0.6971846234401433,
+  "n_gen": 12,
+  "n_ref": 51,
+  "cols": [
+   "paramanglex",
+   "paramangley",
+   "paramanglez",
+   "parambodyanglex",
+   "parambodyangley",
+   "parambodyanglez",
+   "parameyeballx",
+   "parameyebally",
+   "parambrowly",
+   "parambrowry"
+  ]
+ },
+ "diversity": null,
+ "pinned": {
+  "gen": 0.0,
+  "ref": 0.14404314430462495
+ },
+ "toggle": {
+  "n_params": 4,
+  "gen": NaN,
+  "ref": 0.05634905106632753,
+  "params": [
+   "ParamBrowLX",
+   "ParamBrowRX",
+   "ParamCheek",
+   "ParamLeg"
+  ]
+ },
+ "failed_groups": [
+  "body",
+  "gaze",
+  "head"
+ ],
+ "checks": {
+  "std": false,
+  "jerk": true,
+  "toggle": true,
+  "period": true,
+  "face": false,
+  "holds": true,
+  "stiff": false
+ },
+ "pass": false,
+ "thresholds": {
+  "std": [
+   0.7,
+   1.3
+  ],
+  "jerk_max": 1.5,
+  "toggle_slack": 0.05,
+  "period_max": 0.6,
+  "still_eps": 0.002,
+  "period_rule": "gen <= max(period_max, ref + 0.1)",
+  "face_std": [
+   0.5,
+   2.0
+  ],
+  "hold_fraction": 0.5,
+  "hold_min_authored": 0.3,
+  "stiff_min": 0.5
+ }
+}

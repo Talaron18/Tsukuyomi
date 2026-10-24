@@ -1,0 +1,16 @@
+runs/e2b/Hiyori/body/0/plan.npz  [dump:events seed=0]  vs  clips2/Hiyori.npz
+group      n    std    |d|    p95   jerk    still g/a   period g/a
+arm        6   0.53   0.64   0.80   0.85   0.50/ 0.13   0.00/ 0.00
+body       3   0.19   0.09   0.16   0.07   0.44/ 0.03   0.00/ 0.37
+brow       8   0.56   0.97   1.32   0.11   0.44/ 0.58   0.00/ 0.00
+face       1   0.00   0.00      -   0.00   1.00/ 0.97   0.00/ 0.00
+gaze       2   0.46   0.41   0.53   0.06   0.22/ 0.18   0.00/ 0.00
+hair       1   0.72   0.62   0.77   0.39   0.00/ 0.11   0.00/ 0.36
+head       3   0.25   0.14   0.16   0.08   0.22/ 0.05   0.00/ 0.00
+other      1   1.84   3.22  19.69   1.96   0.80/ 0.89   0.00/ 0.00
+OVERALL   25   0.50   0.51   0.67   0.39   0.00/ 0.00   0.00/ 0.00
+novelty  nearest-window RMS, median: gen 0.262  authored 0.409  (ratio 0.64; vs own clips (leave-one-clip-out for authored); 10 role cols)
+pinned at +-1 (driven cols): gen 0.032  authored 0.144
+toggle in-between (4 switch params): gen 0.011  authored 0.056
+checks: std=FAIL  jerk=ok  toggle=ok  period=ok  face=FAIL  holds=ok  stiff=FAIL   => FAIL   (groups: body, gaze, head)
+-> runs/e2b/Hiyori/body/0/score.json

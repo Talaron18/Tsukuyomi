@@ -1,0 +1,6 @@
+breath: gain 0 (--breath-gain)
+gain    0: centroid y std 0.001 px (ptp 0.009), top edge std 0.007 px (ptp 0.036)
+breath: gain 0.109 (lafei.body.json: ParamBreath moves 0.0690 hu, target 0.0075)
+gain auto: centroid y std 0.223 px (ptp 0.626), top edge std 0.147 px (ptp 0.425)
+breath: gain 1 (--breath-gain)
+gain    1: centroid y std 1.893 px (ptp 5.407), top edge std 1.356 px (ptp 3.879)

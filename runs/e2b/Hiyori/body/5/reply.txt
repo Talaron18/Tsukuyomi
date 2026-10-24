@@ -1,0 +1,2 @@
+[pose {"hand.L.y": "@shoulder.y", "head.yaw": 10, "eye.L.smile": 0.6, "eye.R.smile": 0.6, "dur": 0.4, "hold": 1}] Hi there, friend! [pose {"hand.L.x": 0.6, "dur": 0.3, "hold": 0.5}][pose {"hand.L.x": 1.0, "dur": 0.3, "hold": 0.2}] Nice to see you!
+[pose {"torso.yaw": -8, "head.yaw": -22, "hand.L.x": -0.03, "hand.L.y": -0.1, "brow.L.lift": 0.5, "dur": 0.4, "hold": 1}] And the door is right over there!

@@ -1,0 +1,1 @@
+[tilt:right] A friend over there? [gesture:complete] Okay, waving now... [nod] and the door is that way, just past the wall. [look:viewer] Did they see me?

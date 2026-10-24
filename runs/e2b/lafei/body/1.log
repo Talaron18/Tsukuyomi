@@ -1,0 +1,122 @@
+[live2d] third-party wrapper (0.7.0.4), not affiliated with Live2D Inc.
+[live2d] third-party wrapper (0.7.0.4), not affiliated with Live2D Inc.
+[live2d.v3] Cubism Native, Python 3.10.20
+[live2d.v3] official: https://www.live2d.com/sdk/download/native/
+Live2D Cubism SDK Core Version 5.1.0
+[INFO]  [Pal] Init Shader Dir: /home/main/venv/hongenv/lib/python3.11/site-packages/live2d/v3/
+[INFO]  [CSM][I]Live2D Cubism Core version: 05.01.0000 (83951616)
+
+[INFO]  [CSM][I]CubismFramework::StartUp() is complete.
+
+[INFO]  [CSM][I]CubismFramework::Initialize() is complete.
+
+[INFO]  allocate: cpp Model(at=0x1bef6690)
+[INFO]  load modelSetting: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/lafei.model3.json
+[INFO]  create model: lafei.moc3
+Live2D Cubism SDK Core Version 5.1.0
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/complete.motion3.json => [_0] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/home.motion3.json => [_1] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/idle.motion3.json => [_2] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/login.motion3.json => [_3] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/mail.motion3.json => [_4] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/main_1.motion3.json => [_5] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/main_2.motion3.json => [_6] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/main_3.motion3.json => [_7] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/mission_complete.motion3.json => [_8] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/mission.motion3.json => [_9] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/touch_body.motion3.json => [_10] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/touch_head.motion3.json => [_11] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/touch_special.motion3.json => [_12] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/wedding.motion3.json => [_13] 
+55 params: expressive 41, physics 1, autonomic 3, mouth 3, discrete 7
+holding 4 whole-model parameters still: PARAM_ALL_moveZ, PARAM_bodyS, PARAM_moveX, PARAM_moveY
+seeded from clips2/lafei.npz
+  role body_x   -> ParamBodyAngleX  [id]
+  role body_z   -> ParamBodyAngleZ  [id]
+  role brow_l   -> ParamBrowLY  [id]
+  role brow_lx  -> ParamBrowLX  [id]
+  role brow_r   -> ParamBrowRY  [id]
+  role gaze_x   -> ParamEyeBallX  [id]
+  role gaze_y   -> ParamEyeBallY  [id]
+  role head_x   -> ParamAngleX  [id]
+  role head_y   -> ParamAngleY  [id]
+  role head_z   -> ParamAngleZ  [id]
+events: unbound roles (no standard id; --binding to add): body_y, brow_la, brow_lf, brow_ra, brow_rf, brow_rx
+events: body adapted to the rig's own motions (weights {'body_x': 0.933, 'body_z': 0.933, 'w_hold': 0.815, 'w_move': 0.904}; own holds 3 +19 censored, 3 unanimated clips, moves 47): hold 2.01s move 0.89s p_chain 0.68
+events: rendering 17 tokens from runs/e2b/lafei/body/1/tokens.json
+events: 10 roles from ev.json; tokens body_shift 2, brow 5, fixate 2, head_turn 1, mouth 1, pose 3, saccade 2, underlay 1
+breath: gain 0.109 (--breath-gain)
+base state from idle.motion3.json: 0 part opacities, 60 held parameters
+pose: 3 body poses over the idle (flow.pose)
+mouth: lip sync on ParamMouthOpenY
+events: underlay idle.motion3.json x0.5 during rests on 1 loose parameters: PARAM_deng_moveY
+events: 0 gesture segments from 14 motion files (arms will score as copying against the rig's own clips; novelty is judged on the role columns)
+snapping 16 switch-like parameters: PARAM_ALL_moveZ, PARAM_Angry_eye, PARAM_Arm_L_hand, PARAM_Arm_R_hand, PARAM_Hand_L1, PARAM_Hand_L3, PARAM_Hand_R1, PARAM_Hand_R3, PARAM_arm_LFX, PARAM_beixin_FX, PARAM_bodyS, PARAM_ear_FX, PARAM_eyeFX, PARAM_hand_FX, PARAM_moveX, PARAM_moveY
+backend: order=sandwich, timestep=fixed 0.0333s (native), parts=13
+rendered 322 frames -> runs/e2b/lafei/body/1/render/
+contact sheet -> runs/e2b/lafei/body/1/render/sheet.png
+video -> runs/e2b/lafei/body/1/render/preview.mp4
+[INFO]  deallocate: cpp Model(at=0x1bef6690)
+[INFO]  deallocate: PyModelObject(at=0x7fd5f534e290)
+[live2d.v3] Cubism Native, Python 3.10.20
+[live2d.v3] official: https://www.live2d.com/sdk/download/native/
+Live2D Cubism SDK Core Version 5.1.0
+Live2D Cubism SDK Core Version 5.1.0
+director: gesture complete [measured, same motion as home / mail / mission / mission_complete / touch_head]: left arm swings back and forth; unclear parts move; 6.5 s
+director: gesture home [measured, same motion as complete / mail / mission / mission_complete / touch_head]: left arm swings back and forth; unclear parts move; 6.5 s
+director: gesture idle [measured, same motion as wedding]: unclear parts move; eyes change; 8.0 s, calm
+director: gesture login [measured]: left arm moves widely; unclear parts move; 5.4 s
+director: gesture mail [measured, same motion as complete / home / mission / mission_complete / touch_head]: left arm swings back and forth; unclear parts move; 6.5 s
+director: gesture main_1 [measured]: unclear parts move; 2.2 s, short
+director: gesture main_2 [measured]: switches hand pose; 5.6 s, calm
+director: gesture main_3 [measured]: left arm moves; 3.0 s, short
+director: gesture mission [measured, same motion as complete / home / mail / mission_complete / touch_head]: left arm swings back and forth; unclear parts move; 6.5 s
+director: gesture mission_complete [measured, same motion as complete / home / mail / mission / touch_head]: left arm swings back and forth; unclear parts move; 6.5 s
+director: gesture touch_body [measured]: left arm moves widely; switches right arm pose; an effect plays; 2.7 s, short, lively
+director: gesture touch_head [measured, same motion as complete / home / mail / mission / mission_complete]: left arm swings back and forth; unclear parts move; 6.5 s
+director: gesture touch_special [measured]: switches hand pose; an effect plays; 6.1 s, calm
+director: gesture wedding [measured, same motion as idle]: unclear parts move; eyes change; 8.0 s, calm
+director: body mode, rigs/lafei.body.json: 20 variables, 1 arm variants, 14 gestures
+speech: voice config rigs/lafei.voice.json: ja voicevox 中国うさぎ/ノーマル; en edge en-US-AnaNeural; zh edge zh-CN-XiaoxiaoNeural
+mouth: lafei: no talking curves in 14 motions (no lip flaps on the open/vowel parameters) -> open-only on the mouth-open parameter, rest to maximum (as before)
+deepseek: stop stop; usage {'prompt_tokens': 2168, 'completion_tokens': 152, 'prompt_cache_hit_tokens': 1920}
+director: model 1.1s, first text after 0.4s
+director: reply: [pose {"head.tilt": 8, "brow.L.lift": 0.4, "brow.R.lift": 0.4, "dur": 0.3, "hold": 0.6}] The beach... [pose {"gaze.y": 0.4, "head.pitch": 8, "dur": 0.4, "hold": 0.8}] mmm, that sounds nice and warm.
+[pose {"head.pitch": 0, "head.yaw": 10, "hand.R.y": -0.7, "dur": 0.5, "hold": 0.8}] I could nap on the sand while you swim.
+pose: pose 0.10s at 'The beach... mmm' [rest]: head.tilt 8 -> 8 (Core 8) ok; brow.L.lift 0.40 -> 0.40 (Core 0.40) ok; brow.R.lift 0.40 -> 0.40 (Core 0.40) ok
+pose: pose 1.04s at 'mmm, that sounds' [rest]: gaze.y 0.40 -> 0.40 (Core 0.40) ok; head.pitch 8 -> 8 (Core 8) ok
+pose: pose 5.06s at 'I could nap on t' [rest]: head.pitch 0 -> 0 (Core 0) ok; head.yaw 10 -> 10 (Core 10) ok; hand.R.y -0.70 -> -0.70 (Core -0.70) ok
+pose: 3 markers, 8/8 targets reached, 8/8 on the Core (solve 0.028s)
+speech: moods neutral from 'The beach...', sleepy from 'I could nap ' (rate -23% pitch -8Hz volume -15%)
+speech: 9.26s audio (en-US-AnaNeural), tag times from words -> speech.wav
+director: 84 spoken characters, 9.26s speech, 3 actions, 3 subtitles; rendering 10.76s
+director: breath gain 0.109 (lafei.body.json: ParamBreath moves 0.0690 hu, target 0.0075)
+55 params: expressive 41, physics 1, autonomic 3, mouth 3, discrete 7
+holding 4 whole-model parameters still: PARAM_ALL_moveZ, PARAM_bodyS, PARAM_moveX, PARAM_moveY
+seeded from clips2/lafei.npz
+  role body_x   -> ParamBodyAngleX  [id]
+  role body_z   -> ParamBodyAngleZ  [id]
+  role brow_l   -> ParamBrowLY  [id]
+  role brow_lx  -> ParamBrowLX  [id]
+  role brow_r   -> ParamBrowRY  [id]
+  role gaze_x   -> ParamEyeBallX  [id]
+  role gaze_y   -> ParamEyeBallY  [id]
+  role head_x   -> ParamAngleX  [id]
+  role head_y   -> ParamAngleY  [id]
+  role head_z   -> ParamAngleZ  [id]
+events: unbound roles (no standard id; --binding to add): body_y, brow_la, brow_lf, brow_ra, brow_rf, brow_rx
+events: body adapted to the rig's own motions (weights {'body_x': 0.933, 'body_z': 0.933, 'w_hold': 0.815, 'w_move': 0.904}; own holds 3 +19 censored, 3 unanimated clips, moves 47): hold 2.01s move 0.89s p_chain 0.68
+events: idle profile calm; gestures from 5 of 14 motions (by label): complete 0.0188, home* 0.0188, idle* 0.0106, login 0.0557, mail 0.0188, main_1* 0.0285, main_2* 0.0387, main_3* 0.0354, mission 0.0188, mission_complete 0.0188, touch_body 0.1524, touch_head 0.0188, touch_special 0.0219, wedding 0.0106  (* calm; mean speed/frame)
+director: 3 actions -> 3 tokens; 0 idle tokens overridden
+events: 10 roles from ev.json; tokens body_shift 2, brow 5, fixate 2, head_turn 1, mouth 1, pose 3, saccade 2, underlay 1
+tokens -> runs/e2b/lafei/body/1/tokens.json
+breath: gain 0.109 (--breath-gain)
+base state from idle.motion3.json: 0 part opacities, 60 held parameters
+pose: 3 body poses over the idle (flow.pose)
+mouth: lip sync on ParamMouthOpenY
+events: underlay idle.motion3.json x0.5 during rests on 1 loose parameters: PARAM_deng_moveY
+events: 0 gesture segments from 14 motion files (arms will score as copying against the rig's own clips; novelty is judged on the role columns)
+snapping 16 switch-like parameters: PARAM_ALL_moveZ, PARAM_Angry_eye, PARAM_Arm_L_hand, PARAM_Arm_R_hand, PARAM_Hand_L1, PARAM_Hand_L3, PARAM_Hand_R1, PARAM_Hand_R3, PARAM_arm_LFX, PARAM_beixin_FX, PARAM_bodyS, PARAM_ear_FX, PARAM_eyeFX, PARAM_hand_FX, PARAM_moveX, PARAM_moveY
+dump -> runs/e2b/lafei/body/1/plan.npz  (322 frames, 41 expressive, 0 parts, mode events seed=0)
+director: /home/main/venv/hongenv/bin/python -m flow.runtime --model 'live2d-models/live2d_3/model/Azue Lane(JP)/lafei/lafei.model3.json' --rig rigs/lafei.npz --events ev.json --probe-dir out --fps 30.0 --seed 0 --seconds 10.76 --clips clips2/lafei.npz --breath-gain 0.109 --tokens-in runs/e2b/lafei/body/1/tokens.json --size 512 --out runs/e2b/lafei/body/1/render
+director: video with speech and subtitles -> runs/e2b/lafei/body/1/demo.mp4

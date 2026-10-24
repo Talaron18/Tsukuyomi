@@ -1,0 +1,522 @@
+{
+ "speech_seconds": 6.192,
+ "seconds": 8.137,
+ "actions": [
+  {
+   "t": 0.1032,
+   "tag": "pose",
+   "arg": {
+    "targets": {
+     "brow.L.lift": 0.7,
+     "brow.R.lift": 0.7
+    },
+    "dur": 0.2
+   },
+   "at": 0,
+   "solved": {
+    "act": 0,
+    "t": 0.1032,
+    "at": 0,
+    "start": 0.1032,
+    "dur": 0.2,
+    "hold": 1.0,
+    "hold_set": false,
+    "release": 0.5,
+    "targets": {
+     "brow.L.lift": 0.7,
+     "brow.R.lift": 0.7
+    },
+    "resolved": {
+     "brow.L.lift": 0.7,
+     "brow.R.lift": 0.7
+    },
+    "vars": [
+     "brow.L.lift",
+     "brow.R.lift"
+    ],
+    "params": {
+     "ParamBrowLY": 0.699965,
+     "ParamBrowRY": 0.699965
+    },
+    "parts": {},
+    "parts_from": {},
+    "step": [],
+    "variant": 0,
+    "variant_name": "rest",
+    "report": {
+     "brow.L.lift": {
+      "target": 0.7,
+      "got": 0.69997,
+      "error": -3e-05,
+      "unit": "unit",
+      "ok": true
+     },
+     "brow.R.lift": {
+      "target": 0.7,
+      "got": 0.69997,
+      "error": -3e-05,
+      "unit": "unit",
+      "ok": true
+     }
+    },
+    "ok": true,
+    "solve_seconds": 0.008,
+    "exact": {
+     "brow.L.lift": 0.69997,
+     "brow.R.lift": 0.69997
+    },
+    "exact_ok": {
+     "brow.L.lift": true,
+     "brow.R.lift": true
+    },
+    "arm_params": []
+   }
+  },
+  {
+   "t": 1.3179,
+   "tag": "pose",
+   "arg": {
+    "targets": {
+     "head.tilt": 8.0,
+     "gaze.x": -0.4
+    },
+    "dur": 0.3,
+    "hold": 0.4
+   },
+   "at": 4,
+   "solved": {
+    "act": 1,
+    "t": 1.3179,
+    "at": 4,
+    "start": 1.3179,
+    "dur": 0.3,
+    "hold": 0.4,
+    "hold_set": true,
+    "release": 0.5,
+    "targets": {
+     "head.tilt": 8.0,
+     "gaze.x": -0.4
+    },
+    "resolved": {
+     "head.tilt": 8.0,
+     "gaze.x": -0.4
+    },
+    "vars": [
+     "gaze.x",
+     "head.tilt"
+    ],
+    "params": {
+     "ParamAngleZ": -7.997778,
+     "ParamEyeBallX": -0.39998
+    },
+    "parts": {},
+    "parts_from": {},
+    "step": [],
+    "variant": 0,
+    "variant_name": "rest",
+    "report": {
+     "head.tilt": {
+      "target": 8.0,
+      "got": 7.99778,
+      "error": -0.00222,
+      "unit": "deg",
+      "ok": true
+     },
+     "gaze.x": {
+      "target": -0.4,
+      "got": -0.39998,
+      "error": 2e-05,
+      "unit": "unit",
+      "ok": true
+     }
+    },
+    "ok": true,
+    "solve_seconds": 0.004,
+    "exact": {
+     "head.tilt": 7.99778,
+     "gaze.x": -0.39998
+    },
+    "exact_ok": {
+     "head.tilt": true,
+     "gaze.x": true
+    },
+    "arm_params": []
+   }
+  },
+  {
+   "t": 4.637,
+   "tag": "pose",
+   "arg": {
+    "targets": {
+     "cheek.blush": 0.8,
+     "head.yaw": -10.0,
+     "hand.R.y": "@shoulder.y-0.15"
+    },
+    "dur": 0.4,
+    "hold": 0.6
+   },
+   "at": 39,
+   "solved": {
+    "act": 2,
+    "t": 4.637,
+    "at": 39,
+    "start": 4.637,
+    "dur": 0.4,
+    "hold": 0.6,
+    "hold_set": true,
+    "release": 0.5,
+    "targets": {
+     "cheek.blush": 0.8,
+     "head.yaw": -10.0,
+     "hand.R.y": "@shoulder.y-0.15"
+    },
+    "resolved": {
+     "cheek.blush": 0.8,
+     "head.yaw": -10.0,
+     "hand.R.y": -0.1677
+    },
+    "vars": [
+     "cheek.blush",
+     "hand.R.y",
+     "head.yaw"
+    ],
+    "params": {
+     "PARAM_Arm_LT_Angle": 9.231819,
+     "ParamAngleX": -9.997223,
+     "ParamBodyAngleZ": 2.737907,
+     "ParamCheek": 0.80004
+    },
+    "parts": {},
+    "parts_from": {},
+    "step": [],
+    "variant": 0,
+    "variant_name": "rest",
+    "report": {
+     "cheek.blush": {
+      "target": 0.8,
+      "got": 0.80004,
+      "error": 4e-05,
+      "unit": "unit",
+      "ok": true
+     },
+     "head.yaw": {
+      "target": -10.0,
+      "got": -9.99722,
+      "error": 0.00278,
+      "unit": "deg",
+      "ok": true
+     },
+     "hand.R.y": {
+      "target": -0.1677,
+      "got": -0.16832,
+      "error": -0.00062,
+      "unit": "hu",
+      "ok": true
+     }
+    },
+    "ok": true,
+    "solve_seconds": 0.016,
+    "exact": {
+     "cheek.blush": 0.80004,
+     "head.yaw": -9.99722,
+     "hand.R.y": -0.16365
+    },
+    "exact_ok": {
+     "cheek.blush": true,
+     "head.yaw": true,
+     "hand.R.y": true
+    },
+    "arm_params": [
+     "PARAM_Arm_LT_Angle",
+     "ParamBodyAngleZ"
+    ]
+   }
+  }
+ ],
+ "warnings": [],
+ "model_seconds": 1.112,
+ "first_text_seconds": 0.56,
+ "stop_reason": "stop",
+ "usage": {
+  "prompt_tokens": 2164,
+  "completion_tokens": 134,
+  "prompt_cache_hit_tokens": 1920
+ },
+ "mode": "body",
+ "reach": {
+  "markers": 3,
+  "targets": 7,
+  "ok": 7,
+  "miss": 0,
+  "exact_ok": 7,
+  "exact_n": 7,
+  "solve_seconds": 0.028
+ },
+ "tts": {
+  "backend": "edge",
+  "voice": "en-US-AnaNeural",
+  "timing": "words",
+  "voiced_end": 5.3,
+  "moods": [
+   [
+    0,
+    "neutral"
+   ],
+   [
+    39,
+    "happy"
+   ]
+  ]
+ },
+ "mouth": {
+  "fps": 30.0,
+  "open": [
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.1912,
+   0.4492,
+   0.626,
+   0.7348,
+   0.6879,
+   0.5706,
+   0.4082,
+   0.1076,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.5534,
+   0.7771,
+   0.8406,
+   0.8801,
+   0.987,
+   0.9986,
+   0.9997,
+   0.6626,
+   0.1747,
+   0.7393,
+   0.8849,
+   0.7938,
+   0.7999,
+   0.8861,
+   0.8975,
+   0.9114,
+   0.906,
+   0.639,
+   0.643,
+   0.6704,
+   0.6208,
+   0.6033,
+   0.483,
+   0.8498,
+   0.9022,
+   0.9136,
+   0.671,
+   0.4225,
+   0.1114,
+   0.0,
+   0.6676,
+   0.8316,
+   0.9701,
+   0.9879,
+   0.8753,
+   0.4743,
+   0.125,
+   0.0,
+   0.2527,
+   0.5712,
+   0.5553,
+   0.7969,
+   0.7986,
+   0.7583,
+   0.7868,
+   0.8135,
+   0.8414,
+   0.8586,
+   0.5405,
+   0.1425,
+   0.6407,
+   0.7642,
+   0.5519,
+   0.2459,
+   0.1417,
+   0.1351,
+   0.0706,
+   0.6122,
+   0.9177,
+   0.9911,
+   0.9713,
+   0.9969,
+   0.9875,
+   0.9334,
+   0.7155,
+   0.2843,
+   0.075,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.8703,
+   0.9778,
+   0.9823,
+   0.9547,
+   0.9368,
+   0.5877,
+   0.1549,
+   0.3712,
+   0.3362,
+   0.7086,
+   0.8685,
+   0.9857,
+   0.9361,
+   0.874,
+   0.7543,
+   0.5192,
+   0.1369,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0
+  ],
+  "mode": "open"
+ }
+}

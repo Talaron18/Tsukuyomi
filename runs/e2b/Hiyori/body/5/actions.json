@@ -1,0 +1,681 @@
+{
+ "speech_seconds": 7.152,
+ "seconds": 8.652,
+ "actions": [
+  {
+   "t": 0.1,
+   "tag": "pose",
+   "arg": {
+    "targets": {
+     "hand.L.y": "@shoulder.y",
+     "head.yaw": 10.0,
+     "eye.L.smile": 0.6,
+     "eye.R.smile": 0.6
+    },
+    "dur": 0.4,
+    "hold": 1.0
+   },
+   "at": 0,
+   "solved": {
+    "act": 0,
+    "t": 0.1,
+    "at": 0,
+    "start": 0.1,
+    "dur": 0.4,
+    "hold": 1.0,
+    "hold_set": true,
+    "release": 0.5,
+    "targets": {
+     "hand.L.y": "@shoulder.y",
+     "head.yaw": 10.0,
+     "eye.L.smile": 0.6,
+     "eye.R.smile": 0.6
+    },
+    "resolved": {
+     "hand.L.y": -0.217,
+     "head.yaw": 10.0,
+     "eye.L.smile": 0.6,
+     "eye.R.smile": 0.6
+    },
+    "vars": [
+     "eye.L.smile",
+     "eye.R.smile",
+     "hand.L.y",
+     "head.yaw"
+    ],
+    "params": {
+     "ParamAngleX": 9.997223,
+     "ParamBodyAngleX": 0.241638,
+     "ParamBodyAngleY": -2.925369,
+     "ParamBodyAngleZ": 2.634216,
+     "ParamEyeLSmile": 0.59988,
+     "ParamEyeRSmile": 0.59988,
+     "ParamHandL": -0.085753,
+     "ParamShoulder": -0.145582
+    },
+    "parts": {
+     "PartArmA": 0.0,
+     "PartArmB": 1.0
+    },
+    "parts_from": {
+     "PartArmA": 1.0,
+     "PartArmB": 0.0
+    },
+    "step": [],
+    "variant": 1,
+    "variant_name": "PartArmB",
+    "report": {
+     "hand.L.y": {
+      "target": -0.217,
+      "got": -0.21423,
+      "error": 0.00277,
+      "unit": "hu",
+      "ok": true
+     },
+     "head.yaw": {
+      "target": 10.0,
+      "got": 9.99722,
+      "error": -0.00278,
+      "unit": "deg",
+      "ok": true
+     },
+     "eye.L.smile": {
+      "target": 0.6,
+      "got": 0.59988,
+      "error": -0.00012,
+      "unit": "unit",
+      "ok": true
+     },
+     "eye.R.smile": {
+      "target": 0.6,
+      "got": 0.59988,
+      "error": -0.00012,
+      "unit": "unit",
+      "ok": true
+     }
+    },
+    "ok": true,
+    "solve_seconds": 0.262,
+    "exact": {
+     "hand.L.y": -0.21424,
+     "head.yaw": 9.99722,
+     "eye.L.smile": 0.59988,
+     "eye.R.smile": 0.59988
+    },
+    "exact_ok": {
+     "hand.L.y": true,
+     "head.yaw": true,
+     "eye.L.smile": true,
+     "eye.R.smile": true
+    },
+    "arm_params": [
+     "ParamBodyAngleX",
+     "ParamBodyAngleY",
+     "ParamBodyAngleZ",
+     "ParamShoulder"
+    ]
+   }
+  },
+  {
+   "t": 2.4,
+   "tag": "pose",
+   "arg": {
+    "targets": {
+     "hand.L.x": 0.6
+    },
+    "dur": 0.3,
+    "hold": 0.5
+   },
+   "at": 18,
+   "solved": {
+    "act": 1,
+    "t": 2.4,
+    "at": 18,
+    "start": 2.4,
+    "dur": 0.3,
+    "hold": 0.5,
+    "hold_set": true,
+    "release": 0.5,
+    "targets": {
+     "hand.L.x": 0.6
+    },
+    "resolved": {
+     "hand.L.x": 0.6
+    },
+    "vars": [
+     "hand.L.x"
+    ],
+    "params": {
+     "ParamArmLA": -7.057321,
+     "ParamBodyAngleX": 0.30182
+    },
+    "parts": {
+     "PartArmA": 1.0,
+     "PartArmB": 0.0
+    },
+    "parts_from": {
+     "PartArmA": 1.0,
+     "PartArmB": 0.0
+    },
+    "step": [],
+    "variant": 0,
+    "variant_name": "PartArmA",
+    "report": {
+     "hand.L.x": {
+      "target": 0.6,
+      "got": 0.60082,
+      "error": 0.00082,
+      "unit": "hu",
+      "ok": true
+     }
+    },
+    "ok": true,
+    "solve_seconds": 0.163,
+    "exact": {
+     "hand.L.x": 0.60104
+    },
+    "exact_ok": {
+     "hand.L.x": true
+    },
+    "arm_params": [
+     "ParamArmLA",
+     "ParamBodyAngleX"
+    ]
+   }
+  },
+  {
+   "t": 2.4,
+   "tag": "pose",
+   "arg": {
+    "targets": {
+     "hand.L.x": 1.0
+    },
+    "dur": 0.3,
+    "hold": 0.2
+   },
+   "at": 18,
+   "solved": {
+    "act": 2,
+    "t": 2.4,
+    "at": 18,
+    "start": 3.2,
+    "dur": 0.3,
+    "hold": 0.2,
+    "hold_set": true,
+    "release": 0.5,
+    "targets": {
+     "hand.L.x": 1.0
+    },
+    "resolved": {
+     "hand.L.x": 1.0
+    },
+    "vars": [
+     "hand.L.x"
+    ],
+    "params": {
+     "ParamArmLA": 1.690868,
+     "ParamBodyAngleX": -0.001248,
+     "ParamBodyAngleZ": -0.546532,
+     "ParamHandL": 0.044855
+    },
+    "parts": {
+     "PartArmA": 1.0,
+     "PartArmB": 0.0
+    },
+    "parts_from": {
+     "PartArmA": 1.0,
+     "PartArmB": 0.0
+    },
+    "step": [],
+    "variant": 0,
+    "variant_name": "PartArmA",
+    "report": {
+     "hand.L.x": {
+      "target": 1.0,
+      "got": 0.9994,
+      "error": -0.0006,
+      "unit": "hu",
+      "ok": true
+     }
+    },
+    "ok": true,
+    "solve_seconds": 0.061,
+    "exact": {
+     "hand.L.x": 0.99969
+    },
+    "exact_ok": {
+     "hand.L.x": true
+    },
+    "arm_params": [
+     "ParamArmLA",
+     "ParamBodyAngleX",
+     "ParamBodyAngleZ"
+    ]
+   }
+  },
+  {
+   "t": 4.3875,
+   "tag": "pose",
+   "arg": {
+    "targets": {
+     "torso.yaw": -8.0,
+     "head.yaw": -22.0,
+     "hand.L.x": -0.03,
+     "hand.L.y": -0.1,
+     "brow.L.lift": 0.5
+    },
+    "dur": 0.4,
+    "hold": 1.0
+   },
+   "at": 35,
+   "solved": {
+    "act": 3,
+    "t": 4.3875,
+    "at": 35,
+    "start": 4.3875,
+    "dur": 0.4,
+    "hold": 1.0,
+    "hold_set": true,
+    "release": 0.5,
+    "targets": {
+     "torso.yaw": -8.0,
+     "head.yaw": -22.0,
+     "hand.L.x": -0.03,
+     "hand.L.y": -0.1,
+     "brow.L.lift": 0.5
+    },
+    "resolved": {
+     "torso.yaw": -8.0,
+     "head.yaw": -22.0,
+     "hand.L.x": -0.03,
+     "hand.L.y": -0.1,
+     "brow.L.lift": 0.5
+    },
+    "vars": [
+     "brow.L.lift",
+     "hand.L.x",
+     "hand.L.y",
+     "head.yaw",
+     "torso.yaw"
+    ],
+    "params": {
+     "ParamAngleX": -21.993891,
+     "ParamArmLB": -10.0,
+     "ParamBodyAngleX": -8.062275,
+     "ParamBodyAngleY": 10.0,
+     "ParamBodyAngleZ": -10.0,
+     "ParamBrowLY": 0.499975,
+     "ParamHandL": 1.0,
+     "ParamHandLB": -5.948651,
+     "ParamShoulder": 1.0
+    },
+    "parts": {
+     "PartArmA": 0.0,
+     "PartArmB": 1.0
+    },
+    "parts_from": {
+     "PartArmA": 1.0,
+     "PartArmB": 0.0
+    },
+    "step": [],
+    "variant": 1,
+    "variant_name": "PartArmB",
+    "report": {
+     "torso.yaw": {
+      "target": -8.0,
+      "got": -8.06227,
+      "error": -0.06227,
+      "unit": "deg",
+      "ok": true
+     },
+     "head.yaw": {
+      "target": -22.0,
+      "got": -21.99389,
+      "error": 0.00611,
+      "unit": "deg",
+      "ok": true
+     },
+     "hand.L.x": {
+      "target": -0.03,
+      "got": 0.01809,
+      "error": 0.04809,
+      "unit": "hu",
+      "ok": true
+     },
+     "hand.L.y": {
+      "target": -0.1,
+      "got": -0.16504,
+      "error": -0.06504,
+      "unit": "hu",
+      "ok": false
+     },
+     "brow.L.lift": {
+      "target": 0.5,
+      "got": 0.49998,
+      "error": -2e-05,
+      "unit": "unit",
+      "ok": true
+     }
+    },
+    "ok": false,
+    "solve_seconds": 0.342,
+    "hints": {
+     "hand.L.y": "alone it reaches -0.32 to -0.02 in this pose; hand.R.y reaches -0.44 to -0.04"
+    },
+    "exact": {
+     "torso.yaw": -8.06227,
+     "head.yaw": -21.99389,
+     "hand.L.x": 0.01501,
+     "hand.L.y": -0.16591,
+     "brow.L.lift": 0.49998
+    },
+    "exact_ok": {
+     "torso.yaw": true,
+     "head.yaw": true,
+     "hand.L.x": true,
+     "hand.L.y": false,
+     "brow.L.lift": true
+    },
+    "arm_params": [
+     "ParamArmLB",
+     "ParamBodyAngleX",
+     "ParamBodyAngleY",
+     "ParamBodyAngleZ",
+     "ParamHandLB",
+     "ParamShoulder"
+    ]
+   }
+  }
+ ],
+ "warnings": [],
+ "model_seconds": 1.565,
+ "first_text_seconds": 0.738,
+ "stop_reason": "stop",
+ "usage": {
+  "prompt_tokens": 2493,
+  "completion_tokens": 195,
+  "prompt_cache_hit_tokens": 2304
+ },
+ "mode": "body",
+ "reach": {
+  "markers": 4,
+  "targets": 11,
+  "ok": 10,
+  "miss": 1,
+  "exact_ok": 10,
+  "exact_n": 11,
+  "solve_seconds": 0.828
+ },
+ "tts": {
+  "backend": "edge",
+  "voice": "en-US-AnaNeural",
+  "timing": "words",
+  "voiced_end": 6.275
+ },
+ "mouth": {
+  "fps": 30.0,
+  "open": [
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.2682,
+   0.4832,
+   0.8319,
+   0.9818,
+   0.998,
+   0.9587,
+   0.888,
+   0.6762,
+   0.4062,
+   0.7494,
+   0.8436,
+   0.9184,
+   0.9075,
+   0.9319,
+   0.8466,
+   0.6924,
+   0.3079,
+   0.0812,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0751,
+   0.2816,
+   0.5665,
+   0.8615,
+   0.985,
+   0.9984,
+   0.9998,
+   0.8721,
+   0.764,
+   0.7002,
+   0.695,
+   0.6146,
+   0.2162,
+   0.057,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.2338,
+   0.6964,
+   0.802,
+   0.8819,
+   0.96,
+   0.9345,
+   0.8659,
+   0.7432,
+   0.7586,
+   0.832,
+   0.7058,
+   0.1861,
+   0.5568,
+   0.6665,
+   0.7795,
+   0.7289,
+   0.7441,
+   0.7052,
+   0.6624,
+   0.7442,
+   0.8806,
+   0.9085,
+   0.9056,
+   0.9168,
+   0.9096,
+   0.8358,
+   0.9565,
+   0.8576,
+   0.785,
+   0.583,
+   0.3211,
+   0.0847,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.3402,
+   0.7393,
+   0.8074,
+   0.8543,
+   0.8676,
+   0.8614,
+   0.8986,
+   0.8144,
+   0.5395,
+   0.2297,
+   0.0606,
+   0.6521,
+   0.9418,
+   0.9518,
+   0.9605,
+   0.9957,
+   0.9981,
+   0.9909,
+   0.9705,
+   0.944,
+   0.9529,
+   0.9838,
+   0.8277,
+   0.5857,
+   0.6398,
+   0.4912,
+   0.5591,
+   0.5888,
+   0.7335,
+   0.9122,
+   0.9905,
+   0.9643,
+   0.8239,
+   0.5717,
+   0.1507,
+   0.3698,
+   0.7087,
+   0.9278,
+   0.9536,
+   0.6923,
+   0.2757,
+   0.6675,
+   0.897,
+   0.8465,
+   0.5115,
+   0.3512,
+   0.765,
+   0.9123,
+   0.8338,
+   0.8738,
+   0.8635,
+   0.7636,
+   0.5435,
+   0.2404,
+   0.0634,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0
+  ],
+  "mode": "open"
+ }
+}

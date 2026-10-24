@@ -1,0 +1,2 @@
+[tilt:left] Eh... [look:away] that's a strange thing to say to me all of a sudden.
+[pause:0.5] [blink] But... thank you.

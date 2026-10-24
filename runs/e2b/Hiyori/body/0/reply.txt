@@ -1,0 +1,1 @@
+[pose {"hand.L.y": "@shoulder.y", "hand.L.x": 0.55, "head.tilt": 9, "dur": 0.45, "hold": 1.2}] Hi! Of course I missed you! [pose {"hand.L.y": -2.00, "hand.L.x": 0.95, "head.tilt": 0, "dur": 0.5, "hold": 0}] It's been way too quiet around here without you.

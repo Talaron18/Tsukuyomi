@@ -1,0 +1,1 @@
+[pose {"brow.L.lift": 0.9, "brow.R.lift": 0.9, "eye.L.open": 1.2, "eye.R.open": 1.2, "dur": 0.2, "hold": 0}][pause:0.4] You ate... the whole cake? [pose {"head.pitch": -10, "torso.pitch": -6, "dur": 0.3, "hold": 0.3}] The one I was saving for after club?

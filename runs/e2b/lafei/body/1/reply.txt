@@ -1,0 +1,2 @@
+[pose {"head.tilt": 8, "brow.L.lift": 0.4, "brow.R.lift": 0.4, "dur": 0.3, "hold": 0.6}] The beach... [pose {"gaze.y": 0.4, "head.pitch": 8, "dur": 0.4, "hold": 0.8}] mmm, that sounds nice and warm.
+[pose {"head.pitch": 0, "head.yaw": 10, "hand.R.y": -0.7, "dur": 0.5, "hold": 0.8}] I could nap on the sand while you swim.

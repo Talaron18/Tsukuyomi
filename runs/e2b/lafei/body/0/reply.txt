@@ -1,0 +1,1 @@
+[pose {"head.tilt": 10, "mouth.form": 0.6, "dur": 0.4}] Mhm... I missed you. [pose {"hand.R.y": -0.85, "hand.R.x": -0.6, "dur": 0.5, "hold": 1.5}] I was just resting my eyes a little.

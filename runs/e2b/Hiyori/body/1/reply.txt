@@ -1,0 +1,2 @@
+[pose {"brow.L.lift": 0.8, "brow.R.lift": 0.8, "eye.L.smile": 0.7, "eye.R.smile": 0.7, "dur": 0.25, "hold": 0.6}] The beach? Yes, absolutely!
+[pose {"hand.L.y": -0.1, "hand.L.x": 0.6, "head.tilt": 6, "torso.pitch": -4, "dur": 0.4, "hold": 0.8}] Wait, should I bring anything? [pose {"head.yaw": 10, "gaze.x": 0.5, "dur": 0.3, "hold": 0.4}] Maybe my big sun hat?

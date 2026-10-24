@@ -1,0 +1,6 @@
+breath: gain 0 (--breath-gain)
+gain    0: centroid y std 0.002 px (ptp 0.012), top edge std 0.001 px (ptp 0.008)
+breath: gain 0.107 (xuefeng.body.json: ParamBreath moves 0.0698 hu, target 0.0075)
+gain auto: centroid y std 0.126 px (ptp 0.360), top edge std 0.136 px (ptp 0.388)
+breath: gain 1 (--breath-gain)
+gain    1: centroid y std 1.122 px (ptp 3.204), top edge std 1.300 px (ptp 3.719)

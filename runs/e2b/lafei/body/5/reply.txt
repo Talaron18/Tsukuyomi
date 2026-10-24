@@ -1,0 +1,1 @@
+[pose {"hand.R.y": "@shoulder.y-0.15", "hand.R.x": -1.05, "dur": 0.5, "hold": 0.4}] Mm, hello there, friend. [pose {"hand.R.y": -0.9, "hand.R.x": -0.55, "dur": 0.4, "hold": 0}][pose {"head.yaw": 22, "gaze.x": 0.8, "dur": 0.4, "hold": 0.5}] The door is that way, past the corner.

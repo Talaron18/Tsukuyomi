@@ -1,0 +1,1 @@
+[pose {"head.pitch": -18, "dur": 0.25, "hold": 0}][pose {"head.pitch": 0, "dur": 0.3, "hold": 0}] ...Ah. [pause:0.5] It was for later, but... it's okay, I guess. [pose {"head.tilt": 12, "gaze.x": 0.5, "dur": 0.4, "hold": 1}] Just tell me next time, okay?
