@@ -338,6 +338,55 @@ def test_whole_model_detector():
     assert not body.whole_model(V0, bent)
 
 
+def test_variants_without_pose3():
+    """Azur Lane rigs ship no pose3: their motions switch arm parts with
+    PartOpacity curves. The variants come from those curves, and the rest
+    one (the idle motion's first frame) shows one arm, not both."""
+    info = _info()
+    info["pose_groups"] = []
+    n = 20
+    on, off = np.ones(n), np.zeros(n)
+    info["motion_frames"] = [
+        {("Meta", "name"): "idle.motion3.json",
+         ("PartOpacity", "PartArmA"): on, ("PartOpacity", "PartArmB"): off},
+        {("Meta", "name"): "wave.motion3.json",
+         ("PartOpacity", "PartArmA"): np.r_[on[:5], off[5:]],
+         ("PartOpacity", "PartArmB"): np.r_[off[:5], on[5:]]},
+    ]
+    blob = body.measure(FakeCore(), info, log=lambda *a: None)
+    assert len(blob["variants"]) == 2
+    v0, v1 = blob["variants"]
+    assert v0["parts"] == {"PartArmA": 1.0, "PartArmB": 0.0}
+    assert v1["parts"] == {"PartArmA": 0.0, "PartArmB": 1.0}
+    assert blob["rest_parts"] == {"PartArmA": 1.0, "PartArmB": 0.0}
+    # Variant 0 measures the hanging arm alone: its hand is where the
+    # hanging hand is, not averaged with the raised one.
+    k = blob["features"].index("hand.L.y")
+    assert v0["rest"][k] < 0 < v1["rest"][k]
+
+
+def test_declared_signs_from_geometry(measured, model):
+    """ParamAngleZ + rolls the fake face clockwise (like Hiyori's), so
+    head.tilt is the negated parameter and agrees with head.roll."""
+    _core, blob = measured
+    assert blob["declared"]["head.tilt"][1] < 0
+    assert blob["declared"]["head.yaw"][1] > 0
+    st = model.perceive({"ParamAngleZ": -30.0}, 0)
+    assert st["head.tilt"] > 0 and st["head.roll"] > 0
+    assert "head.tilt" in blob["meaning"]
+
+
+def test_autonomic_not_used_for_pose(measured):
+    """Blink and breath are the runtime's; a pose never leans on them."""
+    _core, blob = measured
+    blob = dict(blob)
+    blob["params"] = {p: dict(e) for p, e in blob["params"].items()}
+    blob["params"]["ParamBodyAngleZ"]["band"] = "autonomic"
+    bm = body.BodyModel(blob)
+    res = bm.solve({"head.roll": 12.0})
+    assert "ParamBodyAngleZ" not in res["params"]
+
+
 # ------------------------------------------------------ real Core (opt)
 
 def test_core_reads_hiyori(samples):

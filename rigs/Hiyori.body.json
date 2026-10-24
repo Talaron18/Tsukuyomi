@@ -2180,6 +2180,10 @@
    "toggle": false
   }
  },
+ "rest_parts": {
+  "PartArmA": 1.0,
+  "PartArmB": 0.0
+ },
  "declared": {
   "head.yaw": [
    "ParamAngleX",
@@ -2191,7 +2195,7 @@
   ],
   "head.tilt": [
    "ParamAngleZ",
-   1.0
+   -1.0
   ],
   "torso.yaw": [
    "ParamBodyAngleX",
@@ -2203,7 +2207,7 @@
   ],
   "torso.tilt": [
    "ParamBodyAngleZ",
-   1.0
+   -1.0
   ],
   "gaze.x": [
    "ParamEyeBallX",
@@ -2277,6 +2281,14 @@
    "ParamShoulder",
    1.0
   ]
+ },
+ "meaning": {
+  "head.yaw": "+ turns the face toward the character's left (screen right) (ParamAngleX; head.x +0.078 over its range)",
+  "head.pitch": "+ looks up (ParamAngleY; head.y +0.057 over its range)",
+  "head.tilt": "+ tilts the head counter-clockwise as seen, like head.roll (-ParamAngleZ; head.roll -20.000 over its range)",
+  "torso.yaw": "+ turns the upper body toward the character's left (ParamBodyAngleX; head.x +0.040 over its range)",
+  "torso.pitch": "+ leans back (head rises); - leans in (ParamBodyAngleY; head.y +0.080 over its range)",
+  "torso.tilt": "+ tilts the upper body counter-clockwise as seen (-ParamBodyAngleZ; head.roll -8.419 over its range)"
  },
  "features": [
   "head.x",
@@ -2496,13 +2508,13 @@
     0.0,
     0.0,
     0.0,
-    0.0,
+    -0.0,
     0.0,
     1.0,
     0.0,
     0.0,
     0.0,
-    0.0,
+    -0.0,
     0.0
    ],
    "present": [
@@ -3613,15 +3625,15 @@
        -0.7783
       ],
       "head.tilt": [
-       -30.0,
-       -22.5,
-       -15.0,
-       -7.5,
-       0.0,
-       7.5,
-       15.0,
+       30.0,
        22.5,
-       30.0
+       15.0,
+       7.5,
+       0.0,
+       -7.5,
+       -15.0,
+       -22.5,
+       -30.0
       ]
      }
     },
@@ -6202,15 +6214,15 @@
        5.001e-05
       ],
       "torso.tilt": [
-       -10.0,
-       -7.5,
-       -5.0,
-       -2.5,
-       0.0,
-       2.5,
-       5.0,
+       10.0,
        7.5,
-       10.0
+       5.0,
+       2.5,
+       0.0,
+       -2.5,
+       -5.0,
+       -7.5,
+       -10.0
       ]
      }
     },
@@ -11636,13 +11648,13 @@
     0.0,
     0.0,
     0.0,
-    0.0,
+    -0.0,
     0.0,
     1.0,
     0.0,
     0.0,
     0.0,
-    0.0,
+    -0.0,
     0.0
    ],
    "present": [
@@ -12753,15 +12765,15 @@
        -0.7783
       ],
       "head.tilt": [
-       -30.0,
-       -22.5,
-       -15.0,
-       -7.5,
-       0.0,
-       7.5,
-       15.0,
+       30.0,
        22.5,
-       30.0
+       15.0,
+       7.5,
+       0.0,
+       -7.5,
+       -15.0,
+       -22.5,
+       -30.0
       ]
      }
     },
@@ -15364,15 +15376,15 @@
        5.001e-05
       ],
       "torso.tilt": [
-       -10.0,
-       -7.5,
-       -5.0,
-       -2.5,
-       0.0,
-       2.5,
-       5.0,
+       10.0,
        7.5,
-       10.0
+       5.0,
+       2.5,
+       0.0,
+       -2.5,
+       -5.0,
+       -7.5,
+       -10.0
       ]
      }
     },

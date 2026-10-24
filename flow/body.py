@@ -153,6 +153,28 @@ DECLARED = (
     ("shoulder.R.up", "unit", "ParamRightShoulderUp", None),
 )
 
+# Which way + goes for a declared variable, and the measured proxy that
+# checks the rig agrees: (proxy feature of the head, sign the proxy must take
+# when the variable is +). Cubism's own conventions where they are fixed
+# (ParamAngleY + looks up), screen conventions where they are not: Hiyori's
+# ParamAngleZ +30 rolls her face 10 degrees clockwise, so head.tilt is the
+# negated parameter and turns the same way as the measured head.roll. A rig
+# whose proxy disagrees gets its scale negated at measure time.
+SIGN = {
+    "head.yaw": ("head.x", +1, "+ turns the face toward the character's "
+                 "left (screen right)"),
+    "head.pitch": ("head.y", +1, "+ looks up"),
+    "head.tilt": ("head.roll", +1, "+ tilts the head counter-clockwise as "
+                  "seen, like head.roll"),
+    "torso.yaw": ("head.x", +1, "+ turns the upper body toward the "
+                  "character's left"),
+    "torso.pitch": ("head.y", +1, "+ leans back (head rises); - leans in"),
+    "torso.tilt": ("head.roll", +1, "+ tilts the upper body counter-"
+                   "clockwise as seen"),
+    "torso.forward": ("head.scale", +1, "+ brings the body toward the "
+                      "viewer"),
+}
+
 UNITS = {"deg": "degrees", "hu": "head heights", "pct": "percent",
          "unit": "the rig's own parameter units"}
 # One sigma of target error per unit, for the solver's weights, and the
@@ -177,7 +199,8 @@ def canon_spec() -> dict:
     for n, unit, sid, _deg in DECLARED:
         out[n] = {"unit": unit, "source": "declared",
                   "meaning": f"the rig's {sid} (standard id)"
-                  + (" in degrees" if unit == "deg" else "")}
+                  + (" in degrees" if unit == "deg" else "")
+                  + (f"; {SIGN[n][2]}" if n in SIGN else "")}
     for r in POSE_REGIONS:
         out[f"{r}.x"] = {"unit": "hu", "source": "measured",
                          "meaning": f"{r} centroid, + toward the "
@@ -499,11 +522,12 @@ def exact_state(core, bm: "BodyModel", values: dict, variant: int) -> dict:
     off = core.offsets
     dflt = {p: e["default"] for p, e in blob["params"].items()}
     declared = {n: (p, s) for n, (p, s) in blob["declared"].items()}
-    core.set(dict(v["switches"]), dict(v["parts"]))
+    parts = {**blob.get("rest_parts", {}), **v["parts"]}
+    core.set(dict(v["switches"]), parts)
     Vr, vis = core.all_vertices(), core.opacities() > 0.5
     regidx = region_index(leaf_of, off, vis, Vr, origin)
     vals = {**v["switches"], **values}
-    core.set(vals, dict(v["parts"]))
+    core.set(vals, parts)
     F = feature_vector(core.all_vertices(), Vr, regidx, vals, origin, unit,
                        declared, dflt)
     return {f: float(F[k]) for k, f in enumerate(bm.features)
@@ -588,6 +612,7 @@ def read_rig_info(model_json: str, rig_npz: str | None = None,
                                                   times)
             except Exception:  # noqa: BLE001
                 continue
+        frame[("Meta", "name")] = os.path.basename(path)
         info["motion_frames"].append(frame)
     return info
 
@@ -651,6 +676,22 @@ def measure(core, info: dict, log=print) -> dict:
     groups = info.get("pose_groups", [])
     rest_parts = {g[0]: 1.0 for g in groups}
     rest_parts.update({p: 0.0 for g in groups for p in g[1:]})
+    # Parts the motions switch directly, with no pose3 (Azur Lane rigs: their
+    # Unity runtime applies PartOpacity curves as they are, and the Core
+    # leaves every part at opacity 1, so all arm variants draw at once).
+    # Their rest is what the calm motion shows at its start.
+    frames = info.get("motion_frames", [])
+    pose_parts = {p for g in groups for p in g}
+    curve_parts = sorted({cid for f in frames for (tgt, cid) in f
+                          if tgt == "PartOpacity" and cid not in pose_parts})
+    if curve_parts:
+        calm = [f for f in frames if re.search(
+            r"idle|home|main", str(f.get(("Meta", "name"), "")).lower())]
+        for part in curve_parts:
+            src = next((f for f in calm + frames
+                        if ("PartOpacity", part) in f), None)
+            rest_parts[part] = 1.0 if src is None else float(
+                src[("PartOpacity", part)][0] > 0.5)
 
     def geom(values=None, parts=None):
         core.set(values or {}, {**rest_parts, **(parts or {})})
@@ -748,6 +789,32 @@ def measure(core, info: dict, log=print) -> dict:
         if unit_ == "deg" and max(abs(lo[i]), abs(hi[i])) <= 2.0:
             scale = float(deg)
         declared[name] = (p, scale)
+    # Signs from the measured proxy (SIGN): the head's shift, roll or size
+    # between the parameter's two ends.
+    meaning = {}
+    hidx = members("head", vis0)
+    for name, (p, scale) in list(declared.items()):
+        if name not in SIGN:
+            continue
+        proxy, want, text = SIGN[name]
+        i = pids.index(p)
+        Va, _ = geom({p: lo[i]})
+        Vb, _ = geom({p: hi[i]})
+        q = proxy.rsplit(".", 1)[1]
+        fa = region_features(Va, hidx, V0, origin, unit)
+        fb = region_features(Vb, hidx, V0, origin, unit)
+        k = POSE_Q.index(q)
+        d = fb[k] - fa[k]
+        floor = 0.05 if q in ("roll", "scale") else 1e-3
+        if abs(d) < floor:
+            meaning[name] = f"{text} (sign unverified: {proxy} moves "\
+                            f"{d:+.4f} over {p}'s range)"
+            continue
+        if math.copysign(1, d) != want:
+            scale = -scale
+            declared[name] = (p, scale)
+        meaning[name] = f"{text} ({'-' if scale < 0 else ''}{p}; {proxy} "\
+                        f"{d:+.3f} over its range)"
     arm_regions = {"arm.L", "arm.R", "upper_arm.L", "upper_arm.R",
                    "forearm.L", "forearm.R", "hand.L", "hand.R"}
     variant_switch = {p for p, ds in opac_switch.items()
@@ -788,8 +855,8 @@ def measure(core, info: dict, log=print) -> dict:
         roles[p]["declares"] = name
 
     # Variants: the arm configurations the authored motions show, per side,
-    # crossed. A dimension is a pose-group part or an opacity switch that
-    # touches an arm region.
+    # crossed. A dimension is a pose-group part, a part the motions switch
+    # directly (no pose3), or an opacity switch, that touches an arm region.
     side_of_dim = {}
     for g in groups:
         for part in g:
@@ -807,17 +874,31 @@ def measure(core, info: dict, log=print) -> dict:
         if len({side_of_dim[d] for d in dg}) > 1:
             for d in dg:
                 side_of_dim[d] = ""
+    for part in curve_parts:
+        sides = {regs[d]["side"] for d in range(n_d)
+                 if part in texts[d][1::2] and leaf_of[d] in arm_regions}
+        if sides:
+            side_of_dim[("PartOpacity", part)] = (
+                sides.pop() if len(sides) == 1 else "")
+    # As with pose groups: a switched part holding both arms ties the sides,
+    # so all directly switched parts are then judged together.
+    cdims = [("PartOpacity", p) for p in curve_parts
+             if ("PartOpacity", p) in side_of_dim]
+    if any(side_of_dim[d] == "" for d in cdims):
+        for d in cdims:
+            side_of_dim[d] = ""
     for p in variant_switch:
         sides = {regs[d]["side"] for d in opac_switch[p]
                  if leaf_of[d] in arm_regions}
         side_of_dim[("Parameter", p)] = sides.pop() if len(sides) == 1 else ""
-    pose_parts = {p for g in groups for p in g}
     switch_parts = {p: {q for d in opac_switch[p] for q in texts[d][1::2]
-                        if q in pose_parts} for p in variant_switch}
-    variants = _variants(side_of_dim, info.get("motion_frames", []), groups,
+                        if q in pose_parts or q in curve_parts}
+                    for p in variant_switch}
+    variants = _variants(side_of_dim, frames, groups,
                          {p: (roles[p]["min"], roles[p]["max"],
                               roles[p]["default"]) for p in variant_switch},
-                         switch_parts)
+                         switch_parts,
+                         {p: rest_parts[p] for p in curve_parts})
     log(f"body: {n_d} drawables, {len(live)} live params, "
         f"{len(variants)} arm variant(s), held {sorted(held) or '-'}")
 
@@ -956,7 +1037,9 @@ def measure(core, info: dict, log=print) -> dict:
                       for d, r in enumerate(regs)],
         "regions": regions,
         "params": roles,
+        "rest_parts": {p: float(v) for p, v in rest_parts.items()},
         "declared": {n: [p, s] for n, (p, s) in declared.items()},
+        "meaning": meaning,
         "features": feats,
         "variants": out_variants,
     }
@@ -981,10 +1064,12 @@ def _front(core, regs, vis, leaf_of):
     return out
 
 
-def _variants(side_of_dim, frames, groups, switch_ranges, switch_parts=None):
+def _variants(side_of_dim, frames, groups, switch_ranges, switch_parts=None,
+              part_rest=None):
     """Discrete arm configurations: [{name, parts, switches, weight}].
 
-    A dimension is a pose-group part or an opacity switch on an arm. The
+    A dimension is a pose-group part, a part the motions switch directly
+    (part_rest {part: rest opacity}), or an opacity switch on an arm. The
     configurations are those the authored motions show (which part of each
     pose group, where they park each switch), per side and crossed, so a
     combination is offered when each side's half was authored; a motion that
@@ -999,13 +1084,16 @@ def _variants(side_of_dim, frames, groups, switch_ranges, switch_parts=None):
     if not dims:
         return [{"name": "rest", "parts": {}, "switches": {}, "weight": 1.0}]
     switch_parts = switch_parts or {}
+    part_rest = part_rest or {}
     group_of_part = {p: gi for gi, g in enumerate(groups) for p in g}
 
     def rest_value(d):
         tgt, cid = d
         if tgt == "PartOpacity":
             gi = group_of_part.get(cid)
-            return 1.0 if gi is None or groups[gi][0] == cid else 0.0
+            if gi is None:
+                return part_rest.get(cid, 1.0)
+            return 1.0 if groups[gi][0] == cid else 0.0
         return switch_ranges[cid][2]
 
     def snap(d, x):
@@ -1030,6 +1118,12 @@ def _variants(side_of_dim, frames, groups, switch_ranges, switch_parts=None):
         return tuple(out)
 
     def valid(sd, key):
+        # Parts outside any pose group: some arm part must show (a frame
+        # with none is a fade, or a motion hiding the arm for an effect).
+        free = [v for d, v in zip(sd, key) if d[0] == "PartOpacity"
+                and d[1] not in group_of_part]
+        if free and not any(v > 0.5 for v in free):
+            return False
         for g in groups:
             mem = [v for d, v in zip(sd, key) if d[0] == "PartOpacity"
                    and d[1] in g]
@@ -1342,8 +1436,15 @@ class BodyModel:
         y = np.array([targets[t] for t in tk])
         sig = np.array([SIGMA[feature_unit(t)] / max(weights.get(t, 1.0),
                                                      1e-6) for t in tk])
+        # Autonomic and mouth parameters (blink, breath, lip sync) are
+        # rewritten by the runtime every frame, so a pose that leans on them
+        # does not survive playback: Hiyori's solves used ParamBreath up to
+        # 1.0 for hand height. They are free only when their own declared
+        # variable is a target (eye.L.open, mouth.open).
         free = [p for p in self.solvable(k)
-                if np.abs(v["sweeps"][p][1][:, ti]).max() > 1e-9]
+                if np.abs(v["sweeps"][p][1][:, ti]).max() > 1e-9
+                and (self.params[p].get("band") not in ("autonomic", "mouth")
+                     or self.params[p].get("declares") in targets)]
         base = {p: e["default"] for p, e in self.params.items()}
         base.update({p: x for p, x in current.items() if p in base})
         base.update(v["switches"])
@@ -1664,8 +1765,12 @@ def main(argv=None) -> int:
             if not mj:
                 ap.error("--render needs --model-json")
             v0 = bm.variants[0]
-            _render(mj, [(dict(v0["switches"]), dict(v0["parts"])),
-                         (res["params"], res["parts"])], args.render)
+            # Every part the measurement set, not only the arm variant's: a
+            # rig without pose3 draws all its switched parts otherwise.
+            rp = bm.blob.get("rest_parts", {})
+            _render(mj, [(dict(v0["switches"]), {**rp, **v0["parts"]}),
+                         (res["params"], {**rp, **res["parts"]})],
+                    args.render)
     return 0
 
 
