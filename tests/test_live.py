@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 import os
-import shlex
 
 import numpy as np
 import pytest
@@ -389,3 +388,283 @@ def test_one_neutral_mood_makes_the_calls_of_before():
         calls[moods is None] = (f.texts, said["acts"], said["end"])
     assert calls[True] == calls[False]
     assert calls[True][0] == ["Hello there. How are you?", "Fine."]
+
+
+# ------------------------------------------------------------- sentences
+
+from flow import live as lv                                   # noqa: E402
+
+
+def _cut(text, sizes):
+    from tests.test_director import _chunks
+    c = lv.SentenceCutter()
+    out = []
+    for ch in _chunks(text, sizes):
+        out += c.feed(ch)
+    return out + c.close()
+
+
+CUTS = [
+    ("Hello there. [nod] How are you? I'm fine... Really!",
+     ["Hello there.", " [nod] How are you?", " I'm fine...", " Really!"]),
+    ("It costs 3.14 dollars, e.g.this. [pause:0.5] OK",
+     ["It costs 3.14 dollars, e.g.this.", " [pause:0.5] OK"]),
+    ("こんにちは。[nod]元気？うん……そうだね！[gesture:m]",
+     ["こんにちは。", "[nod]元気？", "うん……", "そうだね！", "[gesture:m]"]),
+    ("He said \"no.\" Then left?! [shake]",
+     ["He said \"no.\"", " Then left?!", " [shake]"]),
+    ("「本当？」って聞いた。Yes.", ["「本当？」", "って聞いた。", "Yes."]),
+    ("Line one\nline two", ["Line one\n", "line two"]),
+]
+
+
+@pytest.mark.parametrize("text,want", CUTS)
+def test_sentences_are_cut_from_streamed_chunks(text, want):
+    """However the reply is chunked -- a tag, a "..." or a "?!" split
+    across chunks -- the cuts are the same, and nothing is lost."""
+    rng = np.random.default_rng(len(text))
+    for sizes in ([1], [2, 5], [7], [len(text)],
+                  list(rng.integers(1, 9, 30))):
+        got = _cut(text, sizes)
+        assert got == want, sizes
+        assert "".join(got) == text
+
+
+def test_a_long_first_sentence_is_cut_at_a_clause():
+    text = ("Well, I was thinking about what you said to me yesterday "
+            "evening at the station, and honestly I think you were right.")
+    got = _cut(text, [3])
+    assert len(got) == 2 and got[0].endswith("station,")
+    # A later sentence gets the longer cap.
+    got = _cut("Hi. " + text, [3])
+    assert got == ["Hi.", " " + text]
+    jp = "あのね、きのうのことなんだけど、ずっと考えていたの、やっぱりあなたが正しかったって。"
+    got = _cut(jp, [2])
+    assert len(got) == 2 and got[0].endswith("、")
+
+
+# ---------------------------------------------------------- the pipeline
+
+class FakeClock:
+    def __init__(self, t=0.0):
+        self.t = t
+
+    def now(self):
+        return self.t
+
+
+class SpeakingTTS:
+    """A TTS whose clip for a text is 0.2 s quiet, 0.05 s per character of
+    voice, 0.2 s quiet; records texts and moods."""
+
+    whole = False
+    last_voice = "fake"
+
+    def __init__(self, clock=None, cost=0.4):
+        self.calls, self.clock, self.cost = [], clock, cost
+
+    def synth(self, text, mood=None):
+        from tests.test_speech import quiet, vowel
+        self.calls.append((text, mood))
+        if self.clock is not None:
+            self.clock.t += self.cost          # synthesis takes a while
+        x = np.concatenate([quiet(0.2), vowel(0.05 * len(text)),
+                            quiet(0.2, seed=1)]).astype(np.float32)
+        from tests.test_speech import SR
+        return x, SR, None
+
+    def mood_voice(self, mood):
+        return None
+
+
+def _performer(tmp_path, reply, clock=None, tts=None):
+    import argparse
+    rig = _rig(tmp_path)
+    clock = clock or FakeClock(5.0)
+    hub = lv.Hub(clock)
+    stream = fs.MotionStream(rig, seed=0, autonomic=False,
+                             log=lambda s: None)
+    a = argparse.Namespace(seed=0, lead=0.25, gap=0.12, lipsync="open",
+                           mouth_gain=1.0, cjk_rate=dr.CJK_RATE,
+                           latin_rate=dr.LATIN_RATE, mood="auto")
+    labels = dr.gesture_labels(["m.motion3.json", "home.motion3.json"])
+    run = {"system": "sys", "labels": labels, "offered": None}
+    tts = tts if tts is not None else SpeakingTTS(clock)
+    p = lv.Performer(a, run, rig, stream, clock, hub,
+                     dr.TextBackend(reply), tts, log=lambda s: None)
+    return p, hub, stream, clock, tts
+
+
+def _events(hub, kind):
+    return [m for m in hub.history if m["type"] == kind]
+
+
+def test_each_sentence_is_spoken_and_staged_at_one_server_time(tmp_path):
+    """Sentence by sentence: audio at now + lead on the frame grid, the
+    next after the previous one's audio plus the gap; the tags realized at
+    their place in that audio; the mouth curve starting on the audio's
+    frame; subtitles on the same clock; the mood picked per sentence."""
+    reply = ("Hello there. [brow:down] I'm so sorry... [nod] "
+             "[gesture:home] Thank you!")
+    p, hub, stream, clock, tts = _performer(tmp_path, reply)
+    p.turn("hi")
+    au = _events(hub, "audio")
+    assert [m["text"] for m in au] == ["Hello there.", "I'm so sorry...",
+                                       "Thank you!"]
+    assert [c[1] for c in tts.calls] == [None, "sad", "happy"]
+    # The first clip waits on its own TTS only (0.4 s here) plus the lead.
+    assert au[0]["t"] == pytest.approx(5.0 + 0.4 + 0.25, abs=1 / FPS)
+    for m in au:
+        assert m["t"] * FPS == pytest.approx(round(m["t"] * FPS), abs=1e-3)
+    for m0, m1 in zip(au, au[1:]):
+        assert m1["t"] >= m0["t"] + m0["dur"] + 0.12 - 1e-6
+    # Directed tokens sit at their sentence's audio time.
+    mine = [k for k in stream.pending if k.get("src") == "director"]
+    brow = [k for k in mine if k["type"] == "brow"]
+    assert brow and brow[0]["t"] == pytest.approx(au[1]["t"] + 0.2, abs=0.05)
+    ges = [k for k in mine if k["type"] == "gesture" and not k.get("settle")]
+    assert ges and ges[0]["t"] >= au[2]["t"] - 1e-6
+    # Mouth curves start on each clip's frame.
+    assert [m[0] for m in stream.mouths] == [round(m["t"] * FPS) for m in au]
+    subs = _events(hub, "sub")
+    assert subs[0]["t"] == pytest.approx(au[0]["t"] + 0.2, abs=0.05)
+    rep = _events(hub, "reply")[0]
+    assert rep["first_audio_after"] == pytest.approx(0.65, abs=1 / FPS)
+    assert p.messages[-1] == {"role": "assistant", "content": reply}
+
+
+def test_lip_sync_follows_the_audio_on_the_frame_clock(tmp_path):
+    """A/V on one clock: the mouth is open on exactly the frames whose
+    time falls in the voiced part of the clip that plays then."""
+    p, hub, stream, clock, tts = _performer(tmp_path, "Hello there, friend.")
+    clock.t = 0.0
+    tts.cost = 0.0
+    p.turn("hi")
+    (au,) = _events(hub, "audio")
+    t0 = au["t"]
+    n = int((t0 + au["dur"] + 1.0) * FPS)
+    opened = []
+    for f in range(n):
+        over, _ = stream.frame()
+        opened.append(over.get("ParamMouthOpenY", 0.0) > 0.3)
+    t = np.arange(n) / FPS - t0
+    voice = (t > 0.2 + 0.03) & (t < 0.2 + 0.05 * len("Hello there, friend.")
+                                - 0.03)
+    silent = (t < 0.2 - 0.04) | (t > au["dur"] - 0.2 + 0.06)
+    assert np.mean(np.array(opened)[voice]) > 0.9
+    assert not np.array(opened)[silent].any()
+
+
+def test_tags_after_the_last_words_land_at_their_end(tmp_path):
+    p, hub, stream, clock, tts = _performer(tmp_path, "Okay. [nod]")
+    p.turn("hi")
+    (au,) = _events(hub, "audio")
+    nods = [k for k in stream.pending if k.get("src") == "director"
+            and k["type"] == "head_turn"]
+    assert nods and nods[0]["t"] == pytest.approx(au["t"] + au["dur"],
+                                                  abs=2 / FPS)
+
+
+# ---------------------------------------------------------------- server
+
+def _get(url, timeout=5):
+    import urllib.request
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    return opener.open(url, timeout=timeout)
+
+
+def test_server_page_line_frames_and_audio(tmp_path):
+    """On an ephemeral port, with a fake renderer: the page, the clock, a
+    posted line spoken (an audio event on /events, the clip on /audio), and
+    timestamped frames on /video and /mjpeg."""
+    import threading
+    import urllib.request
+    clock = lv.Clock()
+    p, hub, stream, _, tts = _performer(tmp_path, "Hello there. [nod] Bye.",
+                                        clock=clock)
+    p.hub = hub = lv.Hub(clock)
+    tts.clock = None
+    enc = lv.Encoder(hub, 70)
+    loop = lv.RenderLoop(stream, lv.FakeBackend(64), clock, enc, FPS,
+                         log=lambda s: None, report=0)
+    srv = lv.Server(lv.App(clock, hub, FPS, p, loop), "127.0.0.1", 0)
+    stop = threading.Event()
+    th = threading.Thread(target=loop.run, args=(stop,), daemon=True)
+    try:
+        srv.start()
+        th.start()
+        p.start()
+        base = f"http://127.0.0.1:{srv.server_address[1]}"
+        page = _get(base + "/").read().decode("utf-8")
+        assert "<title>Tsukuyomi live</title>" in page and "/video" in page
+        t = json.loads(_get(base + "/clock").read())["t"]
+        assert abs(t - clock.now()) < 0.5
+        ev_stream = _get(base + "/events")
+        req = urllib.request.Request(
+            base + "/say", data=json.dumps({"text": "hi"}).encode(),
+            headers={"Content-Type": "application/json"}, method="POST")
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        r = opener.open(req, timeout=5)
+        assert r.status == 202 and json.loads(r.read())["ok"]
+        audio = None
+        for line in ev_stream:
+            line = line.decode("utf-8").strip()
+            if line.startswith("data:"):
+                m = json.loads(line[5:])
+                if m["type"] == "audio":
+                    audio = m
+                    break
+        assert audio is not None and audio["text"] == "Hello there."
+        assert audio["t"] > t
+        wav = _get(base + audio["url"]).read()
+        assert wav[:4] == b"RIFF" and len(wav) > 1000
+        v = _get(base + "/video")
+        head = v.read(lv.FRAME_HEAD.size)
+        magic, f, ts, n = lv.FRAME_HEAD.unpack(head)
+        jpg = v.read(n)
+        assert magic == lv.FRAME_MAGIC and jpg[:2] == b"\xff\xd8"
+        assert ts == pytest.approx(f / FPS)
+        mj = _get(base + "/mjpeg")
+        assert mj.headers["Content-Type"].startswith("multipart/x-mixed")
+        assert mj.read(9) == b"--frame\r\n"
+        st = json.loads(_get(base + "/state").read())
+        assert st["rendered"] > 0
+        assert _get(base + "/frame.jpg").read()[:2] == b"\xff\xd8"
+        for h in (ev_stream, v, mj):
+            h.close()
+    finally:
+        stop.set()
+        srv.stop()
+        th.join(timeout=5)
+        enc.close()
+
+
+def test_render_loop_skips_late_frames_but_steps_them(tmp_path):
+    """A renderer slower than the frame rate: frames are rendered fewer
+    than the clock's, every frame's state is still stepped, the frame
+    numbers keep the clock, and dt covers the skipped time."""
+    import threading
+    rig = _rig(tmp_path)
+    stream = fs.MotionStream(rig, seed=0, autonomic=False,
+                             log=lambda s: None)
+    hub = lv.Hub(lv.Clock())
+    got = []
+    hub.frame = lambda f, t, jpeg: got.append((f, t))
+
+    class Slow(lv.FakeBackend):
+        dts = []
+
+        def render(self, overrides=None, parts=None):
+            self.dts.append(self.dt)
+            return super().render(overrides, parts)
+
+    be = Slow(32, cost=0.07)                # ~14 fps of 30
+    enc = lv.Encoder(hub, 60)
+    loop = lv.RenderLoop(stream, be, lv.Clock(), enc, FPS,
+                         log=lambda s: None, report=0)
+    loop.run(threading.Event(), max_frames=45)
+    enc.close()
+    assert stream.f == 45 and loop.f == 45
+    assert loop.skipped > 10 and loop.rendered + loop.skipped == 45
+    assert max(be.dts) > 1.5 / FPS
+    assert [t for f, t in got] == [f / FPS for f, _ in got]
