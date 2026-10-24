@@ -1,0 +1,409 @@
+[live2d] third-party wrapper (0.7.0.4), not affiliated with Live2D Inc.
+director: gesture hiyori_m01 [measured]: shoulders move; both arms move; 4.7 s
+director: gesture hiyori_m02 [measured]: both hands move widely; cheeks blush; 5.9 s
+director: gesture hiyori_m03 [measured]: both arms and hands swing back and forth; switches leg pose; 4.2 s, lively
+director: gesture hiyori_m04 [measured]: cheeks blush; both arms stay still; 4.4 s, calm
+director: gesture hiyori_m05 [measured]: both arms move widely; shoulders stay still; 8.0 s, long, calm
+director: gesture hiyori_m06 [measured]: both hands swing back and forth; shoulders swing back and forth; switches arm pose; 5.4 s, lively
+director: gesture hiyori_m07 [measured]: both arms move widely; shoulders move widely; 1.9 s, short
+director: gesture hiyori_m08 [measured]: shoulders swing back and forth; both hands move widely; switches arm pose; 2.1 s, short, lively
+director: gesture hiyori_m09 [measured]: cheeks blush; 1.6 s, short, lively
+director: gesture hiyori_m10 [measured]: brows change; shoulders stay still; 4.2 s, calm
+director: 10 gesture labels: hiyori_m01, hiyori_m02, hiyori_m03, hiyori_m04, hiyori_m05, hiyori_m06, hiyori_m07, hiyori_m08, hiyori_m09, hiyori_m10
+67 params: expressive 28, physics 34, autonomic 3, mouth 2, discrete 0
+events: switch-like role columns left to the rig's own motions: brow_lx=ParamBrowLX, brow_rx=ParamBrowRX
+  role body_x   -> ParamBodyAngleX  [id]
+  role body_y   -> ParamBodyAngleY  [id]
+  role body_z   -> ParamBodyAngleZ  [id]
+  role brow_l   -> ParamBrowLY  [id]
+  role brow_la  -> ParamBrowLAngle  [id]
+  role brow_lf  -> ParamBrowLForm  [id]
+  role brow_r   -> ParamBrowRY  [id]
+  role brow_ra  -> ParamBrowRAngle  [id]
+  role brow_rf  -> ParamBrowRForm  [id]
+  role gaze_x   -> ParamEyeBallX  [id]
+  role gaze_y   -> ParamEyeBallY  [id]
+  role head_x   -> ParamAngleX  [id]
+  role head_y   -> ParamAngleY  [id]
+  role head_z   -> ParamAngleZ  [id]
+events: body adapted to the rig's own motions (weights {'body_x': 0.909, 'body_y': 0.909, 'body_z': 0.909, 'w_hold': 0.783, 'w_move': 0.902}; own holds 1 +17 censored, 0 unanimated clips, moves 46): hold 0.45s move 0.66s p_chain 0.74
+events: idle profile calm; gestures from 9 of 10 motions (by group): Hiyori_m01* 0.0831, Hiyori_m02* 0.0822, Hiyori_m03* 0.1318, Hiyori_m04 0.0845, Hiyori_m05* 0.0631, Hiyori_m06* 0.1324, Hiyori_m07* 0.1139, Hiyori_m08* 0.1967, Hiyori_m09* 0.1145, Hiyori_m10* 0.0251  (* calm; mean speed/frame)
+speech: voice config rigs/Hiyori.voice.json: en edge en-US-AnaNeural; ja edge ja-JP-NanamiNeural
+mouth: Hiyori: no talking curves in 10 motions (no lip flaps on the open/vowel parameters) -> open-only on the mouth-open parameter, rest to maximum (as before)
+backend: order=sandwich, timestep=fixed 0.0333s (native), parts=24 (pose-fed)
+live: serving http://127.0.0.1:8765/ (ssh -L 8765:127.0.0.1:8765 <server>, then open that address)
+live: 30.1 fps rendered of 30 (0 frames skipped, 10.1 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+deepseek: stop stop; usage {'prompt_tokens': 818, 'completion_tokens': 42, 'prompt_cache_hit_tokens': 640}
+live: turn 1.1 cut 0.88s, tts 2.20s, audio at 3.35s (2.86s), mood neutral; [look:viewer] [gesture:hiyori_m09]; 1 idle tokens displaced: Ehh, it's good to see you too!
+live: turn 1.2 cut 0.96s, tts 1.37s, audio at 6.35s (3.07s), mood neutral; [tilt:left]: Did you come all this way just for me?
+live: turn 1: model first text 0.63s, first audio 3.35s after enter; reply: [look:viewer][gesture:hiyori_m09] Ehh, it's good to see you too! [tilt:left] Did you come all this way just for me?
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+deepseek: stop stop; usage {'prompt_tokens': 866, 'completion_tokens': 31, 'prompt_cache_hit_tokens': 640}
+live: turn 2.1 cut 0.71s, tts 1.33s, audio at 2.31s (1.42s), mood surprised (rate +5% pitch +18Hz volume +5%); [brow:up]; 1 idle tokens displaced: Really?
+live: turn 2.2 cut 0.82s, tts 1.47s, audio at 3.88s (2.54s), mood shy (rate -5% pitch +4Hz volume -20%); [look:away]; 3 idle tokens displaced: You're making me blush...
+live: turn 2.3 cut 0.93s, tts 1.46s, audio at 6.55s (3.05s), mood neutral; [blink]: Come on, tell me about your day!
+live: turn 2: model first text 0.63s, first audio 2.31s after enter; reply: [brow:up] Really? [look:away] You're making me blush... [blink] Come on, tell me about your day!
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+deepseek: stop stop; usage {'prompt_tokens': 908, 'completion_tokens': 34, 'prompt_cache_hit_tokens': 768}
+live: turn 3.1 cut 0.80s, tts 1.18s, audio at 2.26s (1.46s), mood neutral; [nod]: Sure!
+live: turn 3.2 cut 0.91s, tts 1.33s, audio at 3.86s (2.83s), mood neutral; [gesture:hiyori_m03]; 1 idle tokens displaced: Here, look—like this?
+live: turn 3.3 cut 0.98s, tts 1.23s, audio at 6.82s (1.97s), mood neutral; [tilt:right]: Did I do it right?
+live: turn 3: model first text 0.69s, first audio 2.26s after enter; reply: [nod] Sure! [gesture:hiyori_m03] Here, look—like this? [tilt:right] Did I do it right?
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+deepseek: stop stop; usage {'prompt_tokens': 948, 'completion_tokens': 28, 'prompt_cache_hit_tokens': 768}
+live: turn 4.1 cut 0.73s, tts 1.41s, audio at 2.41s (2.42s), mood annoyed (rate +4% pitch -6Hz volume +5%); [brow:furrow]: Huh, not exactly?
+live: turn 4.2 cut 0.84s, tts 1.43s, audio at 4.98s (3.60s), mood neutral; [lean:in]: Then show me how it should be, come on!
+live: turn 4: model first text 0.59s, first audio 2.41s after enter; reply: [brow:furrow] Huh, not exactly? [lean:in] Then show me how it should be, come on!
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+deepseek: stop stop; usage {'prompt_tokens': 988, 'completion_tokens': 38, 'prompt_cache_hit_tokens': 768}
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: turn 5.1 cut 0.83s, tts 1.10s, audio at 2.18s (1.70s), mood neutral; [gesture:hiyori_m07]: Like this?
+live: turn 5.2 cut 0.89s, tts 1.33s, audio at 4.01s (3.53s), mood neutral; [look:viewer]; 1 idle tokens displaced: Up high, and waving both hands!
+live: turn 5.3 cut 0.97s, tts 1.24s, audio at 7.68s (2.52s), mood neutral; [nod]: I've got it now, right?
+live: turn 5: model first text 0.64s, first audio 2.18s after enter; reply: [gesture:hiyori_m07] Like this? [look:viewer] Up high, and waving both hands! [nod] I've got it now, right?
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.7 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+deepseek: stop stop; usage {'prompt_tokens': 1035, 'completion_tokens': 39, 'prompt_cache_hit_tokens': 896}
+live: turn 6.1 cut 0.64s, tts 1.24s, audio at 2.15s (2.38s), mood neutral; [look:down]; 3 idle tokens displaced: Okay, right leg...
+stream: directed saccade for 143.27s starts 0.42s late (its group is finishing an idle move)
+live: turn 6.2 cut 0.72s, tts 1.24s, audio at 4.65s (2.28s), mood neutral; [gesture:hiyori_m08]: one, and two!
+live: turn 6.3 cut 0.83s, tts 1.99s, audio at 7.05s (3.10s), mood surprised (rate +5% pitch +18Hz volume +5%); [brow:up]: Hey, did that actually look okay?
+live: turn 6: model first text 0.51s, first audio 2.15s after enter; reply: [look:down] Okay, right leg... [gesture:hiyori_m08] one, and two! [brow:up] Hey, did that actually look okay?
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+deepseek: stop stop; usage {'prompt_tokens': 1082, 'completion_tokens': 25, 'prompt_cache_hit_tokens': 896}
+live: turn 7.1 cut 0.87s, tts 1.47s, audio at 2.62s (2.71s), mood neutral; [look:away]; 8 idle tokens displaced: Ehh, that bad, huh...
+stream: directed saccade for 158.23s starts 0.13s late (its group is finishing an idle move)
+live: turn 7.2 cut 0.97s, tts 1.40s, audio at 5.46s (3.00s), mood neutral; [shake]: I'm not as graceful as I thought.
+live: turn 7: model first text 0.70s, first audio 2.62s after enter; reply: [look:away] Ehh, that bad, huh... [shake] I'm not as graceful as I thought.
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.8 ms per frame to render, 3 encoder drops)
+deepseek: stop stop; usage {'prompt_tokens': 1118, 'completion_tokens': 39, 'prompt_cache_hit_tokens': 896}
+live: turn 8.1 cut 0.79s, tts 1.20s, audio at 2.24s (1.97s), mood surprised (rate +5% pitch +18Hz volume +5%); [brow:up]; 1 idle tokens displaced: Wait, really?
+live: turn 8.2 cut 0.85s, tts 1.21s, audio at 4.34s (2.64s), mood neutral; [look:down]; 5 idle tokens displaced: I could've sworn I was...
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.7 ms per frame to render, 3 encoder drops)
+live: turn 8.3 cut 1.02s, tts 1.26s, audio at 7.10s (3.58s), mood annoyed (rate +4% pitch -6Hz volume +5%); [brow:furrow]: Ugh, my body just won't listen today!
+live: turn 8: model first text 0.68s, first audio 2.24s after enter; reply: [brow:up] Wait, really? [look:down] I could've sworn I was... [brow:furrow] Ugh, my body just won't listen today!
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.9 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.7 ms per frame to render, 3 encoder drops)
+deepseek: stop stop; usage {'prompt_tokens': 1172, 'completion_tokens': 36, 'prompt_cache_hit_tokens': 1024}
+live: turn 9.1 cut 0.86s, tts 1.30s, audio at 2.45s (3.31s), mood neutral; [nod]; 1 idle tokens displaced: Right hand waving, leg kicking...
+live: turn 9.2 cut 0.94s, tts 1.34s, audio at 5.88s (1.80s), mood neutral; [gesture:hiyori_m06]: here goes!
+live: turn 9.3 cut 1.03s, tts 1.24s, audio at 7.82s (2.30s), mood neutral; [look:viewer]; 7 idle tokens displaced: Did I get it that time?
+live: turn 9: model first text 0.73s, first audio 2.45s after enter; reply: [nod] Right hand waving, leg kicking... [gesture:hiyori_m06] here goes! [look:viewer] Did I get it that time?
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+deepseek: stop stop; usage {'prompt_tokens': 1214, 'completion_tokens': 38, 'prompt_cache_hit_tokens': 1024}
+live: 29.7 fps rendered of 30 (3 frames skipped, 10.9 ms per frame to render, 3 encoder drops)
+live: turn 10.1 cut 1.01s, tts 1.17s, audio at 2.46s (1.56s), mood surprised (rate +5% pitch +18Hz volume +5%); [brow:up]: I did it?!
+stream: directed brow for 211.50s starts 0.72s late (its group is finishing an idle move)
+live: turn 10.2 cut 1.09s, tts 1.33s, audio at 4.16s (2.11s), mood happy (rate +6% pitch +12Hz volume +0%); [gesture:hiyori_m02]: Yay, finally!
+live: turn 10.3 cut 1.23s, tts 1.27s, audio at 6.39s (3.60s), mood neutral; [lean:in]; 1 idle tokens displaced: You have no idea how relieved I am!
+live: turn 10: model first text 0.90s, first audio 2.46s after enter; reply: [brow:up] I did it?! [gesture:hiyori_m02] Yay, finally! [lean:in] You have no idea how relieved I am!
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.7 ms per frame to render, 3 encoder drops)
+deepseek: stop stop; usage {'prompt_tokens': 1260, 'completion_tokens': 29, 'prompt_cache_hit_tokens': 1024}
+live: turn 11.1 cut 0.88s, tts 1.17s, audio at 2.34s (1.70s), mood neutral; [look:left]; 2 idle tokens displaced: Like this?
+live: turn 11.2 cut 0.92s, tts 1.32s, audio at 4.17s (3.14s), mood neutral; [nod]: Yep, looking left and nodding.
+live: turn 11.3 cut 0.99s, tts 1.33s, audio at 7.44s (1.80s), mood neutral; [look:viewer]: How was that?
+live: turn 11: model first text 0.76s, first audio 2.34s after enter; reply: [look:left] Like this? [nod] Yep, looking left and nodding. [look:viewer] How was that?
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+deepseek: stop stop; usage {'prompt_tokens': 1294, 'completion_tokens': 31, 'prompt_cache_hit_tokens': 1152}
+live: turn 12.1 cut 0.69s, tts 1.21s, audio at 2.17s (1.37s), mood happy (rate +6% pitch +12Hz volume +0%); [brow:up]: Great!
+stream: directed brow for 234.66s starts 0.11s late (its group is finishing an idle move)
+live: turn 12.2 cut 0.78s, tts 1.26s, audio at 3.67s (2.45s), mood neutral; [tilt:left]: Then what's the next move?
+live: turn 12.3 cut 0.87s, tts 1.40s, audio at 6.27s (2.26s), mood neutral; [lean:in]: I'm warmed up now!
+live: turn 12: model first text 0.58s, first audio 2.17s after enter; reply: [brow:up] Great! [tilt:left] Then what's the next move? [lean:in] I'm warmed up now!
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.7 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.7 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.7 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.7 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.1 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.1 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.1 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 29.9 fps rendered of 30 (1 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 29.8 fps rendered of 30 (2 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 29.6 fps rendered of 30 (4 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.7 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 29.6 fps rendered of 30 (4 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.7 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.7 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.7 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.9 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.9 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.7 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.8 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.7 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 29.6 fps rendered of 30 (4 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.8 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.8 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.7 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.7 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.8 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.7 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.7 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.7 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.7 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.7 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.7 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.8 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.8 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.7 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.8 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.7 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.8 ms per frame to render, 3 encoder drops)
+live: 29.0 fps rendered of 30 (10 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.4 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.3 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.7 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 11.2 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.6 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 10.5 ms per frame to render, 3 encoder drops)
+live: 30.0 fps rendered of 30 (0 frames skipped, 11.0 ms per frame to render, 3 encoder drops)
