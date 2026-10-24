@@ -23,6 +23,22 @@ regions with states, limits and positions, seen from the outside as well
 an easy case for this (no contact, no dynamics beyond decorative physics),
 and the same body description should carry over to 3D avatars.
 
+## The baseline stays
+
+The tag pipeline is not replaced; it is the baseline every embodiment step
+is measured against, and the fallback while those steps are unproven:
+
+- **Stage 1** (works now): API model writes tags; director, events, voice
+  and the live loop play them.
+- **Stage 2** (the original plan): a small local model maps its hidden
+  states to the same event vocabulary, trained on words ↔ events. Much
+  easier than E4 and may well reach good quality on its own.
+
+Each embodiment step (E2 onwards) is judged against these with the same
+tools: blind A/B on rendered clips (`flow/legacy/abtest.py`), the motion
+scorer (`flow/score.py`), and latency in the live loop. A step that does not
+beat the baseline does not replace it.
+
 ## 1. One body description for every model
 
 A canonical body state, shared by Live2D and 3D, that the model thinks in:
