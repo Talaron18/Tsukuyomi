@@ -1,0 +1,2 @@
+[pose {"eye.L.open": 1.2, "eye.R.open": 1.2, "brow.L.lift": 0.9, "brow.R.lift": 0.9, "hold": 2}] Fleet admiral?! No way, that's amazing!
+[pose {"hand.L.y": "@shoulder.y", "hand.L.x": 0.5, "cheek.blush": 0.5, "mouth.form": 1, "hold": 3}] Come on, tell me everything — was there a big ceremony?

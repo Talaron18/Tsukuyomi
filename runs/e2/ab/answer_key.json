@@ -1,0 +1,62 @@
+{
+ "01": {
+  "rig": "lafei-3",
+  "A": "body",
+  "B": "tags"
+ },
+ "02": {
+  "rig": "Hiyori-2",
+  "A": "tags",
+  "B": "body"
+ },
+ "03": {
+  "rig": "lafei-1",
+  "A": "body",
+  "B": "tags"
+ },
+ "04": {
+  "rig": "Hiyori-4",
+  "A": "tags",
+  "B": "body"
+ },
+ "05": {
+  "rig": "Hiyori-5",
+  "A": "body",
+  "B": "tags"
+ },
+ "06": {
+  "rig": "lafei-5",
+  "A": "tags",
+  "B": "body"
+ },
+ "07": {
+  "rig": "Hiyori-0",
+  "A": "body",
+  "B": "tags"
+ },
+ "08": {
+  "rig": "Hiyori-3",
+  "A": "body",
+  "B": "tags"
+ },
+ "09": {
+  "rig": "lafei-0",
+  "A": "tags",
+  "B": "body"
+ },
+ "10": {
+  "rig": "lafei-4",
+  "A": "tags",
+  "B": "body"
+ },
+ "11": {
+  "rig": "lafei-2",
+  "A": "tags",
+  "B": "body"
+ },
+ "12": {
+  "rig": "Hiyori-1",
+  "A": "tags",
+  "B": "body"
+ }
+}

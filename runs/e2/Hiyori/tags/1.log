@@ -1,0 +1,109 @@
+[live2d] third-party wrapper (0.7.0.4), not affiliated with Live2D Inc.
+[live2d] third-party wrapper (0.7.0.4), not affiliated with Live2D Inc.
+[live2d.v3] Cubism Native, Python 3.10.20
+[live2d.v3] official: https://www.live2d.com/sdk/download/native/
+Live2D Cubism SDK Core Version 5.1.0
+[INFO]  [Pal] Init Shader Dir: /home/main/venv/hongenv/lib/python3.11/site-packages/live2d/v3/
+[INFO]  [CSM][I]Live2D Cubism Core version: 05.01.0000 (83951616)
+
+[INFO]  [CSM][I]CubismFramework::StartUp() is complete.
+
+[INFO]  [CSM][I]CubismFramework::Initialize() is complete.
+
+[INFO]  allocate: cpp Model(at=0x6bcac60)
+[INFO]  load modelSetting: CubismWebSamples/Samples/Resources/Hiyori/Hiyori.model3.json
+[INFO]  create model: Hiyori.moc3
+Live2D Cubism SDK Core Version 5.1.0
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Hiyori/motions/Hiyori_m01.motion3.json => [Idle_0] 
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Hiyori/motions/Hiyori_m02.motion3.json => [Idle_1] 
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Hiyori/motions/Hiyori_m03.motion3.json => [Idle_2] 
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Hiyori/motions/Hiyori_m05.motion3.json => [Idle_3] 
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Hiyori/motions/Hiyori_m06.motion3.json => [Idle_4] 
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Hiyori/motions/Hiyori_m07.motion3.json => [Idle_5] 
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Hiyori/motions/Hiyori_m08.motion3.json => [Idle_6] 
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Hiyori/motions/Hiyori_m09.motion3.json => [Idle_7] 
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Hiyori/motions/Hiyori_m10.motion3.json => [Idle_8] 
+[INFO]  load motion: CubismWebSamples/Samples/Resources/Hiyori/motions/Hiyori_m04.motion3.json => [TapBody_0] 
+67 params: expressive 28, physics 34, autonomic 3, mouth 2, discrete 0
+seeded from clips2/Hiyori.npz
+events: switch-like role columns left to the rig's own motions: brow_lx=ParamBrowLX, brow_rx=ParamBrowRX
+  role body_x   -> ParamBodyAngleX  [id]
+  role body_y   -> ParamBodyAngleY  [id]
+  role body_z   -> ParamBodyAngleZ  [id]
+  role brow_l   -> ParamBrowLY  [id]
+  role brow_la  -> ParamBrowLAngle  [id]
+  role brow_lf  -> ParamBrowLForm  [id]
+  role brow_r   -> ParamBrowRY  [id]
+  role brow_ra  -> ParamBrowRAngle  [id]
+  role brow_rf  -> ParamBrowRForm  [id]
+  role gaze_x   -> ParamEyeBallX  [id]
+  role gaze_y   -> ParamEyeBallY  [id]
+  role head_x   -> ParamAngleX  [id]
+  role head_y   -> ParamAngleY  [id]
+  role head_z   -> ParamAngleZ  [id]
+events: body adapted to the rig's own motions (weights {'body_x': 0.909, 'body_y': 0.909, 'body_z': 0.909, 'w_hold': 0.783, 'w_move': 0.902}; own holds 1 +17 censored, 0 unanimated clips, moves 46): hold 0.45s move 0.66s p_chain 0.74
+events: rendering 20 tokens from runs/e2/Hiyori/tags/1/tokens.json
+events: 14 roles from ev.json; tokens blink 2, body_shift 2, brow 2, fixate 4, gesture 1, head_turn 3, mouth 1, saccade 4, underlay 1
+base state from Hiyori_m01.motion3.json: 2 part opacities, 10 held parameters
+mouth: lip sync on ParamMouthOpenY
+events: underlay Hiyori_m01.motion3.json x0.5 during rests on 1 loose parameters: ParamHairAhoge
+events: 1 gesture segments from 10 motion files (arms will score as copying against the rig's own clips; novelty is judged on the role columns)
+snapping 4 switch-like parameters: ParamBrowLX, ParamBrowRX, ParamCheek, ParamLeg
+backend: order=sandwich, timestep=fixed 0.0333s (native), parts=24 (pose-fed)
+rendered 290 frames -> runs/e2/Hiyori/tags/1/render/
+contact sheet -> runs/e2/Hiyori/tags/1/render/sheet.png
+video -> runs/e2/Hiyori/tags/1/render/preview.mp4
+[INFO]  deallocate: cpp Model(at=0x6bcac60)
+[INFO]  deallocate: PyModelObject(at=0x7fc14eccbc90)
+[live2d.v3] Cubism Native, Python 3.10.20
+[live2d.v3] official: https://www.live2d.com/sdk/download/native/
+Live2D Cubism SDK Core Version 5.1.0
+director: gesture hiyori_m01 [measured]: shoulders move; both arms move; 4.7 s
+director: gesture hiyori_m02 [measured]: both hands move widely; cheeks blush; 5.9 s
+director: gesture hiyori_m03 [measured]: both arms and hands swing back and forth; switches leg pose; 4.2 s, lively
+director: gesture hiyori_m04 [measured]: cheeks blush; both arms stay still; 4.4 s, calm
+director: gesture hiyori_m05 [measured]: both arms move widely; shoulders stay still; 8.0 s, long, calm
+director: gesture hiyori_m06 [measured]: both hands swing back and forth; shoulders swing back and forth; switches arm pose; 5.4 s, lively
+director: gesture hiyori_m07 [measured]: both arms move widely; shoulders move widely; 1.9 s, short
+director: gesture hiyori_m08 [measured]: shoulders swing back and forth; both hands move widely; switches arm pose; 2.1 s, short, lively
+director: gesture hiyori_m09 [measured]: cheeks blush; 1.6 s, short, lively
+director: gesture hiyori_m10 [measured]: brows change; shoulders stay still; 4.2 s, calm
+director: 10 gesture labels: hiyori_m01, hiyori_m02, hiyori_m03, hiyori_m04, hiyori_m05, hiyori_m06, hiyori_m07, hiyori_m08, hiyori_m09, hiyori_m10
+speech: voice config rigs/Hiyori.voice.json: en edge en-US-AnaNeural; ja edge ja-JP-NanamiNeural
+mouth: Hiyori: no talking curves in 10 motions (no lip flaps on the open/vowel parameters) -> open-only on the mouth-open parameter, rest to maximum (as before)
+deepseek: stop stop; usage {'prompt_tokens': 817, 'completion_tokens': 32, 'prompt_cache_hit_tokens': 640}
+director: model 2.2s, first text after 1.9s
+director: reply: [brow:up] The beach? [lean:in] Wait, really, with you? [nod] Yes, yes, a hundred times yes!
+speech: moods surprised from 'The beach? W' (rate +5% pitch +18Hz volume +5%), neutral from 'Wait, really'
+speech: 8.18s audio (en-US-AnaNeural), tag times from words -> speech.wav
+director: 65 spoken characters, 8.18s speech, 3 actions, 3 subtitles; rendering 9.68s
+67 params: expressive 28, physics 34, autonomic 3, mouth 2, discrete 0
+seeded from clips2/Hiyori.npz
+events: switch-like role columns left to the rig's own motions: brow_lx=ParamBrowLX, brow_rx=ParamBrowRX
+  role body_x   -> ParamBodyAngleX  [id]
+  role body_y   -> ParamBodyAngleY  [id]
+  role body_z   -> ParamBodyAngleZ  [id]
+  role brow_l   -> ParamBrowLY  [id]
+  role brow_la  -> ParamBrowLAngle  [id]
+  role brow_lf  -> ParamBrowLForm  [id]
+  role brow_r   -> ParamBrowRY  [id]
+  role brow_ra  -> ParamBrowRAngle  [id]
+  role brow_rf  -> ParamBrowRForm  [id]
+  role gaze_x   -> ParamEyeBallX  [id]
+  role gaze_y   -> ParamEyeBallY  [id]
+  role head_x   -> ParamAngleX  [id]
+  role head_y   -> ParamAngleY  [id]
+  role head_z   -> ParamAngleZ  [id]
+events: body adapted to the rig's own motions (weights {'body_x': 0.909, 'body_y': 0.909, 'body_z': 0.909, 'w_hold': 0.783, 'w_move': 0.902}; own holds 1 +17 censored, 0 unanimated clips, moves 46): hold 0.45s move 0.66s p_chain 0.74
+events: idle profile calm; gestures from 9 of 10 motions (by group): Hiyori_m01* 0.0831, Hiyori_m02* 0.0822, Hiyori_m03* 0.1318, Hiyori_m04 0.0845, Hiyori_m05* 0.0631, Hiyori_m06* 0.1324, Hiyori_m07* 0.1139, Hiyori_m08* 0.1967, Hiyori_m09* 0.1145, Hiyori_m10* 0.0251  (* calm; mean speed/frame)
+director: 3 actions -> 4 tokens; 3 idle tokens overridden
+events: 14 roles from ev.json; tokens blink 2, body_shift 2, brow 2, fixate 4, gesture 1, head_turn 3, mouth 1, saccade 4, underlay 1
+tokens -> runs/e2/Hiyori/tags/1/tokens.json
+base state from Hiyori_m01.motion3.json: 2 part opacities, 10 held parameters
+mouth: lip sync on ParamMouthOpenY
+events: underlay Hiyori_m01.motion3.json x0.5 during rests on 1 loose parameters: ParamHairAhoge
+events: 1 gesture segments from 10 motion files (arms will score as copying against the rig's own clips; novelty is judged on the role columns)
+snapping 4 switch-like parameters: ParamBrowLX, ParamBrowRX, ParamCheek, ParamLeg
+dump -> runs/e2/Hiyori/tags/1/plan.npz  (290 frames, 28 expressive, 2 parts, mode events seed=0)
+director: /home/main/venv/hongenv/bin/python -m flow.runtime --model CubismWebSamples/Samples/Resources/Hiyori/Hiyori.model3.json --rig rigs/Hiyori.npz --events ev.json --probe-dir out --fps 30.0 --seed 0 --seconds 9.68 --clips clips2/Hiyori.npz --tokens-in runs/e2/Hiyori/tags/1/tokens.json --size 512 --out runs/e2/Hiyori/tags/1/render
+director: video with speech and subtitles -> runs/e2/Hiyori/tags/1/demo.mp4

@@ -1,0 +1,2 @@
+[pose {"brow.L.lift": 0.6, "brow.R.lift": 0.6, "head.pitch": 10, "dur": 0.3}] Fleet admiral... that's so high up.
+[pose {"head.tilt": 10, "mouth.form": 0.6, "hand.R.y": -0.9, "dur": 0.6, "hold": 2}] Congratulations... you must be sleepy now too, right?

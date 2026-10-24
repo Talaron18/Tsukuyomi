@@ -1,0 +1,1 @@
+[pose {"head.pitch": 8, "head.tilt": 6, "mouth.form": 0.5}] Mm… I missed you a lot. [pose {"eye.L.open": 0.6, "eye.R.open": 0.6, "head.tilt": 0, "dur": 0.5, "hold": 2}] Welcome back.

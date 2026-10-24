@@ -1,0 +1,2 @@
+[pose {"hand.L.y": -0.03, "hand.L.x": 0.3, "head.yaw": 12, "gaze.x": 0.5, "dur": 0.5, "hold": 1.5}] Of course! Hi there, nice to meet you!
+[pose {"hand.L.y": -2.00, "hand.L.x": 0.95, "dur": 0.5, "hold": 0}][pose {"hand.R.y": -0.10, "hand.R.x": -0.9, "head.yaw": -18, "gaze.x": -0.7, "dur": 0.5, "hold": 1.5}] And the door's right over that way, past the corridor.

@@ -1,0 +1,1 @@
+[pose {"head.pitch": 12, "brow.L.lift": 0.5, "brow.R.lift": 0.5}] The beach... that sounds nice. [pose {"head.tilt": 8, "mouth.form": 0.5, "hold": 2}] Can we just sit in the shade and watch the waves?

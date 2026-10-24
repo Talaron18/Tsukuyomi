@@ -1,0 +1,1 @@
+[pose {"head.tilt": 10, "cheek.blush": 0.7, "gaze.y": -0.4}] Mm... you think so? [pose {"eye.L.open": 0.4, "eye.R.open": 0.4, "hold": 1.5}] I was just about to nap, though.

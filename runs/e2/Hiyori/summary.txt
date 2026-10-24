@@ -1,0 +1,3 @@
+condition                 n act/r mark  tgt  reach MISS    Core warn  model  first  solve  score  checks / kinds
+body                      6   2.2   13   50   100%    0   50/50    0    1.3    0.7    1.6    0/6  face 0/6, holds 6/6, jerk 6/6, period 5/6, std 0/6, stiff 0/6, toggle 3/6 | pose 13
+tags                      6   3.2    0    0      -    0       -    0    1.4    1.1    0.0    0/6  face 0/6, holds 6/6, jerk 6/6, period 6/6, std 0/6, stiff 0/6, toggle 6/6 | brow:up 5, lean:in 4, nod 2, look:viewer 2, shake 1, look:down 1, lean:back 1, look:away 1, tilt:right 1, gesture 1

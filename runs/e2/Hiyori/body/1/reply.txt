@@ -1,0 +1,2 @@
+The beach! [pose {"head.pitch": 10, "eye.L.smile": 0.8, "eye.R.smile": 0.8, "cheek.blush": 0.4}] I'd love that so much!
+[pose {"hand.L.y": "@shoulder.y", "hand.L.x": 0.6, "head.tilt": 10}] Should I bring snacks? I make a mean onigiri!

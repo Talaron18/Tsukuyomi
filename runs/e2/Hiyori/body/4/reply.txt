@@ -1,0 +1,2 @@
+[pose {"cheek.blush": 0.7, "head.tilt": 10, "eye.L.smile": 0.5, "eye.R.smile": 0.5}] Aw, you're making me blush!
+[pose {"hand.L.y": "@shoulder.y", "head.yaw": 15, "gaze.x": 0.5}] Did you really mean that, or are you just being nice?

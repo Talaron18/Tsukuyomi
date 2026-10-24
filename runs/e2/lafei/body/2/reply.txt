@@ -1,0 +1,2 @@
+[pose {"head.pitch": 14, "brow.L.lift": 0.5, "brow.R.lift": 0.5, "hold": 2}] ...You ate it?
+[pose {"head.pitch": -8, "head.tilt": 6, "mouth.form": -0.3, "hold": 2}] It was a strawberry one... I was looking forward to it.
