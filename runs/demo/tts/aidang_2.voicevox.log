@@ -1,33 +1,58 @@
-Traceback (most recent call last):
-  File "<frozen runpy>", line 198, in _run_module_as_main
-  File "<frozen runpy>", line 88, in _run_code
-  File "/home/main/yachiyo/flow/director.py", line 1596, in <module>
-    raise SystemExit(main())
-                     ^^^^^^
-  File "/home/main/yachiyo/flow/director.py", line 1574, in main
-    return turn(a.say or "", a.out)
-           ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/main/yachiyo/flow/director.py", line 1558, in turn
-    res = plan(a, reply, out_dir, motions, tts=tts)
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/main/yachiyo/flow/director.py", line 1227, in plan
-    said = sp.speak(reply["spoken"], reply["tags"], tts,
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/main/yachiyo/flow/speech.py", line 1055, in speak
-    res = tts.synth(body)
-          ^^^^^^^^^^^^^^^
-  File "/home/main/yachiyo/flow/speech.py", line 1014, in synth
-    return self.cur.synth(text)
-           ^^^^^^^^^^^^^^^^^^^^
-  File "/home/main/yachiyo/flow/speech.py", line 892, in synth
-    q = self.query(text)
-        ^^^^^^^^^^^^^^^^
-  File "/home/main/yachiyo/flow/speech.py", line 876, in query
-    sid = self.resolve()
-          ^^^^^^^^^^^^^^
-  File "/home/main/yachiyo/flow/speech.py", line 868, in resolve
-    raise RuntimeError(
-RuntimeError: voicevox: no voice '冥鳴ひまり/ノーマル'; available: 
+[live2d.v3] Cubism Native, Python 3.10.20
+[live2d.v3] official: https://www.live2d.com/sdk/download/native/
+[INFO]  [Pal] Init Shader Dir: /home/main/venv/hongenv/lib/python3.11/site-packages/live2d/v3/
+[INFO]  [CSM][I]Live2D Cubism Core version: 05.01.0000 (83951616)
+
+[INFO]  [CSM][I]CubismFramework::StartUp() is complete.
+
+[INFO]  [CSM][I]CubismFramework::Initialize() is complete.
+
+[INFO]  allocate: cpp Model(at=0x1d3dbd70)
+[INFO]  load modelSetting: live2d-models/live2d_3/model/Azue Lane(JP)/aidang_2/aidang_2.model3.json
+[INFO]  create model: aidang_2.moc3
+Live2D Cubism SDK Core Version 5.1.0
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/aidang_2/motions/complete.motion3.json => [_0] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/aidang_2/motions/home.motion3.json => [_1] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/aidang_2/motions/idle.motion3.json => [_2] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/aidang_2/motions/login.motion3.json => [_3] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/aidang_2/motions/mail.motion3.json => [_4] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/aidang_2/motions/main_1.motion3.json => [_5] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/aidang_2/motions/main_2.motion3.json => [_6] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/aidang_2/motions/main_3.motion3.json => [_7] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/aidang_2/motions/mission_complete.motion3.json => [_8] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/aidang_2/motions/mission.motion3.json => [_9] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/aidang_2/motions/touch_body.motion3.json => [_10] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/aidang_2/motions/touch_head.motion3.json => [_11] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/aidang_2/motions/touch_special.motion3.json => [_12] 
+[INFO]  load motion: live2d-models/live2d_3/model/Azue Lane(JP)/aidang_2/motions/wedding.motion3.json => [_13] 
+[INFO]  deallocate: cpp Model(at=0x1d3dbd70)
+[INFO]  deallocate: PyModelObject(at=0x7fe401d3a5f0)
+[live2d] third-party wrapper (0.7.0.4), not affiliated with Live2D Inc.
+132 params: expressive 104, physics 7, autonomic 2, mouth 2, discrete 17
+seeded from clips2/aidang_2.npz
+events: switch-like role columns left to the rig's own motions: brow_la=ParamBrowLAngle, brow_r=ParamBrowRY, brow_ra=ParamBrowRAngle, gaze_x=ParamEyeBallX, gaze_y=ParamEyeBallY
+  role body_x   -> ParamBodyAngleX  [id]
+  role body_y   -> ParamBodyAngleY  [id]
+  role brow_l   -> ParamBrowLY  [id]
+  role brow_rf  -> ParamBrowRForm  [id]
+  role brow_rx  -> ParamBrowRX  [id]
+  role head_x   -> ParamAngleX  [id]
+  role head_y   -> ParamAngleY  [id]
+  role head_z   -> ParamAngleZ  [id]
+events: unbound roles (no standard id; --binding to add): body_z, brow_lf, brow_lx
+events: body adapted to the rig's own motions (weights {'body_x': 0.929, 'body_y': 0.933, 'w_hold': 0.875, 'w_move': 0.932}; own holds 34 +1 censored, 0 unanimated clips, moves 68): hold 0.16s move 1.07s p_chain 0.50
+events: rendering 11 tokens from runs/demo/tts/aidang_2/voicevox/tokens.json
+events: 8 roles from ev.json; tokens body_shift 2, brow 4, head_turn 3, mouth 1, underlay 1
+11 parts are switched by PartOpacity curves and the rig has no pose3 file; applying them directly (Live2D Native would ignore them and draw every variant)
+base state from idle.motion3.json: 11 part opacities, 63 held parameters
+mouth: lip sync on ParamMouthOpenY
+events: underlay idle.motion3.json x0.5 during rests on 21 loose parameters: ParamHairBack, ParamHairBackY, ParamHairBack2, ParamHairBack2Y, ParamHairBack3, ParamHairBack3Y, ParamFlowerBandX, ParamFlowerBandLongXB, ParamFlowerBandLongX, ParamBreastX, ParamBreastY, ParamBreastLX, ParamParamBreastLY, ParamFingerL2, ParamFingerL1, ParamFrillX, ParamFrillY, ParamPaoX, ParamPaoPositionX, ParamPaoPositionY, ParamPaoEyeX
+events: 0 gesture segments from 14 motion files (arms will score as copying against the rig's own clips; novelty is judged on the role columns)
+snapping 30 switch-like parameters: ParamAcceX, ParamArmFore3InneiT, ParamArmForeL3Hand1T, ParamArmForeL3Hand2T, ParamArmForeL3X, ParamArmForeR2T, ParamArmL2Hand1T, ParamArmL2Hand3T, ParamArmL2Hand4T, ParamArmUpperRWT, ParamArmYuanT, ParamBreastBandSwitch, ParamBrowLAngle, ParamBrowRAngle, ParamBrowRY, ParamFumoArmT, ParamHandLDChangePa, ParamHandR1T, ParamHandR2T, ParamMDTHandXinT, ParamMDTHandYuanT, ParamNaiZiShadowPY, ParamPaoEyeL, ParamPaoEyeR, ParamPaoFlush, ParamPaoScale, ParamSkirtDefaultT, ParamSkirtJiaoPYX, ParamSkirtJiaoPYY, ParamSkirtMubiaoT
+backend: order=sandwich, timestep=fixed 0.0333s (native), parts=41
+rendered 216 frames -> runs/demo/tts/aidang_2/voicevox/render/
+contact sheet -> runs/demo/tts/aidang_2/voicevox/render/sheet.png
+video -> runs/demo/tts/aidang_2/voicevox/render/preview.mp4
 director: not offered on this rig: lean:in (body_y centre 0.93, no room: the lean moves +0.031)
 director: gesture complete [measured, same motion as home / login / mail / mission / mission_complete]: body swings back and forth; left arm moves widely; switches arm pose; 8.0 s
 director: gesture home [measured, same motion as complete / login / mail / mission / mission_complete]: body swings back and forth; left arm moves widely; switches arm pose; 8.0 s
@@ -46,6 +71,35 @@ director: gesture wedding [measured]: eyes swing back and forth; left arm moves 
 director: 14 gesture labels: complete, home, idle, login, mail, main_1, main_2, main_3, mission, mission_complete, touch_body, touch_head, touch_special, wedding
 speech: voice config rigs/aidang_2.voice.json: ja voicevox 冥鳴ひまり/ノーマル; en edge en-US-AriaNeural; zh edge zh-CN-XiaoxiaoNeural
 mouth: aidang_2: no talking curves in 14 motions (no lip flaps on the open/vowel parameters) -> open-only on the mouth-open parameter, rest to maximum (as before)
-deepseek: stop stop; usage {'prompt_tokens': 779, 'completion_tokens': 60, 'prompt_cache_hit_tokens': 0}
-director: model 1.0s, first text after 0.5s
-director: reply: [look:viewer] あら、おかえりなさい、指揮官。[tilt:right] 会いたかったかって…もちろんですよ、ずっと待っていたんですからね。[look:away] そんなこと聞くのは意地悪ですわ。
+deepseek: stop stop; usage {'prompt_tokens': 779, 'completion_tokens': 42, 'prompt_cache_hit_tokens': 640}
+director: model 1.0s, first text after 0.6s
+director: reply: [look:viewer] あら、おかえりなさい。[tilt:right] 会いたかったに決まってるじゃない、こんなに待ってたんですもの。
+speech: 5.71s audio (冥鳴ひまり/ノーマル (14)), tag times from moras -> speech.wav
+speech: credit "VOICEVOX:冥鳴ひまり" wherever this audio is published (VOICEVOX voice library terms)
+director: 43 spoken characters, 5.71s speech, 2 actions, 2 subtitles; rendering 7.21s
+132 params: expressive 104, physics 7, autonomic 2, mouth 2, discrete 17
+seeded from clips2/aidang_2.npz
+events: switch-like role columns left to the rig's own motions: brow_la=ParamBrowLAngle, brow_r=ParamBrowRY, brow_ra=ParamBrowRAngle, gaze_x=ParamEyeBallX, gaze_y=ParamEyeBallY
+  role body_x   -> ParamBodyAngleX  [id]
+  role body_y   -> ParamBodyAngleY  [id]
+  role brow_l   -> ParamBrowLY  [id]
+  role brow_rf  -> ParamBrowRForm  [id]
+  role brow_rx  -> ParamBrowRX  [id]
+  role head_x   -> ParamAngleX  [id]
+  role head_y   -> ParamAngleY  [id]
+  role head_z   -> ParamAngleZ  [id]
+events: unbound roles (no standard id; --binding to add): body_z, brow_lf, brow_lx
+events: body adapted to the rig's own motions (weights {'body_x': 0.929, 'body_y': 0.933, 'w_hold': 0.875, 'w_move': 0.932}; own holds 34 +1 censored, 0 unanimated clips, moves 68): hold 0.16s move 1.07s p_chain 0.50
+events: idle profile calm; gestures from 5 of 14 motions (by label): complete 0.1721, home* 0.1721, idle* 0.0960, login 0.1721, mail 0.1721, main_1* 0.1598, main_2* 0.1188, main_3* 0.1474, mission 0.1721, mission_complete 0.1721, touch_body 0.2277, touch_head 0.1653, touch_special 0.2133, wedding 0.0953  (* calm; mean speed/frame)
+director: 2 actions -> 2 tokens; 1 idle tokens overridden
+events: 8 roles from ev.json; tokens body_shift 2, brow 4, head_turn 3, mouth 1, underlay 1
+tokens -> runs/demo/tts/aidang_2/voicevox/tokens.json
+11 parts are switched by PartOpacity curves and the rig has no pose3 file; applying them directly (Live2D Native would ignore them and draw every variant)
+base state from idle.motion3.json: 11 part opacities, 63 held parameters
+mouth: lip sync on ParamMouthOpenY
+events: underlay idle.motion3.json x0.5 during rests on 21 loose parameters: ParamHairBack, ParamHairBackY, ParamHairBack2, ParamHairBack2Y, ParamHairBack3, ParamHairBack3Y, ParamFlowerBandX, ParamFlowerBandLongXB, ParamFlowerBandLongX, ParamBreastX, ParamBreastY, ParamBreastLX, ParamParamBreastLY, ParamFingerL2, ParamFingerL1, ParamFrillX, ParamFrillY, ParamPaoX, ParamPaoPositionX, ParamPaoPositionY, ParamPaoEyeX
+events: 0 gesture segments from 14 motion files (arms will score as copying against the rig's own clips; novelty is judged on the role columns)
+snapping 30 switch-like parameters: ParamAcceX, ParamArmFore3InneiT, ParamArmForeL3Hand1T, ParamArmForeL3Hand2T, ParamArmForeL3X, ParamArmForeR2T, ParamArmL2Hand1T, ParamArmL2Hand3T, ParamArmL2Hand4T, ParamArmUpperRWT, ParamArmYuanT, ParamBreastBandSwitch, ParamBrowLAngle, ParamBrowRAngle, ParamBrowRY, ParamFumoArmT, ParamHandLDChangePa, ParamHandR1T, ParamHandR2T, ParamMDTHandXinT, ParamMDTHandYuanT, ParamNaiZiShadowPY, ParamPaoEyeL, ParamPaoEyeR, ParamPaoFlush, ParamPaoScale, ParamSkirtDefaultT, ParamSkirtJiaoPYX, ParamSkirtJiaoPYY, ParamSkirtMubiaoT
+dump -> runs/demo/tts/aidang_2/voicevox/plan.npz  (216 frames, 104 expressive, 11 parts, mode events seed=0)
+director: /home/main/venv/hongenv/bin/python -m flow.runtime --model 'live2d-models/live2d_3/model/Azue Lane(JP)/aidang_2/aidang_2.model3.json' --rig rigs/aidang_2.npz --events ev.json --probe-dir out --fps 30.0 --seed 0 --seconds 7.21 --clips clips2/aidang_2.npz --tokens-in runs/demo/tts/aidang_2/voicevox/tokens.json --size 512 --out runs/demo/tts/aidang_2/voicevox/render
+director: video with speech and subtitles -> runs/demo/tts/aidang_2/voicevox/demo.mp4
