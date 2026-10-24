@@ -119,9 +119,8 @@ class EventRig:
         gkeep = rt.base_keep(role_ids | self.held, phys, band_by_id)
         keep = lambda p: p in pid_set and gkeep(p)      # noqa: E731
         found = {} if no_snap else rt.toggle_params(model_json, fps)
-        sw = {pids[i]: (found[pids[i]][1], found[pids[i]][2])
-              for i in ex if pids[i] in found and bands[i] == "expressive"
-              and rt.snappable(pids[i], groups[i])}
+        sw = {p: (v[1], v[2]) for p, v in rt.snap_set(
+            found, pids, groups, bands, ex, col["continuous"]).items()}
         gest = ev.gesture_library(motions, keep, dict(zip(pids, lo.tolist())),
                                   dict(zip(pids, hi.tolist())), sw, fps)
         self.settle = None
@@ -156,9 +155,8 @@ class EventRig:
         self.in_band = [(c, i) for c, i in enumerate(ex)
                         if bands[i] == "expressive"
                         and pids[i] not in self.held]
-        live = {pids[i]: found[pids[i]] for i in ex
-                if pids[i] in found and bands[i] == "expressive"
-                and rt.snappable(pids[i], groups[i])}
+        live = rt.snap_set(found, pids, groups, bands, ex,
+                           col["continuous"])
         fade_n = int(round(stats["gesture"]["fade"] * fps))
         self.switch_states = {p: (v[1], v[2]) for p, v in live.items()}
         self.switch_ramp = max(snap_ramp, fade_n)

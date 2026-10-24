@@ -130,18 +130,21 @@ def calibrate(model_json, rig, fps=30.0, motions=None):
     "lo", "hi"}}, "level", "why"}. `motions`: [(name, authored_motion)]
     (runtime.authored_motions), read from the model when None."""
     try:
-        from .runtime import authored_motions, mouth_targets
+        from .runtime import authored_motions, mouth_targets, reband
     except ImportError:
-        from flow.runtime import authored_motions, mouth_targets
+        from flow.runtime import authored_motions, mouth_targets, reband
     z = np.load(rig, allow_pickle=True)
     pids = [str(x) for x in z["pid"]]
     lo = z["minimum"].astype(float)
     hi = z["maximum"].astype(float)
     dflt = z["default"].astype(float)
     phys, _ = physics_params(model_json)
-    bands = [band_of(p, k, g, phys) for p, k, g in
-             zip(pids, (str(x) for x in z["kind"]),
-                 (str(x) for x in z["group"]))]
+    kinds = [str(x) for x in z["kind"]]
+    groups = [str(x) for x in z["group"]]
+    bands = [band_of(p, k, g, phys) for p, k, g in zip(pids, kinds, groups)]
+    # As runtime.rig_columns: a mouth deformer the probe called discrete is
+    # lip sync's, so calibration and playback agree on the mouth band.
+    bands, _ = reband(pids, kinds, groups, bands, model_json)
     op_i, vow = mouth_targets(pids, bands)
     mouth = [i for i, b in enumerate(bands) if b == "mouth"]
     name = os.path.splitext(os.path.basename(rig))[0]

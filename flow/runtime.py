@@ -61,6 +61,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import subprocess
@@ -107,6 +108,137 @@ def snappable(pid: str, rig_group: str) -> bool:
     return (rig_group not in NEVER_SNAP
             and group_of(pid) not in NEVER_SNAP
             and not (arm and rotation))
+
+
+def face_kind(pid: str, rig_group: str, band: str) -> str:
+    """"eye" (open, lid, blink, smile), "mouth" or "": the face parameters
+    a Core geometry check may overrule the probe and the motions on.
+
+    Brows are left out on purpose: Hiyori's ParamBrowLX/RX and Natori's
+    ParamBrowLY/RY/RForm are clean deformers that are snapped today, and
+    Natori's ParamBrowLForm is banded discrete; widening this to them would
+    change both rigs. Gaze is never snapped anyway (NEVER_SNAP)."""
+    low = pid.lower()
+    if "eye" in low and (rig_group == "eyelid" or any(
+            k in low for k in ("open", "lid", "blink", "smile"))):
+        return "eye"
+    if (band == "mouth" or rig_group == "mouth" or is_vowel(pid)
+            or any(k in low for k in ("mouth", "lip"))):
+        return "mouth"
+    return ""
+
+
+def _load_core(model_json):
+    """A Core model for the geometry checks, or None (no Core, no moc, a moc
+    the Core refuses). Split out so tests can hand in a fake."""
+    try:
+        try:
+            from ..l2dprobe import core
+        except ImportError:
+            from l2dprobe import core
+        if not core.available():
+            return None
+        return core.load(model_json)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+@contextlib.contextmanager
+def _stdout_to_stderr():
+    """Finding the Core imports live2d, whose banner goes to stdout, and the
+    Core prints its version there from C; director --print-system writes
+    the prompt to stdout. Both go to stderr, at the descriptor."""
+    sys.stdout.flush()
+    try:
+        saved = os.dup(1)
+    except OSError:
+        yield
+        return
+    try:
+        os.dup2(2, 1)
+        with contextlib.redirect_stdout(sys.stderr):
+            yield
+    finally:
+        sys.stdout.flush()
+        os.dup2(saved, 1)
+        os.close(saved)
+
+
+_CONTINUOUS_CACHE: dict = {}
+
+
+def continuous_face(model_json, pids, groups, bands) -> dict[str, str]:
+    """{pid: evidence} for the eye and mouth parameters (face_kind) the
+    Cubism Core shows are continuous deformers: sweeping them moves
+    vertices smoothly and changes no drawable opacity
+    (l2dprobe.core.continuous_deformer). Physics outputs are not judged.
+    Empty without a Core or a loadable moc, which is the behaviour before
+    this check existed."""
+    cand = [p for p, g, b in zip(pids, groups, bands)
+            if b != "physics" and face_kind(p, g, b)]
+    if not cand:
+        return {}
+    try:
+        st = os.stat(model_json)
+        key = (os.path.abspath(model_json), st.st_mtime_ns, tuple(cand))
+    except OSError:
+        return {}
+    if key in _CONTINUOUS_CACHE:
+        return dict(_CONTINUOUS_CACHE[key])
+    out = {}
+    with _stdout_to_stderr():
+        m = _load_core(model_json)
+        if m is not None:
+            try:
+                from ..l2dprobe.core import continuous_deformer
+            except ImportError:
+                from l2dprobe.core import continuous_deformer
+            for p in cand:
+                try:
+                    ok, why = continuous_deformer(m, p)
+                except Exception:  # noqa: BLE001
+                    continue
+                if ok:
+                    out[p] = why
+    _CONTINUOUS_CACHE[key] = out
+    return dict(out)
+
+
+def reband(pids, kinds, groups, bands, model_json):
+    """(bands, continuous): the probe's discrete band overruled for eye and
+    mouth parameters the Core shows are continuous deformers.
+
+    The probe classifies from pixels, and an eyelid closing over the iris
+    can read as one jump or as mostly an opacity change (xuefeng's
+    ParamEyeL/ROpen: categorical, so discrete, so no procedural blink and
+    the authored 0/1 step blinks played instead). An eye open, lid or blink
+    goes to the autonomic band, a mouth parameter to the mouth band. Nothing
+    is moved into the expressive band: that would shift the clips' and the
+    prior's columns. `continuous` is the evidence for every eye and mouth
+    deformer, re-banded or not (snap_set uses it)."""
+    cont = continuous_face(model_json, pids, groups, bands)
+    out = list(bands)
+    for i, (p, g, b) in enumerate(zip(pids, groups, bands)):
+        if b != "discrete" or p not in cont:
+            continue
+        kind = face_kind(p, g, b)
+        low = p.lower()
+        if kind == "eye" and any(k in low for k in ("open", "lid", "blink")):
+            out[i] = "autonomic"
+        elif kind == "mouth":
+            out[i] = "mouth"
+    return out, cont
+
+
+def snap_set(found, pids, groups, bands, rows, continuous=()):
+    """{pid: found[pid]} for the rows to snap: toggle_params' switch-like
+    parameters in the expressive band that snappable allows, less the eye
+    and mouth parameters the Core shows are continuous deformers (an eye
+    smile keyed 0/1 by the motions still eases)."""
+    return {pids[i]: found[pids[i]] for i in rows
+            if pids[i] in found and bands[i] == "expressive"
+            and snappable(pids[i], groups[i])
+            and pids[i] not in continuous}
 
 
 def protected_from_hold(pid: str, rig_group: str) -> bool:
@@ -394,6 +526,14 @@ def rig_columns(rig, model_json, clips=None, log=print):
     groups = [str(x) for x in z["group"]]
     phys, has_phys = physics_params(model_json)
     bands = [band_of(p, k, g, phys) for p, k, g in zip(pids, kinds, groups)]
+    probe_bands = bands
+    bands, continuous = reband(pids, kinds, groups, bands, model_json)
+    rebanded = {pids[i]: (probe_bands[i], b) for i, b in enumerate(bands)
+                if b != probe_bands[i]}
+    if rebanded:
+        log("continuous deformers in the Core, not switches: "
+            + ", ".join(f"{p} {a}->{b}" for p, (a, b)
+                        in sorted(rebanded.items())))
     expressive = [i for i, b in enumerate(bands) if b == "expressive"]
     log(f"{len(pids)} params: "
         + ", ".join(f"{b} {bands.count(b)}" for b in
@@ -418,7 +558,8 @@ def rig_columns(rig, model_json, clips=None, log=print):
             "default": z["default"].astype(np.float32),
             "descriptor": z["descriptor"].astype(np.float32),
             "phys": phys, "has_phys": has_phys, "bands": bands,
-            "expressive": expressive}
+            "expressive": expressive, "continuous": continuous,
+            "rebanded": rebanded}
 
 
 def held_params(rig, probe_dir, pids, groups, expressive, hold="",
@@ -692,6 +833,7 @@ def main(argv=None) -> int:
     desc_all = col["descriptor"]
     phys, has_phys = col["phys"], col["has_phys"]
     bands, expressive = col["bands"], col["expressive"]
+    deformers = col["continuous"]
     if not expressive:
         print("no expressive parameters", file=sys.stderr)
         return 1
@@ -794,10 +936,9 @@ def main(argv=None) -> int:
             gkeep0 = base_keep({p for p, _, _ in roles.values()} | held,
                                phys, band_by_id)
             found_sw = ({} if a.no_snap else toggle_params(a.model, a.fps))
-            sw = {pids[i]: (found_sw[pids[i]][1], found_sw[pids[i]][2])
-                  for i in expressive if pids[i] in found_sw
-                  and bands[i] == "expressive"
-                  and snappable(pids[i], groups[i])}
+            sw = {p: (v[1], v[2]) for p, v in snap_set(
+                found_sw, pids, groups, bands, expressive,
+                deformers).items()}
             gest = ev.gesture_library(
                 motions, lambda p: p in pid_index0 and gkeep0(p),
                 dict(zip(pids, lo.tolist())), dict(zip(pids, hi.tolist())),
@@ -1079,9 +1220,7 @@ def main(argv=None) -> int:
     # on aidang_2 it changed which arm was drawn during authored playback.
     if not a.no_snap and not (a.static or a.neutral):
         found = toggle_params(a.model, a.fps)
-        live = {pids[i]: found[pids[i]] for i in expressive
-                if pids[i] in found and bands[i] == "expressive"
-                and snappable(pids[i], groups[i])}
+        live = snap_set(found, pids, groups, bands, expressive, deformers)
         if live:
             if events_on:
                 # Gesture seams flip arm swaps that authored clips (one arm

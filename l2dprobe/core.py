@@ -242,3 +242,90 @@ def moc_of(model_json: str) -> str:
 
 def load(model_json: str) -> CoreModel:
     return CoreModel(moc_of(model_json))
+
+
+# ------------------------------------------------------------- sweeps
+
+SWEEP_STEPS = 11
+JUMP_RATIO = 0.5      # one step carrying more of the path than this: a jump
+MOVE_EPS = 1e-4       # of the drawn extent: below this nothing moves
+OPACITY_EPS = 1e-3    # a drawable opacity change below this is no change
+
+
+def sweep(m: CoreModel, pid: str, steps: int = SWEEP_STEPS,
+          parts: dict | None = None) -> dict:
+    """Sweep one parameter over its range with everything else at default.
+
+    Returns {"values" (S,), "move" (S, D): max vertex shift of each drawable
+    from its rest (the parameter at default), "opacity" (S, D), "rest_opacity"
+    (D,), "step" (S-1,): the largest vertex shift between consecutive steps,
+    "extent": the rest mesh's larger side}. `parts` are part opacities written
+    for every step (all 1.0 shows drawables a hidden pose part would zero).
+    Part opacities are Core inputs, not outputs: no parameter changes them."""
+    i = m.param_ids.index(pid)
+    lo, hi = float(m.param_min[i]), float(m.param_max[i])
+    m.set({}, parts)
+    rest_v = m.all_vertices()
+    rest_o = m.opacities()
+    off = m.offsets
+    vals = np.linspace(lo, hi, steps)
+    move = np.zeros((steps, len(m.drawable_ids)))
+    opac = np.zeros((steps, len(m.drawable_ids)))
+    step = np.zeros(max(steps - 1, 0))
+    prev = None
+    for s, v in enumerate(vals):
+        m.set({pid: float(v)}, parts)
+        V = m.all_vertices()
+        d = np.abs(V - rest_v).max(1) if len(V) else np.zeros(0)
+        move[s] = [d[off[k]:off[k + 1]].max() if off[k + 1] > off[k]
+                   else 0.0 for k in range(len(m.drawable_ids))]
+        opac[s] = m.opacities()
+        if prev is not None:
+            step[s - 1] = float(np.abs(V - prev).max()) if len(V) else 0.0
+        prev = V
+    m.set({}, parts)
+    ext = float(np.ptp(rest_v, 0).max()) if len(rest_v) else 0.0
+    return {"values": vals, "move": move, "opacity": opac,
+            "rest_opacity": rest_o, "step": step, "extent": ext}
+
+
+def continuous_deformer(m: CoreModel, pid: str, steps: int = SWEEP_STEPS,
+                        parts: dict | None = None,
+                        jump: float = JUMP_RATIO) -> tuple[bool, str]:
+    """(is it, why): whether `pid` is a continuous deformer in the Core.
+
+    It is when sweeping it moves vertices, smoothly (no step between sweep
+    points carries more than `jump` of the whole vertex path, the probe's
+    stepiness test on exact geometry), and changes no drawable's opacity
+    anywhere in the range. An art swap fails the opacity test; a parameter
+    that only fades or moves nothing is no deformer. Pixel probes can call an
+    eyelid categorical (the lid covers the iris, which reads as an alpha
+    change); vertices cannot be fooled that way."""
+    if pid not in m.param_ids:
+        return False, "not in the moc"
+    i = m.param_ids.index(pid)
+    if not m.param_max[i] > m.param_min[i]:
+        return False, "empty range"
+    if parts is None:
+        parts = {p: 1.0 for p in m.part_ids}
+    sw = sweep(m, pid, steps, parts)
+    dop = float(np.abs(sw["opacity"] - sw["rest_opacity"]).max()) \
+        if sw["opacity"].size else 0.0
+    if dop > OPACITY_EPS:
+        k = int(np.abs(sw["opacity"] - sw["rest_opacity"]).max(0).argmax())
+        return False, (f"opacity changes by {dop:.3f} "
+                       f"({m.drawable_ids[k]})")
+    path = float(sw["step"].sum())
+    if path <= MOVE_EPS * max(sw["extent"], 1e-9):
+        return False, "moves no vertex"
+    ratio = float(sw["step"].max()) / path
+    if ratio > jump:
+        return False, f"vertices jump ({ratio:.2f} of the path in one step)"
+    peak = sw["move"].max(1)
+    mono = bool(np.all(np.diff(peak[:int(peak.argmin()) + 1]) <= 1e-6)
+                and np.all(np.diff(peak[int(peak.argmin()):]) >= -1e-6))
+    hit = int((sw["move"].max(0) > 1e-6).sum())
+    return True, (f"{hit} drawables move up to {peak.max():.4g} model units, "
+                  f"largest step {ratio:.2f} of the path"
+                  + (", monotonic" if mono else "")
+                  + ", no opacity change")

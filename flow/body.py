@@ -749,6 +749,8 @@ def read_rig_info(model_json: str, rig_npz: str | None = None,
         col = rig_columns(rig_npz, model_json, log=lambda *a: None)
         info["bands"] = dict(zip(col["pids"], col["bands"]))
         info["groups"] = dict(zip(col["pids"], col["groups"]))
+        info["continuous"] = col.get("continuous", {})
+        info["rebanded"] = col.get("rebanded", {})
         info["held"] = held_params(rig_npz, probe_dir, col["pids"],
                                    col["groups"], col["expressive"],
                                    hold=hold, warn=False)
@@ -825,6 +827,21 @@ def whole_model(V0, V1, eps=1e-9) -> bool:
     resid = float(np.sqrt(((pred - V1) ** 2).sum(1).mean()))
     rms = float(np.sqrt((d ** 2).mean()))
     return resid <= 0.15 * rms
+
+
+def _deformer(core, pid) -> str:
+    """The Core's evidence that pid is a continuous deformer
+    (l2dprobe.core.continuous_deformer), or "" when it is not or the model
+    cannot be swept (a fake core without parts)."""
+    try:
+        try:
+            from ..l2dprobe.core import continuous_deformer
+        except ImportError:
+            from l2dprobe.core import continuous_deformer
+        ok, why = continuous_deformer(core, pid)
+    except Exception:  # noqa: BLE001
+        return ""
+    return why if ok else ""
 
 
 def measure(core, info: dict, log=print) -> dict:
@@ -1045,6 +1062,10 @@ def measure(core, info: dict, log=print) -> dict:
                       if p not in eff_params
                       and any(leaf_of[d] in arm_regions for d in ds)}
     declared_pids = {p for p, _s in declared.values()}
+    # Parameters the runtime re-banded from discrete on Core evidence
+    # (runtime.reband) carry it here too.
+    cont = {p: why for p, why in info.get("continuous", {}).items()
+            if p in info.get("rebanded", {})}
     roles = {}
     for i, p in enumerate(pids):
         band = band_of(p)
@@ -1072,12 +1093,25 @@ def measure(core, info: dict, log=print) -> dict:
             # but it is a joint (Natori's ParamArmAL01 左腕A 肩): the body
             # can use it; E2's player has to let it through.
             role = "solvable"
+        elif band == "discrete" and (why := _deformer(core, p)):
+            # The probe called it categorical from pixels, but the Core
+            # shows a pure deformer: vertices move smoothly with it and no
+            # opacity changes (xuefeng's ParamEyeL/ROpen before the runtime
+            # re-banded them; Natori's ParamBrowLForm). Real opacity swaps
+            # fail that test and stay switches.
+            role = "solvable"
+            cont[p] = why
         else:
             role = "switch" if band == "discrete" else "inert"
         roles[p] = {"min": float(lo[i]), "max": float(hi[i]),
                     "default": float(dflt[i]), "band": band, "role": role,
                     "name": info.get("param_names", {}).get(p, ""),
                     "toggle": p in toggles}
+        if p in cont and role == "solvable":
+            # The evidence, so an old file re-measured picks it up and a
+            # reader sees why a discrete-looking parameter is solved.
+            roles[p]["continuous"] = True
+            roles[p]["continuous_why"] = cont[p]
     for name, (p, s) in declared.items():
         roles[p]["declares"] = name
 
@@ -2165,6 +2199,12 @@ def describe(bm: BodyModel, variant: int = 0) -> str:
         L.append("opacity-flipping params solved as continuous (joints that "
                  "swap meshes, or missed arm swaps -- check): " + ", ".join(
                      f"{p} ({'/'.join(r)})" for p, r in sorted(flips.items())))
+    cont = {p: e for p, e in bm.params.items() if e.get("continuous")}
+    if cont:
+        L.append("continuous deformers in the Core, solved although the "
+                 "probe called them discrete: " + "; ".join(
+                     f"{p} (band {e['band']}: {e.get('continuous_why', '')})"
+                     for p, e in sorted(cont.items())))
     L.append("variants: " + "; ".join(f"[{k}] {v['name']}" for k, v in
                                        enumerate(bm.variants)))
     v = bm.variants[variant]

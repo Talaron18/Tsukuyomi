@@ -1,7 +1,9 @@
 """Sweep one parameter through the Cubism Core and print what it does to the
 mesh: per step, how far each affected drawable's vertices move from rest and
 how its opacity changes. Tells a continuous deformer (vertices move smoothly
-with the value) from an art swap (opacities jump between two drawings).
+with the value) from an art swap (opacities jump between two drawings), and
+prints the verdict of l2dprobe.core.continuous_deformer, the test flow.runtime
+and flow.body use to overrule a probe that called an eyelid discrete.
 
     python scripts/sweep_param.py --model-json M ParamEyeLOpen [--steps 11]
 """
@@ -33,28 +35,24 @@ def main(argv=None) -> int:
     lo, hi = float(m.param_min[i]), float(m.param_max[i])
     d0 = float(m.param_default[i])
     print(f"{a.param}: range [{lo:g}, {hi:g}], default {d0:g}")
-    m.set({})
-    rest_v = [m.vertices(k).copy() for k in range(len(m.drawable_ids))]
-    rest_o = m.opacities().copy()
-    vals = np.linspace(lo, hi, a.steps)
-    move = np.zeros((a.steps, len(rest_v)))
-    opac = np.zeros((a.steps, len(rest_v)))
-    for s, v in enumerate(vals):
-        m.set({a.param: float(v)})
-        for k in range(len(rest_v)):
-            move[s, k] = np.abs(m.vertices(k) - rest_v[k]).max()
-        opac[s] = m.opacities()
+    sw = core.sweep(m, a.param, a.steps)
+    vals, move, opac = sw["values"], sw["move"], sw["opacity"]
+    rest_o = sw["rest_opacity"]
+    ok, why = core.continuous_deformer(m, a.param, a.steps)
     hit = np.argsort(-(move.max(0) + np.abs(opac - rest_o).max(0)))[:a.top]
     hit = [k for k in hit if move[:, k].max() > 1e-6
            or np.abs(opac[:, k] - rest_o[k]).max() > 1e-6]
     if not hit:
         print("no drawable moves or changes opacity")
+        print(f"verdict: not a pure deformer ({why})")
         return 0
     print("value  " + "  ".join(f"{m.drawable_ids[k][:14]:>14}" for k in hit))
     for s, v in enumerate(vals):
         print(f"{v:5.2f}  " + "  ".join(
             f"{move[s, k]:7.4f}/{opac[s, k]:4.2f}"[:14].rjust(14) for k in hit))
     print("cells: max vertex shift from rest (model units) / opacity")
+    print(f"verdict: {'continuous deformer' if ok else 'not a pure deformer'}"
+          f" ({why}; all parts shown)")
     return 0
 
 
