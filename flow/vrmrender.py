@@ -266,7 +266,9 @@ def main(argv=None) -> int:
         rec = json.load(fh)
     bm = fb.load(a.body or rec["body"])
     out = a.out or os.path.join(a.run or ".", "render", "preview.mp4")
-    render(rec["states"], bm, out, rec.get("fps", 30.0), a.size, a.vrm)
+    vrm = a.vrm or (rec.get("vrm") if rec.get("vrm") and os.path.exists(
+        rec["vrm"]) else None)
+    render(rec["states"], bm, out, rec.get("fps", 30.0), a.size, vrm)
     if a.run or a.audio:
         try:
             from .director import mux_cmd

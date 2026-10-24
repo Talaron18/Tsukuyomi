@@ -112,6 +112,8 @@ except ImportError:
     from flow import stream as fs
 
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "live.html")
+WEB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
+VRM_PAGE = os.path.join(WEB, "vrm.html")
 FRAME_MAGIC = b"TSKF"
 # <magic 4s, frame u32, server time f64, JPEG length u32>, little endian.
 FRAME_HEAD = struct.Struct("<4sIdI")
@@ -247,6 +249,9 @@ class Hub:
         self.clock = clock
         self.lock = threading.Lock()
         self.frame_subs, self.event_subs = set(), set()
+        # VRM body states (flow.vrm), one per frame, for /states.
+        self.state_subs = set()
+        self.last_state = None
         self.audio = OrderedDict()
         self.max_audio = max_audio
         self.history = deque(maxlen=200)
@@ -259,6 +264,15 @@ class Hub:
         with self.lock:
             self.last_frame = item
             subs = list(self.frame_subs)
+        for q in subs:
+            _put_latest(q, item)
+
+    def state(self, f, t, st, avatar="vrm"):
+        """A VRM body state for frame f at server time t."""
+        item = {"f": f, "t": round(t, 4), "avatar": avatar, **st}
+        with self.lock:
+            self.last_state = item
+            subs = list(self.state_subs)
         for q in subs:
             _put_latest(q, item)
 
@@ -284,9 +298,11 @@ class Hub:
         return aid
 
     def subscribe(self, kind, maxsize=None):
-        q = queue.Queue(maxsize=maxsize or (90 if kind == "frames" else 500))
+        q = queue.Queue(maxsize=maxsize or (90 if kind in ("frames", "states")
+                                            else 500))
         with self.lock:
-            (self.frame_subs if kind == "frames" else self.event_subs).add(q)
+            (self.frame_subs if kind == "frames" else self.state_subs
+             if kind == "states" else self.event_subs).add(q)
             if kind == "events":
                 now = self.clock.now()
                 for m in self.history:
@@ -302,6 +318,7 @@ class Hub:
         with self.lock:
             self.frame_subs.discard(q)
             self.event_subs.discard(q)
+            self.state_subs.discard(q)
 
 
 def _put_latest(q, item):
@@ -357,9 +374,23 @@ class Handler(BaseHTTPRequestHandler):
         hub = self.app.hub
         try:
             if path in ("/", "/index.html"):
-                with open(PAGE, encoding="utf-8") as fh:
+                # A VRM avatar (alone or beside the Live2D rig) is drawn by
+                # the browser: flow/web/vrm.html.
+                vrm = getattr(self.app, "vrm", None)
+                with open(PAGE if vrm is None else VRM_PAGE,
+                          encoding="utf-8") as fh:
                     page = fh.read()
                 return self._send(200, page, "text/html; charset=utf-8")
+            if path.startswith("/web/"):
+                return self._static(path[5:])
+            if path == "/avatar.vrm" and getattr(self.app, "vrm", None):
+                with open(self.app.vrm["path"], "rb") as fh:
+                    return self._send(200, fh.read(),
+                                      "application/octet-stream")
+            if path == "/avatar.json" and getattr(self.app, "vrm", None):
+                return self._send(200, self.app.vrm["config"])
+            if path == "/states":
+                return self._states()
             if path == "/clock":
                 return self._send(200, {"t": self.app.clock.now()})
             if path == "/state":
@@ -417,6 +448,40 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.flush()
                     continue
                 line = json.dumps(m, ensure_ascii=False)
+                self.wfile.write(f"data: {line}\n\n".encode("utf-8"))
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+        finally:
+            hub.unsubscribe(q)
+
+    def _static(self, rel):
+        """flow/web files (the VRM page's modules and vendored libraries);
+        nothing outside that directory."""
+        full = os.path.realpath(os.path.join(WEB, rel))
+        if not full.startswith(os.path.realpath(WEB) + os.sep) or \
+                not os.path.isfile(full):
+            return self._send(404, {"error": "not found"})
+        ctype = {".js": "text/javascript", ".html": "text/html; "
+                 "charset=utf-8", ".json": "application/json"}.get(
+                     os.path.splitext(full)[1], "application/octet-stream")
+        with open(full, "rb") as fh:
+            return self._send(200, fh.read(), ctype)
+
+    def _states(self):
+        """Server-sent VRM body states, one per frame (Hub.state)."""
+        hub = self.app.hub
+        q = hub.subscribe("states")
+        self._stream_head("text/event-stream; charset=utf-8")
+        try:
+            while not hub.stop.is_set():
+                try:
+                    m = q.get(timeout=1.0)
+                except queue.Empty:
+                    self.wfile.write(b": ping\n\n")
+                    self.wfile.flush()
+                    continue
+                line = json.dumps(m, separators=(",", ":"))
                 self.wfile.write(f"data: {line}\n\n".encode("utf-8"))
                 self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError, OSError):
@@ -496,6 +561,8 @@ class Performer:
         # picture a vision backend gets.
         self.body = run if run.get("mode") == "body" else None
         self.snap = None
+        # --avatar both: the VRM follows every sentence (VRMFollower).
+        self.followers = []
 
     def start(self):
         self.thread = threading.Thread(target=self._loop, name="turns",
@@ -685,6 +752,10 @@ class Performer:
         gone = self.stream.direct(directed) if directed else 0
         if mouth is not None:
             self.stream.add_mouth(f0, mouth, len(mouth["open"]))
+        for fol in self.followers:
+            fol.sentence(acts, t_start, f0, spoken,
+                         None if audio is None else (audio, sr, moras),
+                         end)
         text = spoken
         if audio is not None:
             self.hub.add_audio(audio, sr, t_start, text)
@@ -910,7 +981,7 @@ class Recorder:
     render skipped or the encoder dropped is filled with the next frame
     that arrives, so the video keeps the clock the speech is mixed on."""
 
-    def __init__(self, out_dir, fps, log=print):
+    def __init__(self, out_dir, fps, log=print, video=True):
         os.makedirs(out_dir, exist_ok=True)
         self.dir, self.fps, self.log = out_dir, float(fps), log
         self.lock = threading.Lock()
@@ -919,7 +990,9 @@ class Recorder:
         self.proc = None
         self.turns = open(os.path.join(out_dir, "turns.jsonl"), "a",
                           encoding="utf-8")
-        if shutil.which("ffmpeg"):
+        if not video:
+            pass            # a VRM session records its states (flow.vrm)
+        elif shutil.which("ffmpeg"):
             self.proc = subprocess.Popen(
                 ["ffmpeg", "-y", "-loglevel", "error", "-f", "image2pipe",
                  "-c:v", "mjpeg", "-framerate", f"{self.fps:g}", "-i", "-",
@@ -993,6 +1066,9 @@ class App:
     def __init__(self, clock, hub, fps, performer=None, loop=None):
         self.clock, self.hub, self.fps = clock, hub, fps
         self.performer, self.loop = performer, loop
+        # --avatar vrm / both: {"path": the .vrm, "config": the page's
+        # avatar.json}; None serves the Live2D page.
+        self.vrm = None
 
     def say(self, text):
         return self.performer.say(text)
@@ -1000,8 +1076,9 @@ class App:
     def state(self):
         out = {"t": self.clock.now(), "fps": self.fps}
         if self.loop is not None:
-            out.update(frame=self.loop.f, rendered=self.loop.rendered,
-                       skipped=self.loop.skipped)
+            out.update(frame=self.loop.f,
+                       rendered=getattr(self.loop, "rendered", self.loop.f),
+                       skipped=getattr(self.loop, "skipped", 0))
         if self.performer is not None:
             out.update(turns=self.performer.turns,
                        busy=self.performer.busy)
@@ -1038,6 +1115,9 @@ def main(argv=None) -> int:
     ap.add_argument("--bg", default="0.12,0.12,0.14",
                     help="background colour, r,g,b in 0..1")
     a = ap.parse_args(argv)
+    if a.avatar == "vrm":
+        return vrm_live(a, ap)
+    dr.check_live2d_args(a, ap)
     import importlib.util
     if importlib.util.find_spec("PIL") is None:     # frames are JPEG via PIL
         ap.error("flow.live needs Pillow for the frames: pip install Pillow")
@@ -1064,6 +1144,9 @@ def main(argv=None) -> int:
     recorder = Recorder(a.record, a.fps) if a.record else None
     perf = Performer(a, run, rig, stream, clock, hub, backend, tts,
                      recorder=recorder)
+    vrm_side = None
+    if a.avatar == "both":
+        vrm_side = both_setup(a, perf, clock, hub)
     encoder = Encoder(hub, a.quality, recorder)
     stop = threading.Event()
     # SIGTERM (timeout, systemd, a closed ssh session's kill) stops like
@@ -1076,6 +1159,11 @@ def main(argv=None) -> int:
         loop = RenderLoop(stream, be, clock, encoder, a.fps, absent=absent)
         perf.snap = lambda: loop.last_img
         app = App(clock, hub, a.fps, perf, loop)
+        if vrm_side is not None:
+            # The VRM's states on their own thread, on the same clock.
+            app.vrm = vrm_side["page"]
+            threading.Thread(target=vrm_side["loop"].run, args=(stop,),
+                             name="vrm", daemon=True).start()
         srv = Server(app, a.host, a.port)
         srv.start()
         print(f"live: serving http://{a.host}:{srv.server_address[1]}/ "
@@ -1094,6 +1182,8 @@ def main(argv=None) -> int:
             encoder.close()
             if recorder is not None:
                 recorder.close()
+            if vrm_side is not None and vrm_side["log"] is not None:
+                print("live: vrm states -> " + vrm_side["log"].close())
 
     if a.renderer == "none":
         serve(FakeBackend(a.size))
@@ -1117,6 +1207,85 @@ def main(argv=None) -> int:
                       parts=parts)
         clock.t0 = time.monotonic()
         serve(be, absent)
+    return 0
+
+
+def both_setup(a, perf, clock, hub):
+    """--avatar both: a VRM beside the Live2D rig. Its own stream (idle,
+    blinks, breath) follows every sentence the Live2D rig plays (flow.vrm.
+    Follower); the prompt stays the Live2D body's (the more constrained
+    one: a target it reaches the VRM reaches too)."""
+    try:
+        from . import vrm as fv
+    except ImportError:
+        from flow import vrm as fv
+    bm, bpath, rig, page = fv.live_setup(a)
+    stream = fs.MotionStream(rig, seed=a.seed, idle=not a.no_idle, log=print)
+    perf.followers.append(fv.Follower(a, bm, rig, stream, log=perf.emit))
+    slog = (fv.StateLog(a.record, a.fps, bpath, page["path"]) if a.record
+            else None)
+    loop = fv.StateLoop(stream, bm, clock, hub, a.fps, record=slog)
+    return {"page": page, "loop": loop, "log": slog}
+
+
+def vrm_live(a, ap) -> int:
+    """main() for --avatar vrm: the same turns (flow.live's Performer) on a
+    VRM body (flow.vrm); the page draws the states the server streams on
+    /states. No GL, no Pillow."""
+    try:
+        from . import vrm as fv
+    except ImportError:
+        from flow import vrm as fv
+    if a.vrm is None and a.vrm_body is None:
+        ap.error("--avatar vrm needs --vrm PATH (or --vrm-body FILE)")
+    if a.body_image:
+        print("live: --body-image: the server cannot draw a VRM (the browser "
+              "does); text only")
+        a.body_image = False
+    if (a.lipsync or "auto") == "auto":
+        a.lipsync = "vowels"
+    bm, bpath, rig, page = fv.live_setup(a)
+    run = fv.prepare(a, bm, bpath)
+    backend = dr.make_backend(a)
+    if a.tts is None:
+        a.tts = "auto"
+    tts = dr.make_voice(a)
+    clock = Clock()
+    hub = Hub(clock)
+    stream = fs.MotionStream(rig, seed=a.seed, idle=not a.no_idle, log=print)
+    recorder = (Recorder(a.record, a.fps, video=False) if a.record
+                else None)
+    slog = (fv.StateLog(a.record, a.fps, bpath, page["path"]) if a.record
+            else None)
+    perf = Performer(a, run, rig, stream, clock, hub, backend, tts,
+                     recorder=recorder)
+    loop = fv.StateLoop(stream, bm, clock, hub, a.fps, record=slog)
+    app = App(clock, hub, a.fps, perf, loop)
+    app.vrm = page
+    stop = threading.Event()
+    import signal
+    signal.signal(signal.SIGTERM, lambda *_: stop.set())
+    srv = Server(app, a.host, a.port)
+    srv.start()
+    print(f"live: serving http://{a.host}:{srv.server_address[1]}/ "
+          f"(VRM {os.path.basename(page['path'])}; ssh -L "
+          f"{srv.server_address[1]}:127.0.0.1:{srv.server_address[1]} "
+          "<server>, then open that address)")
+    perf.start()
+    if a.say:
+        perf.say(a.say)
+    try:
+        loop.run(stop)
+    except KeyboardInterrupt:
+        print("live: stopping")
+    finally:
+        stop.set()
+        srv.stop()
+        if recorder is not None:
+            recorder.close()
+        if slog is not None:
+            print("live: vrm states -> " + slog.close() + " (render: python "
+                  f"-m flow.vrmrender --run {a.record})")
     return 0
 
 

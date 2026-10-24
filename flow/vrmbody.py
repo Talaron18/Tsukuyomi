@@ -616,6 +616,11 @@ class VRMBody(fb.BodyModel):
             self.align[s] = (between(lo - u, [sg, 0, 0]),
                              between(h - lo, [sg, 0, 0]))
         self.kind = KIND
+        # flow.pose.arm_params reads this cache: the joints that move an
+        # arm (the torso moves the hands too, but a torso pose is not an
+        # arm pose).
+        self._arm_params = {p for s in "LR" for p in ARM[s]} | {
+            "shoulders.up", "shoulder.L.up", "shoulder.R.up"}
         self.prompt_kind = "a 3D (VRM) character"
         if "breath" in self.vrm:
             self._breath = self.vrm["breath"]

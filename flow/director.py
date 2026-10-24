@@ -1428,8 +1428,25 @@ def mux_cmd(vid, wav, subs, dest):
 def add_args(ap):
     """The arguments flow.director and flow.live share: the rig, the
     language model, speech and lip sync."""
-    ap.add_argument("--model-json", required=True, help="the rig's .model3.json")
-    ap.add_argument("--rig", required=True, help="rigs/<name>.npz")
+    ap.add_argument("--model-json", default=None,
+                    help="the rig's .model3.json (required for a Live2D "
+                         "avatar)")
+    ap.add_argument("--rig", default=None, help="rigs/<name>.npz (required "
+                    "for a Live2D avatar)")
+    ap.add_argument("--avatar", default="live2d",
+                    choices=("live2d", "vrm", "both"),
+                    help="live2d [default]: the Live2D rig; vrm: a VRM "
+                         "avatar (--vrm), drawn by the browser from body "
+                         "states (flow.vrm; docs/embodiment.md E3); both "
+                         "(flow.live only): the Live2D rig and the VRM side "
+                         "by side, one reply driving both")
+    ap.add_argument("--vrm", default=None, metavar="AVATAR.vrm",
+                    help="--avatar vrm/both: the VRM file (its body file "
+                         "rigs/<name>.body.json is used when it names this "
+                         "file, else built from it, flow.vrmbody)")
+    ap.add_argument("--vrm-body", default=None, metavar="BODY.json",
+                    help="--avatar vrm/both: a VRM body file (flow.vrmbody "
+                         "--out)")
     ap.add_argument("--clips", default=None, help="clips/<name>.npz (column "
                     "alignment, as flow.runtime)")
     ap.add_argument("--events", default="default", metavar="STATS.json",
@@ -1868,6 +1885,13 @@ def main(argv=None) -> int:
         a.mode = "body"
     if a.body_check and a.mode != "body":
         ap.error("--body-check needs --mode body")
+    if a.avatar == "both":
+        ap.error("--avatar both is for flow.live; offline, run each avatar")
+    if a.avatar == "vrm":
+        if a.body_check:
+            ap.error("--body-check is Live2D only")
+        return vrm_main(a, ap)
+    check_live2d_args(a, ap)
     if a.gestures and not os.path.exists(a.gestures):
         ap.error(f"--gestures {a.gestures}: no such file")
     info = sys.stderr if a.print_system else sys.stdout
@@ -1933,6 +1957,90 @@ def main(argv=None) -> int:
     n = 0
     rc = 0
     first = a.say
+    while True:
+        if first is not None:
+            line, first = first, None
+        else:
+            try:
+                line = input("you> ").strip()
+            except EOFError:
+                break
+        if not line:
+            continue
+        n += 1
+        rc = turn(line, os.path.join(a.out, f"turn{n:02d}"))
+    return 0 if rc in (0, 3) else rc
+
+
+def check_live2d_args(a, ap):
+    """A Live2D avatar needs its model and rig (no longer argparse-required
+    since --avatar vrm needs neither)."""
+    miss = [f for f, v in (("--model-json", a.model_json), ("--rig", a.rig))
+            if not v]
+    if miss:
+        ap.error("the following arguments are required: " + ", ".join(miss)
+                 + " (or --avatar vrm --vrm PATH)")
+
+
+def vrm_main(a, ap) -> int:
+    """main() for --avatar vrm (flow.vrm): plan each turn into states.json
+    beside speech.wav and subs.srt; --render draws them in headless Chromium
+    (flow.vrmrender) to render/preview.mp4 and demo.mp4."""
+    try:
+        from . import vrm as fv
+        from . import pose as pz
+    except ImportError:
+        from flow import vrm as fv
+        from flow import pose as pz
+    if a.vrm is None and a.vrm_body is None:
+        ap.error("--avatar vrm needs --vrm PATH (or --vrm-body FILE)")
+    if (a.lipsync or "auto") == "auto":
+        # A VRM has the five visemes; the Live2D mouth calibration has no
+        # rig to read here.
+        a.lipsync = "vowels"
+    info = sys.stderr if a.print_system else sys.stdout
+    bm, bpath = fv.body_for(a.vrm, a.vrm_body,
+                            log=lambda s: print(s, file=info))
+    run = fv.prepare(a, bm, bpath, info)
+    if a.print_system:
+        print(run["system"])
+        return 0
+    backend = make_backend(a)
+    tts = make_voice(a)
+    messages = []
+    body = run if run.get("mode") == "body" else None
+
+    def turn(text, out_dir):
+        if body is None:
+            messages.append({"role": "user", "content": text})
+            parser = None
+        else:
+            messages.append(pz.user_message(
+                text + "\n" + pz.pose_now(bm), a.backend, None))
+            parser = body["parser"]()
+        reply = ask(backend, run["system"], messages, {},
+                    offered=run["offered"], parser=parser)
+        print(f"director: reply: {reply['raw'].strip()}")
+        res = fv.plan(a, reply, out_dir, run, tts=tts)
+        if res is None:
+            messages.pop()
+            return 3
+        messages.append({"role": "assistant", "content": reply["raw"]})
+        cmd = [sys.executable, "-m", "flow.vrmrender", "--run", out_dir]
+        if a.render:
+            try:
+                from . import vrmrender as vr
+            except ImportError:
+                from flow import vrmrender as vr
+            return vr.main(["--run", out_dir])
+        print("render with:\n  " + shlex.join(cmd))
+        return 0
+
+    if not a.chat:
+        if a.say is None and a.backend not in ("file", "stdin"):
+            ap.error("--say is required (or --chat)")
+        return turn(a.say or "", a.out)
+    n, rc, first = 0, 0, a.say
     while True:
         if first is not None:
             line, first = first, None
