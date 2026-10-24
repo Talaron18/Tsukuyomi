@@ -674,6 +674,13 @@ class Performer:
                 directed.append(k_)
             for rec in poses:                  # stream time, for the log
                 rec["start"] = round(rec["start"] + t_start, 4)
+            # A gesture an earlier sentence directed gives way too.
+            arm_w = [(p_["start"], p_["start"] + p_["dur"] + p_["hold"]
+                      + p_["release"]) for p_ in poses
+                     if p_.get("arm_params") or p_.get("parts")]
+            if arm_w and self.stream.drop_gestures(arm_w):
+                self.emit(f"live: turn {n}.{k} an earlier gesture gives way "
+                          "to an arm pose")
             lat_solve = self.clock.now() - t_s
         gone = self.stream.direct(directed) if directed else 0
         if mouth is not None:

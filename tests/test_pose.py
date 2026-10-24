@@ -665,3 +665,77 @@ def test_gesture_sides_follow_the_body_files_side_naming(tmp_path):
     assert list(named) == [("arm", "L")] and list(seen) == [("arm", "R")]
     at = gz.atoms({}, {"PartArmL": 1}, {}, sn)
     assert ("s", "arm", "R") in at
+
+
+def test_live_gesture_from_an_earlier_sentence_gives_way_to_an_arm_pose(
+        tmp_path):
+    import argparse
+    from flow import live as lv
+    from flow import stream as fs
+    from tests.test_live import FakeClock, SpeakingTTS
+    model, rig_path, bm = _body_rig(tmp_path / "x")
+    rig = fs.EventRig(str(model), str(rig_path), "default", None, None, FPS,
+                      str(tmp_path), log=lambda s: None)
+    labels = dr.gesture_labels(rig.motion_seconds)
+    lab = sorted(labels)[0]
+    clock = FakeClock(2.0)
+    stream = fs.MotionStream(rig, seed=0, autonomic=False,
+                             log=lambda s: None)
+    a = argparse.Namespace(seed=0, lead=0.25, gap=0.12, lipsync="off",
+                           mouth_gain=1.0, cjk_rate=dr.CJK_RATE,
+                           latin_rate=dr.LATIN_RATE, mood="auto",
+                           backend="deepseek")
+    run = {"system": "", "labels": labels, "offered": None,
+           "mode": "body", "body": bm, "core": None, "images": False,
+           "max_tag": pz.MAX_MARKER,
+           "parser": lambda: pz.parser_for(bm, gestures=labels)}
+
+    def directed_gestures():
+        return [k for k in stream.pending if k["type"] == "gesture"
+                and k.get("src") == "director" and not k.get("settle")]
+
+    logs = []
+    p = lv.Performer(a, run, rig, stream, clock, lv.Hub(clock),
+                     dr.TextBackend(f"Hello! [gesture:{lab}] Hi."),
+                     SpeakingTTS(clock), log=logs.append)
+    p.turn("hi")
+    assert len(directed_gestures()) == 1
+    # The next turn raises a hand while that gesture is still to play.
+    p.backend = dr.TextBackend('Look [pose {"hand.L.y": "@shoulder.y+0.3"}] '
+                               'here.')
+    p.turn("where?")
+    assert directed_gestures() == []
+    assert any("gives way to an arm pose" in s for s in logs)
+    assert [k for k in stream.pending if k["type"] == "pose"]
+
+
+def test_tag_mode_plans_do_not_depend_on_the_breath_gain(tmp_path, capsys):
+    """Tag mode changes only in the rendered breath: the gain is written
+    in the render loop after the dump, so tokens and plan are the same at
+    any gain; the render command carries it."""
+    model, rig, _bm = _body_rig(tmp_path / "x")
+    reply = tmp_path / "reply.txt"
+    reply.write_text("Oh, [brow:up] really? [nod] [look:away] Fine.",
+                     encoding="utf-8")
+    out = {}
+    for g in ("1", "0.1"):
+        d = tmp_path / f"g{g}"
+        assert dr.main(["--model-json", str(model), "--rig", str(rig),
+                        "--backend", "file", "--reply-file", str(reply),
+                        "--out", str(d), "--probe-dir", str(tmp_path),
+                        "--breath-gain", g]) == 0
+        log = capsys.readouterr().out
+        assert f"--breath-gain {g}" in log
+        out[g] = d
+    assert ((out["1"] / "tokens.json").read_bytes()
+            == (out["0.1"] / "tokens.json").read_bytes())
+    p1 = np.load(out["1"] / "plan.npz", allow_pickle=True)
+    p2 = np.load(out["0.1"] / "plan.npz", allow_pickle=True)
+    for k in ("traj", "mask", "part_opacity"):
+        np.testing.assert_array_equal(p1[k], p2[k])
+    # Without pose tokens the merge's windows are the moves' and gestures'
+    # as before (poses take only the arms now).
+    toks = [{"t": 1.0, "type": "head_turn", "role": "head", "duration": 0.5,
+             "hold": 1.0}, {"t": 2.0, "type": "gesture", "role": "arms",
+                            "duration": 3.0}]
+    assert dr.windows(toks) == {"head": [(1.0, 2.5)], "arms": [(2.0, 5.0)]}

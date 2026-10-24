@@ -359,6 +359,26 @@ class MotionStream:
             self._merge([], toks)
             return n0 + len(toks) - len(self.pending)
 
+    def drop_gestures(self, windows):
+        """Drop pending directed gestures (and settles) whose play overlaps
+        one of these (start, end) windows, stream seconds: body mode's arm
+        poses, which a gesture from an earlier sentence would fight for
+        the arm (flow.pose.drop_clashing_gestures does it within one).
+        One already playing is not cut; the pose plays over it. Returns
+        the number dropped."""
+        with self.lock:
+            keep, n = [], 0
+            for k in self.pending:
+                if k["type"] == "gesture" and k.get("src") == "director":
+                    a = float(k["t"])
+                    b = a + float(k.get("duration", 0.0))
+                    if any(a < w1 and b > w0 for w0, w1 in windows):
+                        n += 1
+                        continue
+                keep.append(k)
+            self.pending = keep
+        return n
+
     def add_mouth(self, first_frame, tok, n_frames):
         """A mouth token (speech.mouth_track payload) starting on frame
         `first_frame`, over n_frames."""
