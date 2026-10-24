@@ -41,18 +41,26 @@ Face shapes (eyes, brows, mouth, cheek) are declared from standard ids too: a
 lid's openness is the parameter's meaning, and measuring it as mesh extent
 would add noise, not information. CANON lists the source of each variable.
 
-File format (rigs/<rig>.body.json, FORMAT "tsukuyomi.body/1"):
+File format (rigs/<rig>.body.json, FORMAT "tsukuyomi.body/2"):
 
   rig, model_json, core_version
   frame       origin (model units, the chin at rest), unit (model units per
               hu), axes
+  side_naming {drawables, params: "character" | "screen", votes}: how the
+              rig's ids name sides, found from rest geometry (detect_naming).
+              Every ".L"/".R" in this file is the character's own side
   landmarks   rest positions in body units: chin (0, 0), head centre,
               shoulder.L/R, shoulder.y, chest, hips, hand.L/R
   drawables   [{id, part, region, side, confidence, evidence, guess}] -- one
               per Core drawable; region "unclear" where names and motion do
-              not say
+              not say, "effect" / "hitarea" for effects and hit-test meshes
+              (never body)
   params      {pid: {min, max, default, band, role, name, declares}}: role is
-              solvable / held / physics / switch / variant / inert
+              solvable / held / physics / switch / variant / effect / inert
+  effects     {params: {pid: {min, max, default, name, drawables}}, parts:
+              {part: {rest, name, drawables}}, drawables}: effects (PartFx,
+              PARAM_FXhand...), never variants or solved, kept for deliberate
+              use
   declared    {variable: [pid, scale]}: value = parameter x scale (scale < 0
               where the rig's sign is the other way, see meaning)
   meaning     {variable: which way + goes, and the measured evidence}
@@ -69,6 +77,10 @@ File format (rigs/<rig>.body.json, FORMAT "tsukuyomi.body/1"):
               interaction residual at the four corners (- = toward min, + =
               toward max from the default), applied bilinearly
   regions     {region: {drawables, vertices, confidence}} summary
+
+Format 1 files (sides named as the ids name them, effects in the body) load
+through upgrade_v1, which fixes what the stored data allows and lists the
+rest under "caveats"; re-measure to clear them.
 
 Measuring takes 3 s on Hiyori (2 variants) and 35 s on Natori (12); a solve
 0.2-3 s; the files are 0.34 and 3.2 MB.
@@ -92,17 +104,27 @@ import sys
 
 import numpy as np
 
-FORMAT = "tsukuyomi.body/1"
+FORMAT = "tsukuyomi.body/2"
+# Older formats load() still reads, upgraded in memory (upgrade_v1).
+FORMAT_V1 = "tsukuyomi.body/1"
 
 # ------------------------------------------------------------ canonical
 
-# Leaf regions a drawable can be assigned to. Sided ones carry ".L"/".R"
-# (the character's own side, as Live2D ids name it: ParamEyeLOpen closes the
-# eye at +x on every sample, measured on Hiyori).
+# Leaf regions a drawable can be assigned to. Sided ones carry ".L"/".R":
+# the character's own side, decided from rest geometry (x of the drawable
+# against the face's). Cubism's samples name sides the same way
+# (ParamEyeLOpen closes the eye at +x, measured on Hiyori), but rigs need
+# not: the Azur Lane rigs name some or all sides by screen side (lafei's
+# arm_L1 and PARAM_Arm_LT_Angle are the arm at -x). detect_naming finds a
+# rig's convention, per namespace (drawable / part ids, parameter ids), and
+# the body file records it as side_naming. "effect" holds drawables that are
+# effects (blurs, flashes, PartFx), "hitarea" hit-test meshes (TouchHead):
+# neither is body, and neither is ever a variant or solved for.
 SIDED = ("eye", "brow", "upper_arm", "forearm", "hand", "arm")
 LEAVES = ("face", "eye", "brow", "mouth", "nose", "ear", "cheek", "neck",
           "torso", "hips", "legs", "upper_arm", "forearm", "hand", "arm",
-          "hair", "accessory", "background")
+          "hair", "accessory", "background", "effect", "hitarea")
+NONBODY = ("effect", "hitarea")
 # Composite regions: unions of leaves. "arm.L" is both the leaf for an arm the
 # rig does not split and the union of the left arm's segments. The head's pose
 # is taken from its rigid-ish parts only: with the eyes in the union, closing
@@ -274,10 +296,55 @@ SWITCH_NAME = re.compile(r"表示|切替|切り替え|switch|toggle|show|visible
                          r"(^|[^a-z])on($|[^a-z])|(?<=[a-z])on$")
 
 
+# Effects and hit areas, over lower-case ids, part ids and cdi3 names. FX as
+# a word or a word's end (PARAM_FXhand, PARAM_beixin_FX, PARAM_arm_LFX,
+# PartFx, D_FX_03, PARAM_handFX_move); pinyin texiao / xiaoguo.
+EFFECT_NAME = re.compile(r"(^|[^a-z])fx|fx($|[^a-z])|effect|エフェクト|特效|"
+                         r"效果|texiao|xiaoguo")
+HITAREA_NAME = re.compile(r"(^|[^a-z])touch|hit_?area|当たり判定")
+
+
+def nonbody_leaf(texts) -> tuple[str, str]:
+    """("effect" | "hitarea", evidence) when any of a drawable's own texts
+    (its id, its parts below those all drawables share, their names) marks
+    it so: an effect anywhere above it is still an effect (lafei's
+    D_BODY_70 sits under PartFx)."""
+    for t in texts:
+        low = (t or "").lower()
+        if not low:
+            continue
+        if EFFECT_NAME.search(low):
+            return "effect", f"effect<-{t}"
+        if HITAREA_NAME.search(low):
+            return "hitarea", f"hitarea<-{t}"
+    return "", ""
+
+
+def own_texts(texts) -> list[list[str]]:
+    """Each drawable's texts without the parts every drawable shares (and
+    their names): texts[d] = [id, part, name, parent, name, ...]."""
+    common = set.intersection(*(set(t[1::2]) for t in texts)) if texts \
+        else set()
+    out = []
+    for t in texts:
+        o = [t[0]]
+        for p, n in zip(t[1::2], t[2::2]):
+            if p not in common:
+                o += [p, n]
+        out.append(o)
+    return out
+
+
+def effect_name(*texts) -> bool:
+    """A parameter or part named as an effect."""
+    return any(EFFECT_NAME.search((t or "").lower()) for t in texts)
+
+
 def name_leaf(texts) -> tuple[str, str]:
     """(leaf, evidence) from the first text a rule matches, most specific
     first. "head" (a head part with no finer name) maps to face; nothing
-    matching is ""."""
+    matching is "". Effects and hit areas are nonbody_leaf's, over the
+    drawable's own texts (own_texts)."""
     for t in texts:
         low = (t or "").lower()
         for leaf, rx in _RULES:
@@ -327,8 +394,75 @@ def param_meta(pid: str, name: str = "", group: str = "") -> dict:
                                                   pid.lower()))}
 
 
+def flip_side(s: str) -> str:
+    return {"L": "R", "R": "L"}.get(s, s)
+
+
+def mirror_id(pid: str) -> str:
+    """A standard id with its side swapped: ParamEyeLOpen -> ParamEyeROpen,
+    ParamBrowLY -> ParamBrowRY, ParamLeftShoulderUp -> ParamRightShoulderUp."""
+    sw = {"Left": "Right", "Right": "Left", "L": "R", "R": "L"}
+    return re.sub(r"Left|Right|(?<=[a-z])[LR](?=[A-Z]|$)",
+                  lambda m: sw[m.group(0)], pid)
+
+
+def _sided_param(p: dict) -> bool:
+    return bool(p["side"]) and (p["arm"] or p["group"] in ("eyelid", "brow"))
+
+
+def detect_naming(texts, rest_xy, response, params, face_x, margin=0.0,
+                  motion_floor=1e-6) -> dict:
+    """The rig's side-naming convention, per namespace, by majority vote of
+    name against rest geometry. "character" is Cubism's (L = the
+    character's left = +x), "screen" the viewer's (L = -x).
+
+    drawables  every sided-leaf drawable (eye, brow, arm...) whose id or
+               part names a side and whose centroid is clear of the face's x
+               by `margin`: its name against its x
+    params     every sided arm / eyelid / brow parameter that moves sided
+               drawables clear of the midline: its name against the side
+               (by x) it moves, when that side carries > 3x the other's
+               motion
+
+    Returns {drawables, params, votes: {drawables: [agree, disagree],
+    params: [...]}}; a namespace with no votes, or a tie, is "character".
+    """
+    n = len(texts)
+    R = np.asarray(response, float).reshape(n, len(params))
+    rest_xy = np.asarray(rest_xy, float).reshape(n, 2)
+    own = own_texts(texts)
+    dx = rest_xy[:, 0] - face_x
+    clear = np.abs(dx) > margin
+    sided = np.array([not nonbody_leaf(own[d])[0]
+                      and name_leaf(texts[d])[0] in SIDED for d in range(n)],
+                     bool)
+    vd = [0, 0]
+    for d in range(n):
+        s = text_side(texts[d])
+        if sided[d] and clear[d] and s:
+            vd[0 if (dx[d] > 0) == (s == "L") else 1] += 1
+    vp = [0, 0]
+    peak = R.max(axis=0) if n else np.zeros(len(params))
+    for j, p in enumerate(params):
+        if not _sided_param(p) or peak[j] <= motion_floor:
+            continue
+        m = sided & clear
+        left = float(R[m & (dx > 0), j].sum())
+        right = float(R[m & (dx < 0), j].sum())
+        if max(left, right) <= motion_floor or \
+                max(left, right) <= 3 * min(left, right):
+            continue
+        geo = "L" if left > right else "R"
+        vp[0 if geo == p["side"] else 1] += 1
+
+    def conv(v):
+        return "screen" if v[1] > v[0] else "character"
+    return {"drawables": conv(vd), "params": conv(vp),
+            "votes": {"drawables": vd, "params": vp}}
+
+
 def assign_regions(texts, rest_xy, response, params, face_x=None,
-                   motion_floor=1e-6):
+                   motion_floor=1e-6, naming=None, margin=0.0):
     """Body region for each drawable.
 
     texts[d]     names for drawable d, most specific first (its id, then its
@@ -338,11 +472,20 @@ def assign_regions(texts, rest_xy, response, params, face_x=None,
                  parameter's far value
     params       [param_meta(...)] in response's column order
 
+    naming       detect_naming's result: the drawables' name sides are read
+                 through it; params' sides must already be the character's
+    margin       model units: a drawable this close to the face's x has no
+                 side by position
+
     Returns [{region, leaf, side, confidence, evidence, guess}]. Names decide
-    the leaf; motion decides the side where the rig's sided arm, eye or brow
-    parameters move it, and splits an arm named only as an arm into upper
-    arm, forearm and hand by which joint parameters move it (a wrist or hand
-    parameter moving it at >= SPLIT of its peak makes it a hand). Motion
+    the leaf. The side is the character's: the name read through the rig's
+    convention (which rest geometry decided, detect_naming), else the sided
+    arm, eye or brow parameters that move it, else its rest x against the
+    face's. Position does not override a name drawable by drawable: a limb
+    can cross the midline (Natori's crossed hands). Motion splits an arm
+    named only as an arm into upper arm, forearm and hand by which joint
+    parameters move it (a wrist or hand parameter moving it at >= SPLIT of
+    its peak makes it a hand). Motion
     also checks names: a face-family drawable no head parameter moves, or an
     arm one no arm parameter moves, is kept but marked low. A drawable no
     name places stays "unclear", with a motion guess when one family of
@@ -363,10 +506,19 @@ def assign_regions(texts, rest_xy, response, params, face_x=None,
     common = set.intersection(*(set(c) for c in chains)) if chains else set()
     group = [next((p for p in reversed(c) if p not in common), "")
              for c in chains]
+    own = own_texts(texts)
+    screen = (naming or {}).get("drawables") == "screen"
     out = []
     for d in range(n):
+        leaf, ev = nonbody_leaf(own[d])
+        if leaf:
+            out.append({"region": leaf, "leaf": leaf, "side": "",
+                        "confidence": "high", "evidence": ev, "guess": ""})
+            continue
         leaf, ev = name_leaf(texts[d])
         side_name = text_side(texts[d])
+        if screen:
+            side_name = flip_side(side_name)
         # Motion side: the sided arm / eye / brow parameters that move it.
         mv = {"L": 0.0, "R": 0.0}
         for j, p in enumerate(params):
@@ -380,6 +532,7 @@ def assign_regions(texts, rest_xy, response, params, face_x=None,
             if mv[hi_s] > 3 * mv[lo_s]:
                 side_motion = hi_s
         side_pos = "L" if rest_xy[d, 0] >= face_x else "R"
+        pos_clear = abs(rest_xy[d, 0] - face_x) > margin
         conf = "high" if leaf else "unclear"
         guess = ""
         if leaf in ("arm", "forearm"):
@@ -418,6 +571,11 @@ def assign_regions(texts, rest_xy, response, params, face_x=None,
             ev += ("; side from name" if side_name else
                    "; side from motion" if side_motion else
                    "; side from position")
+            if (side_name or side_motion) and pos_clear and \
+                    side != side_pos:
+                # Natori's crossed hands (PartHand21, 61) lie past the
+                # midline: the name, read through the convention, wins.
+                ev += f"; lies on the {side_pos} side"
             if not side_name and not side_motion and conf == "high":
                 conf = "medium"
         # Motion check of the name.
@@ -438,7 +596,8 @@ def assign_regions(texts, rest_xy, response, params, face_x=None,
             if h is not None and h > 0.3 and (a is None or h > 2 * a):
                 guess = "head"
             elif a is not None and a > 0.3 and (h is None or a > 2 * h):
-                guess = f"arm.{side_motion or side_pos}"
+                guess = "arm." + (side_pos if pos_clear else
+                                  side_motion or side_pos)
         out.append({"region": region, "leaf": leaf, "side": side,
                     "confidence": conf, "evidence": ev, "guess": guess})
     return out
@@ -765,11 +924,51 @@ def measure(core, info: dict, log=print) -> dict:
                         info.get("groups", {}).get(pids[i], ""))
              for i in live]
     # Face centre for sides: the drawables names place on the face.
-    face0 = [d for d in range(n_d) if name_leaf(texts[d])[0] in
-             ("face", "eye", "brow", "mouth", "nose")]
-    face_x = float(np.median(cent[face0, 0])) if face0 else None
-    regs = assign_regions(texts, cent, resp, pmeta, face_x)
+    own = own_texts(texts)
+    face0 = [d for d in range(n_d) if not nonbody_leaf(own[d])[0]
+             and name_leaf(texts[d])[0] in ("face", "eye", "brow", "mouth",
+                                            "nose")]
+    face_x = float(np.median(cent[face0, 0])) if face0 else \
+        float(np.median(cent[:, 0]))
+    # A drawable within 2 % of the drawn width of the face's x has no side
+    # by position.
+    margin = 0.02 * float(np.ptp(cent[:, 0])) if n_d else 0.0
+    naming = detect_naming(texts, cent, resp, pmeta, face_x, margin)
+    if naming["params"] == "screen":
+        for p in pmeta:
+            p["side"] = flip_side(p["side"])
+    log(f"body: side naming drawables {naming['drawables']} "
+        f"{naming['votes']['drawables']}, params {naming['params']} "
+        f"{naming['votes']['params']} (agree, disagree with geometry)")
+    regs = assign_regions(texts, cent, resp, pmeta, face_x, naming=naming,
+                          margin=margin)
     leaf_of = [r["region"] for r in regs]
+
+    # Effects: drawables named so (or under a part named so), parameters
+    # named so or moving / flipping only effect drawables, parts named so
+    # or holding only effect drawables. They are never variants, never
+    # solved; the file lists them under "effects" for deliberate use.
+    nonbody = np.array([r["region"] in NONBODY for r in regs], bool)
+    eff_draw = np.array([r["region"] == "effect" for r in regs], bool)
+    eff_params = {}
+    for c, i in enumerate(live):
+        p = pids[i]
+        col = resp[:, c]
+        touched = set(np.nonzero(col > 0.05 * col.max())[0].tolist()) \
+            if col.max() > 1e-6 else set()
+        touched |= flips_all.get(p, set())
+        by_name = effect_name(p, info.get("param_names", {}).get(p, ""))
+        only_fx = bool(touched) and all(nonbody[d] for d in touched) and \
+            any(eff_draw[d] for d in touched)
+        if by_name or only_fx:
+            eff_params[p] = sorted(touched)
+    all_parts = pose_parts | set(curve_parts)
+    eff_parts = {}
+    for part in sorted(all_parts):
+        ds = [d for d in range(n_d) if part in texts[d][1::2]]
+        if effect_name(part, part_names.get(part, "")) or (
+                ds and all(eff_draw[d] for d in ds)):
+            eff_parts[part] = ds
 
     def members(region, vis):
         return region_members(leaf_of, off, vis, region)
@@ -795,7 +994,11 @@ def measure(core, info: dict, log=print) -> dict:
     band_of = info.get("band_of", lambda pid: "expressive")
     declared = {}
     by_canon = {re.sub(r"[_\s]", "", p.lower()): p for p in pids}
+    sided_decl = {}
     for name, unit_, sid, deg in DECLARED:
+        if re.search(r"\.[LR]\.", name) and naming["params"] == "screen":
+            # The character's left eye is the rig's ParamEyeROpen.
+            sided_decl[name] = sid = mirror_id(sid)
         p = by_canon.get(sid.lower())
         if p is None:
             continue
@@ -830,10 +1033,17 @@ def measure(core, info: dict, log=print) -> dict:
             declared[name] = (p, scale)
         meaning[name] = f"{text} ({'-' if scale < 0 else ''}{p}; {proxy} "\
                         f"{d:+.3f} over its range)"
+    for name in sided_decl:
+        if name in declared:
+            side = "left" if ".L." in name else "right"
+            meaning[name] = (f"the character's {side} side: "
+                             f"{declared[name][0]} (the rig names "
+                             "parameters by screen side)")
     arm_regions = {"arm.L", "arm.R", "upper_arm.L", "upper_arm.R",
                    "forearm.L", "forearm.R", "hand.L", "hand.R"}
     variant_switch = {p for p, ds in opac_switch.items()
-                      if any(leaf_of[d] in arm_regions for d in ds)}
+                      if p not in eff_params
+                      and any(leaf_of[d] in arm_regions for d in ds)}
     declared_pids = {p for p, _s in declared.values()}
     roles = {}
     for i, p in enumerate(pids):
@@ -842,6 +1052,8 @@ def measure(core, info: dict, log=print) -> dict:
             role = "inert"
         elif p in held:
             role = "held"
+        elif p in eff_params:
+            role = "effect"
         elif band == "physics" or p in info.get("physics", set()):
             role = "physics"
         elif p in variant_switch:
@@ -875,6 +1087,8 @@ def measure(core, info: dict, log=print) -> dict:
     side_of_dim = {}
     for g in groups:
         for part in g:
+            if part in eff_parts:
+                continue
             ds = [d for d in range(n_d) if part in texts[d][1::2]]
             sides = {regs[d]["side"] for d in ds if leaf_of[d] in arm_regions}
             if sides:
@@ -890,6 +1104,8 @@ def measure(core, info: dict, log=print) -> dict:
             for d in dg:
                 side_of_dim[d] = ""
     for part in curve_parts:
+        if part in eff_parts:
+            continue
         sides = {regs[d]["side"] for d in range(n_d)
                  if part in texts[d][1::2] and leaf_of[d] in arm_regions}
         if sides:
@@ -1063,6 +1279,19 @@ def measure(core, info: dict, log=print) -> dict:
                           and any(leaf_of[d] in arm_regions for d in ds)},
         "declared": {n: [p, s] for n, (p, s) in declared.items()},
         "meaning": meaning,
+        "side_naming": naming,
+        "effects": {
+            "params": {p: {"min": roles[p]["min"], "max": roles[p]["max"],
+                           "default": roles[p]["default"],
+                           "name": roles[p]["name"],
+                           "drawables": [core.drawable_ids[d] for d in ds]}
+                       for p, ds in eff_params.items()},
+            "parts": {q: {"rest": float(rest_parts.get(q, 1.0)),
+                          "name": part_names.get(q, ""),
+                          "drawables": [core.drawable_ids[d] for d in ds]}
+                      for q, ds in eff_parts.items()},
+            "drawables": [core.drawable_ids[d] for d in range(n_d)
+                          if eff_draw[d]]},
         "features": feats,
         "variants": out_variants,
     }
@@ -1254,7 +1483,7 @@ def save(body: dict, path: str) -> None:
 def load(path: str) -> "BodyModel":
     with open(path, encoding="utf-8") as fh:
         blob = json.load(fh)
-    if blob.get("format") != FORMAT:
+    if blob.get("format") not in (FORMAT, FORMAT_V1):
         raise ValueError(f"{path}: not a {FORMAT} file "
                          f"(format {blob.get('format')!r})")
     feats = blob["features"]
@@ -1277,7 +1506,241 @@ def load(path: str) -> "BodyModel":
         v["rest"] = np.array([np.nan if x is None else x for x in v["rest"]],
                              float)
         v["present"] = np.array(v["present"], bool)
+    if blob["format"] == FORMAT_V1:
+        blob = upgrade_v1(blob)
     return BodyModel(blob)
+
+
+# Region families whose side is swapped together: an arm's segments and the
+# composite, an eye, a brow.
+FAMILIES = {"arm": ("arm", "upper_arm", "forearm", "hand"),
+            "eye": ("eye",), "brow": ("brow",)}
+MID_EPS = 0.05     # hu: a region centroid this close to the chin's x has no
+#                    side by position
+
+
+def upgrade_v1(blob: dict) -> dict:
+    """A tsukuyomi.body/1 blob (as load() holds it, sweeps as arrays) in
+    format 2, from what the file stores. v1 named sides by the ids, so a
+    rig named by screen side had its features mirrored; here each region
+    family (arm, eye, brow) takes its side from its rest centroid's x
+    (else from the drawables' detected convention), declared sided
+    variables (eye.L.open...) follow the parameters' convention, effects
+    and hit areas leave the body, and effect variants are dropped.
+
+    What v1 measured with a wrong assignment cannot be undone without the
+    Core: an effect or hit-area drawable inside a body region moved its
+    features (and a hit area in the face, the frame), and a region whose
+    drawables were sided by a parameter named the other way mixes both
+    sides. Those land in blob["caveats"]; re-measure to clear them.
+    """
+    feats = list(blob["features"])
+    fidx = {f: k for k, f in enumerate(feats)}
+    v0 = blob["variants"][0]
+    caveats = []
+
+    def rest_x(region):
+        k = fidx.get(f"{region}.x")
+        x = None if k is None else v0["rest"][k]
+        return None if x is None or math.isnan(x) else float(x)
+
+    # Effects and hit areas out of the body.
+    moved_out = {}
+    for d in blob["drawables"]:
+        leaf, ev = nonbody_leaf([d["id"], d.get("part", "")])
+        if leaf and d["region"] != leaf:
+            if d["region"] != "unclear":
+                moved_out.setdefault(d["region"], []).append(d["id"])
+            d.update(region=leaf, side="", confidence="high",
+                     evidence=ev + "; v1 upgrade", guess="")
+    for r, ids in sorted(moved_out.items()):
+        caveats.append(f"{r} was measured with {', '.join(ids)} (now "
+                       f"effect / hitarea)" + ("; the frame (chin, hu) "
+                                               "too" if r in COMPOSITES[
+                                                   "head"] else ""))
+
+    # Naming votes, as detect_naming but from region centroids.
+    vd = [0, 0]
+    for d in blob["drawables"]:
+        leaf, _, s = d["region"].partition(".")
+        ns = text_side([d["id"], d.get("part", "")])
+        x = rest_x(d["region"]) if leaf in SIDED else None
+        if ns and x is not None and abs(x) > MID_EPS:
+            vd[0 if (x > 0) == (ns == "L") else 1] += 1
+    vp = [0, 0]
+    sided_regions = [f"{f}.{s}" for f in ("arm", "eye", "brow")
+                     for s in "LR"]
+    for p, e in blob["params"].items():
+        meta = param_meta(p, e.get("name", ""))
+        sw = v0["sweeps"].get(p)
+        if not _sided_param(meta) or sw is None:
+            continue
+        D = sw[1]
+        lr = [0.0, 0.0]
+        for r in sided_regions:
+            x = rest_x(r)
+            if x is None or abs(x) <= MID_EPS:
+                continue
+            mv = float(np.hypot(D[:, fidx[f"{r}.x"]],
+                                D[:, fidx[f"{r}.y"]]).max())
+            lr[0 if x > 0 else 1] += mv
+        if max(lr) <= MOVE_EPS or max(lr) <= 3 * min(lr):
+            continue
+        geo = "L" if lr[0] > lr[1] else "R"
+        vp[0 if geo == meta["side"] else 1] += 1
+    naming = {"drawables": "screen" if vd[1] > vd[0] else "character",
+              "params": "screen" if vp[1] > vp[0] else "character",
+              "votes": {"drawables": vd, "params": vp}}
+
+    # Families whose labels are mirrored.
+    swap = set()
+    for fam in FAMILIES:
+        xs = {s: rest_x(f"{fam}.{s}") for s in "LR"}
+        wrong = [s for s, x in xs.items() if x is not None and abs(x) >
+                 MID_EPS and (x > 0) != (s == "L")]
+        right = [s for s, x in xs.items() if x is not None and abs(x) >
+                 MID_EPS and (x > 0) == (s == "L")]
+        if wrong and not right:
+            swap.add(fam)
+        elif not wrong and not right and naming["drawables"] == "screen":
+            swap.add(fam)
+        mid = [f"{fam}.{s} (x {x:+.3f})" for s, x in xs.items()
+               if x is not None and abs(x) <= MID_EPS]
+        if mid or (wrong and right):
+            caveats.append(f"{fam}: " + ", ".join(
+                mid or [f"{fam}.{s} on the same side" for s in "LR"])
+                + " -- its drawables mix both sides")
+    if naming["drawables"] != naming["params"]:
+        mixed = sorted({d["region"] for d in blob["drawables"]
+                        if "side from motion" in d["evidence"]})
+        if mixed:
+            caveats.append(f"{', '.join(mixed)}: drawables sided by "
+                           "parameters named the other way round; these "
+                           "regions mix both sides")
+    leaves = {lf for fam in swap for lf in FAMILIES[fam]}
+
+    def rename_region(r):
+        leaf, dot, s = r.partition(".")
+        return f"{leaf}.{flip_side(s)}" if dot and leaf in leaves else r
+
+    def rename_feature(f):
+        region, _, q = f.rpartition(".")
+        if q in POSE_Q and region in POSE_REGIONS:
+            return f"{rename_region(region)}.{q}"
+        return f
+    # Declared sided variables by the parameters' convention.
+    declared = dict(blob["declared"])
+    if naming["params"] == "screen":
+        new = {}
+        for n, ps in declared.items():
+            m = re.match(r"(.+)\.([LR])\.(.+)$", n)
+            new[f"{m.group(1)}.{flip_side(m.group(2))}.{m.group(3)}"
+                if m else n] = ps
+        dmap = {n: m for n, m in zip(declared, new)}
+        declared = new
+    else:
+        dmap = {n: n for n in declared}
+    region_feats = [f for f in feats if f not in dmap]
+    new_feats = region_feats + sorted(declared)
+    inv = {rename_feature(f): f for f in region_feats}
+    inv.update({m: n for n, m in dmap.items()})
+    cols = np.array([fidx[inv[f]] for f in new_feats])
+    for v in blob["variants"]:
+        v["rest"] = v["rest"][cols]
+        v["present"] = v["present"][cols]
+        v["sweeps"] = {p: (g, D[:, cols]) for p, (g, D) in
+                       v["sweeps"].items()}
+        v["pairs"] = [(a, b, R[:, cols]) for a, b, R in v["pairs"]]
+        v["front"] = {rename_region(k): x for k, x in
+                      v.get("front", {}).items()}
+    blob["features"] = new_feats
+    blob["declared"] = declared
+    for p, e in blob["params"].items():
+        e.pop("declares", None)
+    renamed = {m for o, m in dmap.items() if o != m}
+    for n, (p, _s) in declared.items():
+        blob["params"][p]["declares"] = n
+        if n in renamed:
+            blob.setdefault("meaning", {})[n] = (
+                f"the character's {'left' if '.L.' in n else 'right'} side:"
+                f" {p} (the rig names parameters by screen side)")
+    for d in blob["drawables"]:
+        r = rename_region(d["region"])
+        if r != d["region"]:
+            d["region"], d["side"] = r, flip_side(d["side"])
+            d["evidence"] += "; side mirrored by rest geometry (v1 upgrade)"
+    regions = {}
+    for d in blob["drawables"]:
+        e = regions.setdefault(d["region"], {"drawables": [], "vertices": 0,
+                                             "confidence": {}})
+        e["drawables"].append(d["id"])
+        e["confidence"][d["confidence"]] = e["confidence"].get(
+            d["confidence"], 0) + 1
+    old_regions = blob.get("regions", {})
+    for r, e in regions.items():
+        # Vertex counts per drawable are not in v1; a region whose members
+        # did not change keeps its total.
+        src = next((o for o in old_regions.values()
+                    if sorted(o["drawables"]) == sorted(e["drawables"])),
+                   None)
+        e["vertices"] = src["vertices"] if src else None
+    blob["regions"] = regions
+    blob["opacity_flips"] = {p: sorted({rename_region(r) for r in rs})
+                             for p, rs in blob.get("opacity_flips",
+                                                   {}).items()}
+    marks = dict(blob.get("landmarks", {}))
+    if "arm" in swap:
+        sh = {s: marks.pop(f"shoulder.{s}", None) for s in "LR"}
+        for s in "LR":
+            if sh[flip_side(s)] is not None:
+                marks[f"shoulder.{s}"] = sh[flip_side(s)]
+    nf = {f: k for k, f in enumerate(new_feats)}
+    for s in "LR":
+        marks.pop(f"hand.{s}", None)
+        x, y = v0["rest"][nf[f"hand.{s}.x"]], v0["rest"][nf[f"hand.{s}.y"]]
+        if not math.isnan(x):
+            marks[f"hand.{s}"] = [round(float(x), 4), round(float(y), 4)]
+    blob["landmarks"] = marks
+
+    # Effects: parameters and parts named so; variants that show one.
+    eff_params = [p for p, e in blob["params"].items()
+                  if effect_name(p, e.get("name", ""))]
+    for p in eff_params:
+        blob["params"][p]["role"] = "effect"
+    eff_parts = sorted({q for q in blob.get("rest_parts", {})
+                        if effect_name(q)} |
+                       {d["part"] for d in blob["drawables"]
+                        if effect_name(d.get("part", ""))})
+    keep = []
+    for k, v in enumerate(blob["variants"]):
+        shows = [p for p in eff_params if p in v["switches"] and
+                 v["switches"][p] != blob["params"][p]["default"]]
+        shows += [q for q in eff_parts if q in v["parts"] and
+                  v["parts"][q] != blob.get("rest_parts", {}).get(q, 0.0)]
+        if k and shows:
+            caveats.append(f"variant {v['name']!r} dropped: it shows "
+                           f"effect {', '.join(shows)}")
+            continue
+        for p in eff_params:
+            v["switches"].pop(p, None)
+        keep.append(v)
+    blob["variants"] = keep
+    blob["effects"] = {
+        "params": {p: {k: blob["params"][p][k] for k in
+                       ("min", "max", "default", "name")} | {"drawables": []}
+                   for p in eff_params},
+        "parts": {q: {"rest": float(blob.get("rest_parts", {}).get(q, 1.0)),
+                      "name": "",
+                      "drawables": [d["id"] for d in blob["drawables"]
+                                    if d.get("part") == q]}
+                  for q in eff_parts},
+        "drawables": [d["id"] for d in blob["drawables"]
+                      if d["region"] == "effect"]}
+    blob["side_naming"] = naming
+    blob["format"] = FORMAT
+    blob["upgraded_from"] = FORMAT_V1
+    blob["caveats"] = caveats
+    return blob
 
 
 # ----------------------------------------------------------------- model
@@ -1549,6 +2012,9 @@ class BodyModel:
     def limits(self, var: str, variant: int = 0) -> tuple[float, float] | None:
         """Reachable range of one variable in a variant: solved toward a far
         target on each side with everything else free."""
+        cache = self.__dict__.setdefault("_limits", {})
+        if (var, variant) in cache:
+            return cache[(var, variant)]
         v = self.variants[variant]
         k = self.fidx[var]
         if not v["present"][k]:
@@ -1558,9 +2024,37 @@ class BodyModel:
         for t in (-far, far):
             r = self._solve_variant({var: t}, {}, variant, {})
             ends.append(r["report"][var]["got"] if r else None)
-        if None in ends:
-            return None
-        return float(min(ends)), float(max(ends))
+        out = None if None in ends else (float(min(ends)), float(max(ends)))
+        cache[(var, variant)] = out
+        return out
+
+    def miss_hints(self, res: dict, max_variants: int = 8) -> dict:
+        """For each target a solve missed: {reach: its range alone in the
+        solved variant, variants: {name: range} of the (first
+        max_variants) other variants whose range holds the target, mirror:
+        (the other side's variable, its range)}. Ranges are single-variable
+        (everything else free), so a target inside one can still miss in
+        combination with others."""
+        out = {}
+        k0 = res.get("variant")
+        for t, e in res.get("report", {}).items():
+            if e.get("ok"):
+                continue
+            h = {"reach": None if k0 is None else self.limits(t, k0),
+                 "variants": {}, "mirror": None}
+            for k in range(min(len(self.variants), max_variants)):
+                if k == k0:
+                    continue
+                lim = self.limits(t, k)
+                if lim and lim[0] - TOL[feature_unit(t)] <= e["target"] \
+                        <= lim[1] + TOL[feature_unit(t)]:
+                    h["variants"][self.variants[k]["name"]] = lim
+            m = re.sub(r"\.([LR])\.", lambda g: f".{flip_side(g.group(1))}.",
+                       t)
+            if m != t and m in self.fidx and k0 is not None:
+                h["mirror"] = (m, self.limits(m, k0))
+            out[t] = h
+        return out
 
     def movers(self, region: str, variant: int = 0, top: int = 6) -> list:
         """[(pid, |dx,dy| max hu, roll max deg, scale max pct)] of the params
@@ -1570,6 +2064,8 @@ class BodyModel:
         kr, ks = self.fidx[f"{region}.roll"], self.fidx[f"{region}.scale"]
         rows = []
         for p, (grid, D) in v["sweeps"].items():
+            if self.params[p]["role"] == "effect":
+                continue
             mv = float(np.hypot(D[:, kx], D[:, ky]).max())
             rows.append((p, mv, float(np.abs(D[:, kr]).max()),
                          float(np.abs(D[:, ks]).max())))
@@ -1633,20 +2129,37 @@ def describe(bm: BodyModel, variant: int = 0) -> str:
     b = bm.blob
     L = [f"body: unit 1 hu = {b['frame']['unit']:.4f} model units; "
          f"{b['frame']['axes']}; origin chin"]
+    sn = b.get("side_naming")
+    if sn:
+        L.append(f"side naming: drawables {sn['drawables']}, params "
+                 f"{sn['params']} (votes agree/disagree with rest geometry: "
+                 f"{sn['votes']['drawables']}, {sn['votes']['params']}); "
+                 "sides below are the character's")
+    for c in b.get("caveats", []):
+        L.append(f"caveat ({b.get('upgraded_from', 'v1')} file, re-measure "
+                 f"to clear): {c}")
     L.append("landmarks (hu): " + ", ".join(
         f"{k} {v}" for k, v in b["landmarks"].items()))
     L.append("regions:")
     for r, e in sorted(b["regions"].items()):
         conf = ", ".join(f"{k} {n}" for k, n in sorted(e["confidence"]
                                                         .items()))
+        vt = "?" if e.get("vertices") is None else e["vertices"]
         L.append(f"  {r:<12} {len(e['drawables']):>3} drawables "
-                 f"{e['vertices']:>5} verts  [{conf}]")
+                 f"{vt:>5} verts  [{conf}]")
     roles = {}
     for p, e in b["params"].items():
         roles.setdefault(e["role"], []).append(p)
     for role in ("held", "variant", "switch", "physics"):
         if roles.get(role):
             L.append(f"{role}: {', '.join(sorted(roles[role]))}")
+    fx = b.get("effects", {})
+    if fx.get("params") or fx.get("parts"):
+        L.append("effects (never variants or solved; set them on purpose): "
+                 + ", ".join(sorted(fx.get("params", {})))
+                 + ("; parts " + ", ".join(sorted(fx["parts"]))
+                    if fx.get("parts") else "")
+                 + f"; {len(fx.get('drawables', []))} effect drawables")
     flips = b.get("opacity_flips", {})
     if flips:
         L.append("opacity-flipping params solved as continuous (joints that "
@@ -1664,6 +2177,22 @@ def describe(bm: BodyModel, variant: int = 0) -> str:
         if mv:
             L.append(f"  {r:<12} " + "; ".join(
                 f"{p} {d:.2f}/{a:.0f}/{s:.0f}" for p, d, a, s in mv))
+    L.append(f"reach by side (variant [{variant}]; the character's sides, "
+             "each variable alone):")
+    for s in "LR":
+        r = f"hand.{s}"
+        if not v["present"][bm.fidx[f"{r}.x"]]:
+            L.append(f"  {r:<7} not drawn")
+            continue
+        rng = []
+        for q in "xy":
+            lim = bm.limits(f"{r}.{q}", variant)
+            rng.append(f"{q} [{lim[0]:.3f}, {lim[1]:.3f}]" if lim else
+                       f"{q} -")
+        mv = bm.movers(r, variant, top=1)
+        L.append(f"  {r:<7} rest ({v['rest'][bm.fidx[r + '.x']]:.3f}, "
+                 f"{v['rest'][bm.fidx[r + '.y']]:.3f}) -> " + ", ".join(rng)
+                 + (f" hu; mainly {mv[0][0]}" if mv else " hu"))
     L.append(f"canonical variables (variant [{variant}]): rest -> range")
     for f in bm.features:
         k = bm.fidx[f]
@@ -1763,13 +2292,36 @@ def main(argv=None) -> int:
         res = bm.solve(targets, current)
         print(f"variant [{res['variant']}] {res.get('variant_name')}  "
               f"cost {res['cost']:.3f}")
+        hints = bm.miss_hints(res)
         for t, e in res["report"].items():
             if e["got"] is None:
-                print(f"  {t:<14} target {e['target']:.3f}: not available")
+                print(f"  {t:<14} target {e['target']:.3f}: not available "
+                      "MISS")
+            else:
+                print(f"  {t:<14} target {e['target']:8.3f} got "
+                      f"{e['got']:8.3f} err {e['error']:+.3f} {e['unit']}"
+                      f" {'ok' if e['ok'] else 'MISS'}")
+            h = hints.get(t)
+            if not h:
                 continue
-            print(f"  {t:<14} target {e['target']:8.3f} got {e['got']:8.3f}"
-                  f" err {e['error']:+.3f} {e['unit']}"
-                  f" {'ok' if e['ok'] else 'MISS'}")
+            msg = []
+            if h["reach"]:
+                msg.append(f"alone it reaches [{h['reach'][0]:.3f}, "
+                           f"{h['reach'][1]:.3f}] in this variant")
+            for name, lim in h["variants"].items():
+                msg.append(f"variant {name!r} reaches [{lim[0]:.3f}, "
+                           f"{lim[1]:.3f}]")
+            if h["mirror"] and h["mirror"][1]:
+                m, lim = h["mirror"]
+                msg.append(f"the other side's {m} reaches [{lim[0]:.3f}, "
+                           f"{lim[1]:.3f}]")
+            if msg:
+                print("      " + "; ".join(msg))
+        n_miss = sum(not e["ok"] for e in res["report"].values())
+        print(f"  MISS: {n_miss} of {len(res['report'])} targets outside "
+              "tolerance" + (" (rendering the best effort)" if args.render
+                             else "") if n_miss else
+              f"  ok: all {len(res['report'])} targets within tolerance")
         dflt = bm.default_values()
         moved = {p: x for p, x in res["params"].items()
                  if abs(x - dflt.get(p, x)) > 1e-4}

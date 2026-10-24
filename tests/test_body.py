@@ -452,3 +452,204 @@ def test_core_reads_hiyori(samples):
     op = m.opacities()
     assert max(op[i] for i, p in enumerate(parts) if p == "PartArmA") == 0
     assert min(op[i] for i, p in enumerate(parts) if p == "PartArmB") == 1
+
+
+# ------------------------------------------- side naming and effects
+
+MIRROR = {"ParamArmLA": "ParamArmRA", "ParamArmRA": "ParamArmLA",
+          "ParamHandL": "ParamHandR", "ParamArmLB": "ParamArmRB"}
+
+
+class MirroredCore(FakeCore):
+    """FakeCore with its parameters named by screen side (the Azur Lane
+    way): the arm at +x, the character's left, is ParamArmRA. With
+    sided_drawables the drawables are named by screen side too."""
+
+    def __init__(self, sided_drawables=False):
+        super().__init__()
+        self.param_ids = [MIRROR.get(p, p) for p in self.param_ids]
+        if sided_drawables:
+            self.drawable_ids = ["D_FACE", "D_BODY", "D_ARM_R_01",
+                                 "D_ARM_R_02", "D_ARM_L_01", "D_ARM_L_02",
+                                 "D_ARM_R_03", "D_ARM_R_04"]
+
+    def set(self, values=None, parts=None, reset=True):
+        inv = {v: k for k, v in MIRROR.items()}
+        shown, self.param_ids = self.param_ids, [inv.get(p, p) for p in
+                                                 self.param_ids]
+        try:
+            return super().set({inv.get(k, k): x for k, x in
+                                (values or {}).items()}, parts, reset)
+        finally:
+            self.param_ids = shown
+
+
+def _mirrored_info():
+    info = _info()
+    info["param_names"] = {"ParamHandR": "右手", "ParamArmRA": "右腕 A",
+                           "ParamArmLA": "左腕 A", "ParamArmRB": "右腕 B"}
+    return info
+
+
+def test_detect_naming_character(measured):
+    _core, blob = measured
+    assert blob["side_naming"]["params"] == "character"
+    assert blob["side_naming"]["votes"]["params"][1] == 0
+
+
+def test_screen_named_params_give_the_same_body(measured):
+    """Parameters named by screen side: detected, and the body (regions,
+    sides, frame, rest features) is the one the character-named rig has;
+    a hand target on the character's left moves the rig's ...R param."""
+    _core, ref = measured
+    blob = body.measure(MirroredCore(), _mirrored_info(), log=lambda *a: None)
+    assert blob["side_naming"]["params"] == "screen"
+    assert blob["side_naming"]["drawables"] == "character"   # no votes
+    assert [d["region"] for d in blob["drawables"]] == \
+        [d["region"] for d in ref["drawables"]]
+    assert blob["landmarks"] == ref["landmarks"]
+    np.testing.assert_allclose(blob["variants"][0]["rest"],
+                               ref["variants"][0]["rest"])
+    bm = body.BodyModel(blob)
+    y0 = blob["landmarks"]["hand.L"][1]
+    res = bm.solve({"hand.L.y": y0 + 0.1}, variant=0)
+    assert res["report"]["hand.L.y"]["ok"]
+    assert abs(res["params"].get("ParamArmRA", 0.0)) > 0.5
+    assert abs(res["params"].get("ParamArmLA", 0.0)) < 0.5
+
+
+def test_screen_named_drawables_detected():
+    """Drawables named by screen side too: both conventions detected, and
+    every arm drawable's side is its rest position's."""
+    core = MirroredCore(sided_drawables=True)
+    blob = body.measure(core, _mirrored_info(), log=lambda *a: None)
+    assert blob["side_naming"]["drawables"] == "screen"
+    assert blob["side_naming"]["params"] == "screen"
+    for d, P in zip(blob["drawables"], core._rest):
+        if d["side"]:
+            assert d["side"] == ("L" if P[:, 0].mean() > 0 else "R"), d
+    assert blob["landmarks"]["hand.L"][0] > 0 > \
+        blob["landmarks"]["hand.R"][0]
+
+
+def test_mirror_id():
+    assert body.mirror_id("ParamEyeLOpen") == "ParamEyeROpen"
+    assert body.mirror_id("ParamBrowRAngle") == "ParamBrowLAngle"
+    assert body.mirror_id("ParamLeftShoulderUp") == "ParamRightShoulderUp"
+    assert body.mirror_id("ParamAngleX") == "ParamAngleX"
+
+
+class FxCore(FakeCore):
+    """FakeCore plus an effect: a fist blur named hand_fx in the arm part,
+    over the face, shown and moved by PARAM_FXhand, and a hit-area mesh
+    over the head."""
+
+    def __init__(self):
+        super().__init__()
+        self.part_ids.append("PartTouch")
+        self.part_parent = np.append(self.part_parent, 0)
+        self.drawable_ids += ["hand_fx", "TouchHead"]
+        self.drawable_parent = np.append(self.drawable_parent, [3, 5])
+        self._rest += [_box(0.1, 1.1, 0.4, 0.4), _box(0.0, 1.3, 0.8, 1.2)]
+        self.vertex_counts = np.array([len(v) for v in self._rest])
+        self.param_ids.append("PARAM_FXhand")
+        self.param_min = np.append(self.param_min, 0.0)
+        self.param_max = np.append(self.param_max, 1.0)
+        self.param_default = np.append(self.param_default, 0.0)
+        self._part_op = np.ones(len(self.part_ids))
+        self.set()
+
+    def set(self, values=None, parts=None, reset=True):
+        values = dict(values or {})
+        self._fx = float(values.get("PARAM_FXhand", 0.0))
+        super().set(values, parts, reset)
+        if len(self._V) > 8:        # FakeCore.__init__ sets before us
+            self._V[8] = self._V[8] + np.array([0.1 * self._fx, 0.0])
+
+    def opacities(self):
+        op = super().opacities()
+        op[8] *= float(self._fx > 0.5)
+        return op
+
+
+def test_effects_never_variants_or_solved():
+    info = _info()
+    info["toggles"] = {"PARAM_FXhand": [0.0, 1.0]}
+    core = FxCore()
+    blob = body.measure(core, info, log=lambda *a: None)
+    regions = {d["id"]: d["region"] for d in blob["drawables"]}
+    assert regions["hand_fx"] == "effect"
+    assert regions["TouchHead"] == "hitarea"
+    assert blob["params"]["PARAM_FXhand"]["role"] == "effect"
+    assert "PARAM_FXhand" in blob["effects"]["params"]
+    assert "hand_fx" in blob["effects"]["drawables"]
+    for v in blob["variants"]:
+        assert "PARAM_FXhand" not in v["switches"]
+        assert "PARAM_FXhand" not in v["sweeps"]
+    # The hit area does not set the frame: the face alone does.
+    assert blob["frame"]["unit"] == pytest.approx(0.6)
+    bm = body.BodyModel(blob)
+    res = bm.solve({"hand.L.y": blob["landmarks"]["hand.L"][1] + 0.1})
+    assert "PARAM_FXhand" not in res["params"]
+
+
+def test_miss_reported_with_reach(model, tmp_path, capsys):
+    """An unreachable hand target: MISS per target, the reachable range
+    alone, the other side's range, and the render still runs (here: no
+    GL, so only the report)."""
+    res = model.solve({"hand.R.y": 5.0})
+    assert not res["report"]["hand.R.y"]["ok"]
+    h = model.miss_hints(res)["hand.R.y"]
+    lo, hi = h["reach"]
+    assert lo < res["report"]["hand.R.y"]["got"] + 1e-6 <= hi + 1e-6
+    assert h["mirror"][0] == "hand.L.y" and h["mirror"][1] is not None
+    path = tmp_path / "m.body.json"
+    body.save(model.to_dict(), str(path))
+    body.main(["--body", str(path), "--solve", '{"hand.R.y": 5.0}'])
+    out = capsys.readouterr().out
+    assert "MISS" in out and "alone it reaches" in out
+    assert "hand.L.y reaches" in out
+
+
+def test_v1_file_upgrades(measured, tmp_path):
+    """A format-1 file of a character-named rig loads unchanged but for
+    the new fields."""
+    _core, blob = measured
+    old = {k: v for k, v in blob.items() if k not in ("side_naming",
+                                                      "effects")}
+    old["format"] = body.FORMAT_V1
+    path = tmp_path / "v1.body.json"
+    body.save(old, str(path))
+    bm = body.load(str(path))
+    assert bm.blob["format"] == body.FORMAT
+    assert bm.blob["side_naming"]["params"] == "character"
+    assert bm.features == blob["features"]
+    assert bm.landmarks == blob["landmarks"]
+    np.testing.assert_allclose(bm.variants[0]["rest"],
+                               blob["variants"][0]["rest"], rtol=1e-4)
+
+
+RIGS = os.path.join(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))), "rigs")
+
+
+@pytest.mark.parametrize("rig,drawables,params", [
+    ("lafei", "screen", "screen"), ("xuefeng", "character", "screen")])
+def test_azur_lane_v1_files(rig, drawables, params):
+    """The measured Azur Lane files (format 1): naming detected, the
+    character's right hand on -x moved by the rig's ...LT param, effects
+    out of the variants."""
+    path = os.path.join(RIGS, f"{rig}.body.json")
+    if not os.path.exists(path):
+        pytest.skip(f"no {path}")
+    bm = body.load(path)
+    sn = bm.blob["side_naming"]
+    assert (sn["drawables"], sn["params"]) == (drawables, params)
+    assert bm.landmarks["hand.R"][0] < 0 < bm.landmarks["hand.L"][0]
+    assert bm.movers("hand.R", 0, top=1)[0][0] == "PARAM_Arm_LT_Angle"
+    assert bm.blob["declared"]["eye.L.open"][0] == "ParamEyeROpen"
+    for v in bm.variants:
+        assert not any("FX" in k for k in v["switches"]), v["name"]
+    res = bm.solve({"hand.R.y": "@shoulder.y"})
+    assert res["report"]["hand.R.y"]["ok"]
+    assert not any(bm.params[p]["role"] == "effect" for p in res["params"])
