@@ -709,6 +709,7 @@ def measure(core, info: dict, log=print) -> dict:
     # drawables report opacity 0 whatever a switch does, and Natori's hand
     # switches (ParamArmBRHand01 右手01 表示) live under the hidden PartArmBR.
     all_on = {p: 1.0 for g in groups for p in g}
+    all_on.update({p: 1.0 for p in curve_parts})
     V0, _ = geom()
     _, O0 = geom(parts=all_on)
     cent = np.array([V0[off[d]:off[d + 1]].mean(0) for d in range(n_d)])
@@ -717,6 +718,7 @@ def measure(core, info: dict, log=print) -> dict:
     live = [i for i in range(len(pids)) if hi[i] > lo[i]]
     resp = np.zeros((n_d, len(live)))
     opac_switch = {}
+    flips_all = {}      # every param that flips a drawable, switch or not
     held_geo = set()
     for c, i in enumerate(live):
         for v in (lo[i], hi[i]):
@@ -739,6 +741,8 @@ def measure(core, info: dict, log=print) -> dict:
                 pids[i], "")) and not JOINT_NAME.search(nm) and (
                 pids[i] in info.get("toggles", {})
                 or bool(SWITCH_NAME.search(nm)))
+            if len(flip):
+                flips_all.setdefault(pids[i], set()).update(flip.tolist())
             if len(flip) and is_switch:
                 opac_switch.setdefault(pids[i], set()).update(flip.tolist())
             if whole_model(V0, V1) and not protected(
@@ -1046,6 +1050,14 @@ def measure(core, info: dict, log=print) -> dict:
         "regions": regions,
         "params": roles,
         "rest_parts": {p: float(v) for p, v in rest_parts.items()},
+        # Params that flip an arm drawable's opacity but are solved as
+        # continuous (a joint swapping meshes as it turns, like Natori's
+        # elbows -- or a missed arm swap, which the solver could park half
+        # way and draw two arms with). describe() lists them.
+        "opacity_flips": {p: sorted({leaf_of[d] for d in ds})
+                          for p, ds in flips_all.items()
+                          if roles[p]["role"] == "solvable"
+                          and any(leaf_of[d] in arm_regions for d in ds)},
         "declared": {n: [p, s] for n, (p, s) in declared.items()},
         "meaning": meaning,
         "features": feats,
@@ -1632,6 +1644,11 @@ def describe(bm: BodyModel, variant: int = 0) -> str:
     for role in ("held", "variant", "switch", "physics"):
         if roles.get(role):
             L.append(f"{role}: {', '.join(sorted(roles[role]))}")
+    flips = b.get("opacity_flips", {})
+    if flips:
+        L.append("opacity-flipping params solved as continuous (joints that "
+                 "swap meshes, or missed arm swaps -- check): " + ", ".join(
+                     f"{p} ({'/'.join(r)})" for p, r in sorted(flips.items())))
     L.append("variants: " + "; ".join(f"[{k}] {v['name']}" for k, v in
                                        enumerate(bm.variants)))
     v = bm.variants[variant]

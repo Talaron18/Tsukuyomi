@@ -2854,6 +2854,7 @@
   "PartArmER": 0.0,
   "PartWatchB": 0.0
  },
+ "opacity_flips": {},
  "declared": {
   "head.yaw": [
    "ParamAngleX",

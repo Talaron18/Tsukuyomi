@@ -365,6 +365,51 @@ def test_variants_without_pose3():
     assert v0["rest"][k] < 0 < v1["rest"][k]
 
 
+class GloveCore(FakeCore):
+    """FakeCore whose raised hand has a glove shown by ParamGloveShow, a
+    switch under PartArmB, which is hidden at rest."""
+
+    def __init__(self):
+        super().__init__()
+        self.param_ids = self.param_ids + ["ParamGloveShow"]
+        self.param_min = np.r_[self.param_min, 0.0]
+        self.param_max = np.r_[self.param_max, 1.0]
+        self.param_default = np.r_[self.param_default, 0.0]
+        self.set()
+
+    def opacities(self):
+        op = super().opacities()
+        if hasattr(self, "_glove"):
+            op[7] *= self._glove
+        return op
+
+    def set(self, values=None, parts=None, reset=True):
+        self._glove = float((values or {}).get("ParamGloveShow", 0.0) > 0.5)
+        return super().set({k: v for k, v in (values or {}).items()
+                            if k != "ParamGloveShow"}, parts, reset)
+
+
+def test_switch_under_hidden_switched_part():
+    """A show/hide switch under a part the motions hide at rest is still
+    found: the opacity pass shows every switched part."""
+    info = _info()
+    info["pose_groups"] = []
+    info["param_names"]["ParamGloveShow"] = "手袋 表示"
+    n = 20
+    on, off = np.ones(n), np.zeros(n)
+    info["motion_frames"] = [
+        {("Meta", "name"): "idle.motion3.json",
+         ("PartOpacity", "PartArmA"): on, ("PartOpacity", "PartArmB"): off},
+        {("Meta", "name"): "wave.motion3.json",
+         ("PartOpacity", "PartArmA"): off, ("PartOpacity", "PartArmB"): on,
+         ("Parameter", "ParamGloveShow"): on},
+    ]
+    blob = body.measure(GloveCore(), info, log=lambda *a: None)
+    assert blob["params"]["ParamGloveShow"]["role"] == "variant"
+    assert any(v["switches"].get("ParamGloveShow") == 1.0
+               for v in blob["variants"])
+
+
 def test_declared_signs_from_geometry(measured, model):
     """ParamAngleZ + rolls the fake face clockwise (like Hiyori's), so
     head.tilt is the negated parameter and agrees with head.roll."""

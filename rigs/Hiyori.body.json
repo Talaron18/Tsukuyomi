@@ -2184,6 +2184,7 @@
   "PartArmA": 1.0,
   "PartArmB": 0.0
  },
+ "opacity_flips": {},
  "declared": {
   "head.yaw": [
    "ParamAngleX",
