@@ -568,6 +568,8 @@ class FileTTS:
 # -------------------------------------------------------------- VOICEVOX
 
 VOICEVOX_URL = "http://127.0.0.1:50021"
+# /speakers style types that cannot read text aloud.
+SING_STYLE_TYPES = {"sing", "humming", "singing_teacher", "frame_decode"}
 # AudioQuery knobs a voice config or flag may set: our name -> its field.
 VOICEVOX_KNOBS = {"speed": "speedScale", "pitch": "pitchScale",
                   "intonation": "intonationScale", "volume": "volumeScale"}
@@ -819,9 +821,7 @@ class VoicevoxTTS:
 
     def speakers(self, wait=20.0):
         """GET /speakers. An empty list is asked again for up to `wait`
-        seconds: on the server one run got [] from an engine that listed 45
-        characters when curl asked moments later (most likely still loading
-        its voice libraries)."""
+        seconds, in case the engine is still starting up."""
         import time
         if self._speakers is None:
             t0 = time.monotonic()
@@ -845,7 +845,10 @@ class VoicevoxTTS:
         out = []
         for sp_ in self.speakers():
             for st in sp_.get("styles") or ():
-                if st.get("type", "talk") in (None, "talk"):
+                # Talk styles are "talk" on older engines and
+                # "streaming_talk" on the server's (every style was filtered
+                # out until this took both); leave out only the singing ones.
+                if str(st.get("type") or "talk") not in SING_STYLE_TYPES:
                     out.append((int(st["id"]), str(sp_.get("name")),
                                 str(st.get("name"))))
         return out
@@ -878,15 +881,12 @@ class VoicevoxTTS:
                 if hit:
                     break
             if hit is None and not st:
-                # Seen on the server: the engine answered /speakers with no
-                # voices at all, and the message ended in an empty list.
                 raise RuntimeError(
-                    f"voicevox: the engine at {self.url} lists no voices "
-                    f"(GET /speakers returned {len(self.speakers())} "
-                    f"characters: {getattr(self, '_speakers_raw', b'')!r}); "
-                    "its voice models may still be loading -- check "
-                    f"`curl --noproxy '*' {self.url}/speakers` and the "
-                    "engine's log")
+                    f"voicevox: none of the {len(self.speakers())} characters "
+                    f"at {self.url} has a talk style; style types seen: "
+                    + ", ".join(sorted({str(x.get("type"))
+                                        for c in self.speakers()
+                                        for x in c.get("styles") or ()})))
             if hit is None:
                 raise RuntimeError(
                     f"voicevox: no voice {v!r}; available: "

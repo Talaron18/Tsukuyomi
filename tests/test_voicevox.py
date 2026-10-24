@@ -381,3 +381,13 @@ def test_voicevox_router_falls_back_to_edge_for_english(monkeypatch):
     assert r.kind == "edge" and used["voice"] == "en-US-AnaNeural"
     assert any("Japanese only" in s for s in seen)
     assert said["moras"] is None and r.credit is None
+
+
+def test_streaming_talk_styles_are_talk_styles():
+    tts = sp.VoicevoxTTS("http://e", "冥鳴ひまり/ノーマル", log=lambda s: None)
+    tts._speakers = [
+        {"name": "冥鳴ひまり",
+         "styles": [{"name": "ノーマル", "id": 14, "type": "streaming_talk"}]},
+        {"name": "x", "styles": [{"name": "歌", "id": 3000, "type": "sing"}]}]
+    assert tts.styles() == [(14, "冥鳴ひまり", "ノーマル")]
+    assert tts.resolve() == 14
