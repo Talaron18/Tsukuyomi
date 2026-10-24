@@ -864,6 +864,15 @@ class VoicevoxTTS:
                             and (not style or eq(s[2], style))), None)
                 if hit:
                     break
+            if hit is None and not st:
+                # Seen on the server: the engine answered /speakers with no
+                # voices at all, and the message ended in an empty list.
+                raise RuntimeError(
+                    f"voicevox: the engine at {self.url} lists no voices "
+                    f"(GET /speakers returned {len(self.speakers())} "
+                    "characters); its voice models are not loaded -- check "
+                    f"`curl --noproxy '*' {self.url}/speakers` and the "
+                    "engine's log")
             if hit is None:
                 raise RuntimeError(
                     f"voicevox: no voice {v!r}; available: "
