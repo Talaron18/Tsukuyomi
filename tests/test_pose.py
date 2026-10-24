@@ -231,10 +231,10 @@ def _tok(t, params, dur=0.5, hold=1.0, release=0.5, parts=None, step=()):
             "src": "director"}
 
 
-def _play(toks, n, under):
+def _play(toks, n, under, **kw):
     """[(over, parts)] of a PoseLayer over `under(f) -> (over, parts)`."""
     lay = pz.PoseLayer(FPS, {"ParamA": 0.0, "ParamB": 0.0},
-                       {"PartArmA": 1.0, "PartArmB": 0.0})
+                       {"PartArmA": 1.0, "PartArmB": 0.0}, **kw)
     for k in toks:
         lay.commit(k)
     out = []
@@ -254,7 +254,8 @@ def test_layer_moves_holds_and_releases_without_a_jump():
     toks = [_tok(1.0, {"ParamA": 0.8, "ParamB": -0.5}),
             # Replaces A mid-hold, from where it is on screen.
             _tok(1.8, {"ParamA": -0.6}, dur=0.4, hold=0.5)]
-    out = _play(toks, 150, _idle)
+    # Frozen holds (life = settle = 0): exactly at the targets.
+    out = _play(toks, 150, _idle, life=0.0, settle=0.0)
     a = np.array([o["ParamA"] for o, _ in out])
     idle_a = np.array([_idle(f)[0]["ParamA"] for f in range(150)])
     # Untouched before the first pose and after the last release.
@@ -274,6 +275,46 @@ def test_layer_moves_holds_and_releases_without_a_jump():
     assert b[-1] is None
     assert all(o["ParamC"] == _idle(f)[0]["ParamC"]
                for f, (o, _) in enumerate(out))
+
+
+def test_held_pose_keeps_the_idles_life_within_bounds_and_never_jumps():
+    """Defaults: a held target moves with LIFE of the idle's motion since
+    the pose began and settles SETTLE of the way toward the idle over the
+    hold; it stays near its target, never jumps, and is never frozen."""
+    t0, dur, hold, rel = 1.0, 0.4, 2.0, 0.5
+    toks = [_tok(t0, {"ParamA": 0.8, "ParamB": -0.5}, dur=dur, hold=hold,
+                 release=rel)]
+    n = int((t0 + dur + hold + rel + 1.0) * FPS)
+    out = _play(toks, n, _idle)
+    a = np.array([o["ParamA"] for o, _ in out])
+    b = np.array([o.get("ParamB", np.nan) for o, _ in out])
+    idle_a = np.array([_idle(f)[0]["ParamA"] for f in range(n)])
+    h0 = int(np.ceil((t0 + dur) * FPS)) + 1
+    h1 = int((t0 + dur + hold) * FPS)
+    u0 = idle_a[int(np.ceil(t0 * FPS))]
+    held = a[h0:h1]
+    # Alive: it moves on every frame of the hold.
+    assert (np.abs(np.diff(held)) > 1e-6).all()
+    # Within bounds: life adds at most LIFE x the idle's excursion, settle
+    # at most SETTLE of the way to the idle.
+    exc = np.abs(idle_a[h0:h1] - u0).max()
+    gap = np.abs(idle_a[h0:h1] - 0.8).max()
+    assert np.abs(held - 0.8).max() <= pz.LIFE * exc + pz.SETTLE * gap + 1e-9
+    # Settled toward the idle by the end, but still clearly posed.
+    assert abs(a[h1 - 1] - idle_a[h1 - 1]) < abs(0.8 - idle_a[h1 - 1])
+    assert abs(a[h1 - 1] - 0.8) < 0.5 * abs(0.8 - idle_a[h1 - 1])
+    # A parameter with no idle under it (B) settles too: never frozen.
+    hb = b[h0:h1]
+    assert (np.abs(np.diff(hb)) > 1e-7).all()
+    assert hb[-1] == pytest.approx(-0.5 * (1 - pz.SETTLE), abs=1e-3)
+    # No jumps: no step above the minimum-jerk move's peak plus the idle's
+    # own speed, and back on the idle after the release.
+    v_max = 1.875 * 0.8 / dur / FPS + np.abs(np.diff(idle_a)).max()
+    assert np.abs(np.diff(a)).max() <= v_max * 1.05
+    np.testing.assert_array_equal(a[:int(t0 * FPS)], idle_a[:int(t0 * FPS)])
+    end = int(np.ceil((t0 + dur + hold + rel) * FPS)) + 1
+    np.testing.assert_allclose(a[end:], idle_a[end:])
+    assert np.isnan(b[end:]).all()
 
 
 def test_variant_switch_swaps_parts_at_the_midpoint_never_two_arms():
@@ -298,7 +339,7 @@ def test_variant_switch_swaps_parts_at_the_midpoint_never_two_arms():
     assert out[-1][1]["PartArmB"] == 0.0
 
 
-def test_pose_merge_takes_its_groups_only():
+def test_pose_merge_takes_the_arms_only_and_keeps_the_idle_moving():
     idle = [{"t": 0.5, "type": "head_turn", "role": "head",
              "target": {"head_x": 0.2}, "duration": 1.0, "follows": None},
             {"t": 0.6, "type": "brow", "role": "brow",
@@ -316,10 +357,18 @@ def test_pose_merge_takes_its_groups_only():
     assert toks[0]["groups"] == ["arms", "head"]
     out = dr.merge(idle, toks)
     kinds = [(k["type"], k["t"]) for k in out]
-    assert ("head_turn", 0.5) not in kinds        # overlaps the window
+    # The idle's head moves run under the pose (the layer lets them show
+    # at LIFE on the head parameters it holds, fully on the others).
+    assert ("head_turn", 0.5) in kinds and ("head_turn", 4.5) in kinds
     assert ("gesture", 1.5) not in kinds          # starts inside it
-    assert ("head_turn", 4.5) in kinds and ("brow", 0.6) in kinds
+    assert ("brow", 0.6) in kinds
     assert ("blink", 2.0) in kinds and ("pose", 1.0) in kinds
+    # A pose that moves no arm takes nothing: the idle gesture stays.
+    head_only = pz.tokens([dict(poses[0], params={"ParamAngleX": 10.0})],
+                          roles, {"ParamArmLA"})
+    assert head_only[0]["groups"] == ["head"]
+    assert ("gesture", 1.5) in [(k["type"], k["t"])
+                                for k in dr.merge(idle, head_only)]
 
 
 # ---------------------------------------------------------------- prompt

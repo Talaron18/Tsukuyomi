@@ -665,8 +665,14 @@ MOVES = ("saccade", "head_turn", "body_shift", "brow")
 
 def windows(directed):
     """{group: [(start, end)]} that directed tokens take over: a move for its
-    duration plus hold, a gesture for its duration, a pose (flow.pose) its
-    groups for its move plus hold."""
+    duration plus hold, a gesture for its duration, a pose (flow.pose) the
+    arms for its move plus hold when it moves them. A pose takes no other
+    group: the idle's head, gaze, brow and body moves keep running under it
+    (flow.pose.PoseLayer writes only what the pose plays, and lets the idle
+    move a held target at reduced amplitude). Dropping them froze the whole
+    group for the pose: a head.tilt pose stopped the idle's yaw and pitch
+    too, and Hiyori's head and gaze were frozen in 58% of the E2 hold
+    frames."""
     win = {}
     for k in directed:
         if k["type"] in MOVES:
@@ -676,13 +682,12 @@ def windows(directed):
         elif k["type"] == "gesture":
             win.setdefault("arms", []).append(
                 (float(k["t"]), float(k["t"]) + float(k["duration"])))
-        elif k["type"] == "pose":
-            # flow.pose: the groups its parameters are bound to, for its
-            # move plus hold (it then relaxes back into the idle).
+        elif k["type"] == "pose" and "arms" in k.get("groups", ()):
+            # flow.pose: an idle gesture starting while a pose holds the
+            # arms would fight it for the arm drawing.
             end = float(k["t"]) + float(k["duration"]) + float(k.get("hold",
                                                                      0.0))
-            for g in k.get("groups", ()):
-                win.setdefault(g, []).append((float(k["t"]), end))
+            win.setdefault("arms", []).append((float(k["t"]), end))
     return win
 
 

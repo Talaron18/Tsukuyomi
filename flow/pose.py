@@ -42,7 +42,9 @@ continuous targets inline in its speech:
             geometry when a model is loaded: body.exact_state) is computed
             on that played set, so it says what renders.
   play      PoseLayer: per parameter a minimum-jerk move from what was on
-            screen to the target, a hold, then a minimum-jerk release back
+            screen to the target, a hold that keeps a little life (LIFE of
+            the idle's motion underneath, settling SETTLE of the way toward
+            the idle), then a minimum-jerk release back
             to whatever the idle is doing, on top of the frame the idle
             built (runtime.main's frame loop and stream.MotionStream.frame
             both call it, so live draws what offline draws). Arm variant
@@ -51,11 +53,13 @@ continuous targets inline in its speech:
             Parameters the probe banded discrete but the body file says are
             solvable joints (lafei's PARAM_Arm_LT_Angle, Natori's
             ParamArmAL01) are written as solved, never snapped.
-  merge     a pose token takes over the role groups its parameters are
-            bound to (and "arms" for unbound arm parameters) for its move
-            plus hold, with director.merge's semantics: idle moves on those
-            groups in that window are dropped, idle gestures starting in it
-            too.
+  merge     a pose token moving an arm takes over "arms" for its move
+            plus hold (director.merge): idle gestures starting in that
+            window are dropped. The idle's head, gaze, brow and body moves
+            keep running under every pose -- on what the pose does not play
+            fully, on what it holds at LIFE. (They were dropped for the
+            role groups a pose touched, which froze Hiyori's head and gaze
+            in 58% of the E2 hold frames.)
 
 Usage:
     python -m flow.pose --body rigs/Hiyori.body.json --prompt
@@ -100,9 +104,25 @@ NOT_TARGETS = {"mouth.open": "the voice drives the mouth"}
 # about the fitted idle head move (median 1.3 s) for a full-span one.
 DUR_MIN, DUR_MAX = 0.3, 1.2
 DUR_RANGE = (0.15, 3.0)
-POSE_HOLD = 1.5         # default hold; director.MIN_HOLD is 1.0
+# Default hold: director.MIN_HOLD, what a tag's tilt or look holds. It was
+# 1.5 s; in E2 the body replies read as long static holds next to the tags'
+# quick nods and looks (Hiyori: 13 poses held 1.73 s on average, head and
+# gaze frozen in 58% of the hold frames).
+POSE_HOLD = 1.0
 HOLD_MAX = 8.0
 RELEASE_MIN = 0.5       # relaxing back is never quicker than this
+# A held pose is not frozen. LIFE: the share of the idle's own motion since
+# the pose started that still shows on a held target (director.merge keeps
+# the idle's moves running under a pose). The calm idle moves Hiyori's
+# head yaw 3.5 % of its span (std, 60 s), her gaze 15.6 % with ~0.6
+# saccades a second; at 0.35 a held head drifts ~1 % (0.7 deg) and held
+# eyes still make small saccades. SETTLE: how far a held target relaxes
+# toward the idle by the end of its hold (eased, so the hold starts and
+# ends at rest) -- people sag out of a held pose rather than stop dead,
+# and a long hold the model asked for keeps moving even where the idle
+# has nothing to give (face shapes, arms).
+LIFE = 0.35
+SETTLE = 0.2
 # A solved parameter is played when it moves at least this fraction of its
 # span from where it was (or is a target's main mover); below it the idle
 # keeps it. Hiyori's hand.R.y = shoulder solve also nudged BodyAngleX by
@@ -1035,10 +1055,19 @@ class PoseLayer:
     part's last opacity, while parameters reset every frame), with the
     idle's value or `part_rest`. `written` is the set of parameters this
     frame wrote, for runtime's --dump mask.
+
+    Held targets keep a little life (continuous parameters only): `life`
+    times what the idle under the parameter has moved since the token
+    started is added (eased in over the move), and over the hold the
+    target settles `settle` of the way toward the idle (min-jerk in the
+    hold's time), the release then starting from there. life = settle = 0
+    is the frozen hold of before.
     """
 
-    def __init__(self, fps, defaults=None, part_rest=None):
+    def __init__(self, fps, defaults=None, part_rest=None, life=LIFE,
+                 settle=SETTLE):
         self.fps = float(fps)
+        self.life, self.settle = float(life), float(settle)
         self.defaults = dict(defaults or {})
         self.part_rest = dict(part_rest or {})
         self.queue = []
@@ -1052,21 +1081,32 @@ class PoseLayer:
     def busy(self):
         return bool(self.queue or self.state or self.touched)
 
-    @staticmethod
-    def _eval(s, tf, under):
-        t0, d, frm, to, he, rel, step = s
+    def _eval(self, s, tf, under):
+        # State: (t0, duration, from, to, hold end, release, step, the
+        # idle's value at t0); stream.body_now reads "to" as s[3].
+        t0, d, frm, to, he, rel, step, u0 = s
+        if step:
+            if tf < t0 + d:
+                return (to if (tf - t0) / d >= 0.5 else frm), False
+            if tf < he:
+                return to, False
+            if tf < he + rel:
+                return (under if (tf - he) / rel >= 0.5 else to), False
+            return under, True
+        life = self.life * (under - u0)
         if tf < t0 + d:
-            u = max((tf - t0) / d, 0.0)
-            if step:
-                return (to if u >= 0.5 else frm), False
-            return frm + (to - frm) * float(min_jerk(u)), False
+            w = float(min_jerk(max((tf - t0) / d, 0.0)))
+            return frm + (to - frm) * w + life * w, False
+        held = to + life
+        hold = he - (t0 + d)
+        if self.settle and hold > 0:
+            tau = min(max((tf - t0 - d) / hold, 0.0), 1.0)
+            held += self.settle * float(min_jerk(tau)) * (under - held)
         if tf < he:
-            return to, False
+            return held, False
         if tf < he + rel:
             u = (tf - he) / rel
-            if step:
-                return (under if u >= 0.5 else to), False
-            return to + (under - to) * float(min_jerk(u)), False
+            return held + (under - held) * float(min_jerk(u)), False
         return under, True
 
     def apply(self, f, over, parts):
@@ -1105,7 +1145,7 @@ class PoseLayer:
                     frm = (self._eval(self.state[key], tf, u)[0]
                            if key in self.state else u)
                     self.state[key] = (t0, d, frm, float(v), he, rel,
-                                       kind == "q" or i in step)
+                                       kind == "q" or i in step, u)
                     if kind == "q":
                         self.touched.add(i)
         for key in sorted(self.state):

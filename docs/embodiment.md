@@ -149,8 +149,11 @@ for the comparison.
 - **Play**: solved with the prior toward the pose the body is in; only
   what moves is played; minimum-jerk move, hold, release back into the
   idle, over the idle frame in both `runtime` and `stream`; arm variant
-  parts swap at the midpoint; pose tokens take their role groups with
-  `director.merge`'s semantics. Tag mode is unchanged byte for byte.
+  parts swap at the midpoint; a pose moving an arm keeps idle gestures
+  from starting during it (`director.merge`), and the idle's head, gaze,
+  brow and body moves run on under every pose. A hold is not frozen: it
+  carries 0.35 of the idle's motion and settles 0.2 of the way back to it
+  (`flow.pose.LIFE`, `SETTLE`). Tag mode is unchanged byte for byte.
 - **Feedback**: per target, the forward model's value and the Core's own
   geometry go to `actions.json` / the live log; `--body-check` runs one
   offline correction round (`check/check.json`).
