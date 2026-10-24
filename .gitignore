@@ -22,4 +22,7 @@ __pycache__/
 /clips
 /synth
 /rigs
-/data
+/data# Live recordings: session.mp4 has video and voice muxed; the raw parts are
+# large (a 158 MB speech.wav was rejected by GitHub).
+/runs/live/*/speech.wav
+/runs/live/*/video.mp4
