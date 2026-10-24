@@ -1036,7 +1036,8 @@ def main(argv=None) -> int:
     run = dr.prepare(a)
     rig = fs.EventRig(a.model_json, a.rig, a.events, a.clips, a.binding,
                       a.fps, a.probe_dir, a.idle_profile, a.no_snap,
-                      a.events_pool_only)
+                      a.events_pool_only, breath_gain=a.breath_gain,
+                      voice_config=dr.voice_config_path(a))
     backend = dr.make_backend(a)
     if a.tts is None:
         a.tts = "auto"           # live is for talking: speak by default

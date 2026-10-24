@@ -7,7 +7,10 @@ the way the design always intended, and each for its own reason:
 
   autonomic  Blink and breath are procedural here. They are stochastic and
              carry no semantic content, so a learned model would spend capacity
-             on noise that a few lines of code reproduce better.
+             on noise that a few lines of code reproduce better. The
+             breath's swing is calibrated per rig from its body file
+             (breath_setting, --breath-gain): the same ParamBreath range
+             bobbed lafei's whole figure ten times as far as Hiyori's.
   physics    Left unset so Live2D's solver drives them from head and body
              motion. Whether a parameter is solver-driven is a property of the
              target rig, not of the parameter, so no training-time choice could
@@ -276,9 +279,14 @@ class Autonomic:
     """
 
     def __init__(self, fps: float, rng, mean_interval: float = 4.0,
-                 requests=()):
+                 requests=(), breath_gain: float = 1.0):
         self.fps, self.rng = fps, rng
         self.mean_interval = mean_interval
+        # Fraction of the breath parameter's range the breath swings over
+        # (breath_setting: calibrated per rig so the visible displacement is
+        # the same on every body). A pure multiplier, no random draw: blinks
+        # stay where they were, and 1.0 is the breath of before bit for bit.
+        self.breath_gain = float(breath_gain)
         self.next_blink = rng.exponential(mean_interval)
         self.t = 0.0
         self.close, self.open_ = 0.06, 0.12
@@ -309,7 +317,89 @@ class Autonomic:
         elif dt >= self.close + self.open_:
             self.next_blink = self.t + self.rng.exponential(self.mean_interval)
         breath = 0.5 * (1 + np.sin(2 * np.pi * 0.25 * self.t))
+        if self.breath_gain != 1.0:
+            breath = breath * self.breath_gain
         return eye, float(breath)
+
+
+# Breath, calibrated per rig. ParamBreath's full range moves rigs by very
+# different amounts: in head heights (hu, rigs/<rig>.body.json sweeps),
+# Hiyori's breath moves at most 0.0073 hu (hand.L.y), Natori's 0.016
+# (hand.R.x), and the Azur Lane rigs' whole figure bobs -- lafei's torso
+# 0.069 hu, arms 0.064, head 0.023; xuefeng's torso 0.070. Rendered, that
+# was ~3 px std at 0.25 Hz with the hair following on lafei and xuefeng
+# against 0.25 px on Hiyori, the one thing that made lafei look worse in
+# the E2 A/B. The target is Hiyori's own breath (gain 1, unchanged): a
+# chest that rises without the figure moving. Gains are capped at 1 -- the
+# breath already spans the whole range.
+BREATH_TARGET_HU = 0.0075
+BREATH_GAIN_KEY = "breath_gain"   # per-rig override in rigs/<rig>.voice.json
+
+
+def breath_reach(blob) -> tuple[str, float] | None:
+    """(parameter, hu): how far the breath parameter's full range moves the
+    body at most -- the largest swing over its sweep of any region's
+    position (.x/.y, in hu), over every arm variant -- from a body file's
+    contents (flow.body). None when the body has no breath parameter or
+    its sweep moves nothing."""
+    try:
+        from .body import NONBODY, feature_unit
+    except ImportError:
+        from flow.body import NONBODY, feature_unit
+    skip = set(NONBODY) | {"background"}
+    pids = [p for p in blob.get("params", {}) if "breath" in p.lower()]
+    best = None
+    for pid in pids:
+        m = 0.0
+        for v in blob.get("variants", ()):
+            s = v.get("sweeps", {}).get(pid)
+            if not s:
+                continue
+            for feat, d in s.get("delta", {}).items():
+                if (feature_unit(feat) != "hu"
+                        or feat.split(".", 1)[0] in skip or not d):
+                    continue
+                m = max(m, float(max(d)) - float(min(d)))
+        if m > 0 and (best is None or m > best[1]):
+            best = (pid, m)
+    return best
+
+
+def breath_setting(rig, flag=None, voice_config=None, log=print):
+    """(gain, source) for the breath of this rig.
+
+    flag: --breath-gain (a number wins; None or "auto" calibrates).
+    voice_config: the voice config file (default <rig without .npz>.voice
+    .json); its top-level "breath_gain" overrides the calibration. Else
+    <rig>.body.json: BREATH_TARGET_HU / breath_reach, capped at 1. No body
+    file: 1.0, with a line saying how to measure one."""
+    if flag is not None and str(flag).lower() != "auto":
+        return float(flag), "--breath-gain"
+    stem = os.path.splitext(rig)[0] if rig else None
+    vc = voice_config or (stem + ".voice.json" if stem else None)
+    if vc and os.path.exists(vc):
+        try:
+            with open(vc, encoding="utf-8") as fh:
+                g = json.load(fh).get(BREATH_GAIN_KEY)
+        except (OSError, ValueError, AttributeError):
+            g = None
+        if g is not None:
+            return float(g), f"{os.path.basename(vc)} {BREATH_GAIN_KEY}"
+    bp = stem + ".body.json" if stem else None
+    if not bp or not os.path.exists(bp):
+        log(f"breath: no body file{' ' + bp if bp else ''}; the breath "
+            "swings its full range, uncalibrated (python -m flow.body "
+            "--measure, or --breath-gain)")
+        return 1.0, "uncalibrated"
+    with open(bp, encoding="utf-8") as fh:
+        got = breath_reach(json.load(fh))
+    if got is None:
+        return 1.0, f"{os.path.basename(bp)}: no breath sweep"
+    pid, hu = got
+    # Rounded so that the number a director passes on reproduces it.
+    g = round(min(1.0, BREATH_TARGET_HU / hu), 3)
+    return g, (f"{os.path.basename(bp)}: {pid} moves {hu:.4f} hu, "
+               f"target {BREATH_TARGET_HU:g}")
 
 
 class Switches:
@@ -772,6 +862,13 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default="preview")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--no-autonomic", action="store_true")
+    ap.add_argument("--breath-gain", default="auto",
+                    help="fraction of the breath parameter's range the "
+                         "procedural breath swings over; auto [default]: "
+                         "<rig>.voice.json's breath_gain, else calibrated "
+                         "from <rig>.body.json so the breath moves the body "
+                         f"at most {BREATH_TARGET_HU:g} head heights "
+                         "(breath_setting)")
     ap.add_argument("--anchor", type=float, default=0.0,
                     help="0..1 blend of real motion into every predicted frame. "
                          "Continuous, so unlike --reseed there are no seams to "
@@ -1139,7 +1236,10 @@ def main(argv=None) -> int:
     eye_idx = [i for i, p in enumerate(pids)
                if bands[i] == "autonomic" and "open" in p.lower()]
     breath_idx = [i for i, p in enumerate(pids) if "breath" in p.lower()]
-    auto = Autonomic(a.fps, rng, requests=blink_requests)
+    bgain, bsrc = breath_setting(a.rig, a.breath_gain)
+    if not a.no_autonomic:
+        print(f"breath: gain {bgain:g} ({bsrc})")
+    auto = Autonomic(a.fps, rng, requests=blink_requests, breath_gain=bgain)
 
     n_parts = len({p for _, m in motions for p in m["parts"]})
     if n_parts and not has_pose(a.model):

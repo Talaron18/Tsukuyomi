@@ -8,6 +8,10 @@ authored swap, not one).
 base_state: the idle frame it holds must not include autonomic or mouth
 parameters. It once did, which froze blink and breath at the idle's first
 frame and switched both off for every rig with an idle motion.
+
+Breath: its gain is calibrated from the body file (lafei and xuefeng down
+to about a tenth, Hiyori unchanged), a flag or the voice config overrides
+it, and it scales the breath without touching the blinks.
 """
 
 from __future__ import annotations
@@ -174,3 +178,77 @@ def test_arm_rotations_are_not_snapped_but_arm_swaps_are():
         assert not snappable(pid, "arm"), pid
     for pid in ("ParamArmL2Hand1T", "ParamHandLDChangePa"):
         assert snappable(pid, "arm"), pid
+
+
+# ---------------------------------------------------------------- breath
+
+def _rig_path(name):
+    import os
+    return os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "rigs", f"{name}.npz")
+
+
+def test_breath_gain_is_calibrated_from_the_body_file():
+    """The Azur Lane rigs' breath bobs the whole figure (lafei's torso
+    0.069 hu over ParamBreath's range); their gain brings it to Hiyori's
+    0.0073 hu. Hiyori's own stays at 1: her breath is the target."""
+    import json
+    from flow.runtime import BREATH_TARGET_HU, breath_reach, breath_setting
+    got = {}
+    for r in ("Hiyori", "Natori", "lafei", "xuefeng"):
+        g, src = breath_setting(_rig_path(r), log=lambda s: None)
+        with open(_rig_path(r)[:-4] + ".body.json", encoding="utf-8") as fh:
+            pid, hu = breath_reach(json.load(fh))
+        assert pid == "ParamBreath" and "body.json" in src
+        got[r] = (g, hu)
+        # Calibrated: what the breath moves now is the target, or less when
+        # the rig's whole range is already below it.
+        assert g * hu == pytest.approx(min(hu, BREATH_TARGET_HU), rel=0.01)
+    assert got["Hiyori"][0] == 1.0
+    assert got["Hiyori"][1] == pytest.approx(0.0073, abs=5e-4)
+    for r in ("lafei", "xuefeng"):
+        assert got[r][1] > 0.06 and got[r][0] < 0.15
+    assert 0.3 < got["Natori"][0] < 0.6
+
+
+def test_breath_gain_flag_and_voice_config_win(tmp_path):
+    import json
+    import shutil
+    from flow import speech as sp
+    from flow.runtime import breath_setting
+    rig = tmp_path / "lafei.npz"
+    shutil.copy(_rig_path("lafei")[:-4] + ".body.json",
+                tmp_path / "lafei.body.json")
+    assert breath_setting(str(rig), log=lambda s: None)[0] < 0.15
+    assert breath_setting(str(rig), "0.5") == (0.5, "--breath-gain")
+    vc = tmp_path / "lafei.voice.json"
+    vc.write_text(json.dumps({"breath_gain": 0.3, "en": {"tts": "edge"}}))
+    assert breath_setting(str(rig), "auto", log=lambda s: None)[0] == 0.3
+    assert breath_setting(str(rig), "0.5")[0] == 0.5
+    # The voice config's languages read as before, the key without a line.
+    logs = []
+    assert sp.load_voice_config(str(vc), logs.append) == {
+        "en": {"tts": "edge"}}
+    assert logs == []
+    # No body file and no override: the full range, said once.
+    logs = []
+    assert breath_setting(str(tmp_path / "x.npz"), log=logs.append) == (
+        1.0, "uncalibrated")
+    assert len(logs) == 1 and "flow.body --measure" in logs[0]
+
+
+def test_breath_gain_scales_the_breath_and_leaves_blinks_alone():
+    from flow.runtime import Autonomic
+    a = Autonomic(30.0, np.random.default_rng(4))
+    b = Autonomic(30.0, np.random.default_rng(4), breath_gain=0.1)
+    old, t = [], 0.0
+    for f in range(300):
+        ea, ba = a.step()
+        eb, bb = b.step()
+        assert ea == eb                    # the same blinks
+        assert bb == pytest.approx(0.1 * ba)
+        # Gain 1 is the breath of before, bit for bit.
+        t += 1.0 / 30.0                    # as Autonomic keeps time
+        assert ba == float(0.5 * (1 + np.sin(2 * np.pi * 0.25 * t)))
+        old.append(ba)
+    assert min(old) < 0.01 and max(old) > 0.99

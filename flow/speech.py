@@ -1295,6 +1295,11 @@ VOICE_LANGS = ("ja", "zh", "ko", "en", "default")
 TTS_KINDS = ("edge", "siliconflow", "voicevox", "file")
 
 
+# Top-level keys of a voice config that are no language: the rig's breath
+# override (flow.runtime.breath_setting reads it).
+NOT_VOICE_KEYS = ("breath_gain",)
+
+
 def load_voice_config(path, log=print):
     """{language: {key: value}} from a voice config file; {} when there is
     none. Unknown languages and keys are dropped with a line each."""
@@ -1307,7 +1312,7 @@ def load_voice_config(path, log=print):
                          "language -> settings")
     out = {}
     for lang, entry in blob.items():
-        if lang.startswith("_"):
+        if lang.startswith("_") or lang in NOT_VOICE_KEYS:
             continue                       # "_comment" and the like
         if lang not in VOICE_LANGS or not isinstance(entry, dict):
             log(f"voice config {path}: {lang!r} ignored (languages: "

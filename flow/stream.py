@@ -85,8 +85,14 @@ class EventRig:
     def __init__(self, model_json, rig, events="default", clips=None,
                  binding=None, fps=30.0, probe_dir="out",
                  idle_profile="calm", no_snap=False, pool_only=False,
-                 snap_ramp=6, hold="", hold_global=True, log=print):
+                 snap_ramp=6, hold="", hold_global=True, log=print,
+                 breath_gain=None, voice_config=None):
         self.model_json, self.fps = model_json, float(fps)
+        # The breath's share of its range (runtime.breath_setting: the flag,
+        # the voice config's override, else calibrated from the body file).
+        self.breath_gain, src = rt.breath_setting(rig, breath_gain,
+                                                  voice_config, log)
+        log(f"breath: gain {self.breath_gain:g} ({src})")
         col = rt.rig_columns(rig, model_json, clips, log)
         self.col = col
         pids, groups = col["pids"], col["groups"]
@@ -286,7 +292,8 @@ class MotionStream:
                                   rig.base_parts)
         self.last = (dict(rig.base_params), dict(rig.base_parts or {}))
         self.switches = rig.switches()
-        self.auto = (rt.Autonomic(rig.fps, np.random.default_rng([seed, 3]))
+        self.auto = (rt.Autonomic(rig.fps, np.random.default_rng([seed, 3]),
+                                  breath_gain=getattr(rig, "breath_gain", 1.0))
                      if autonomic else None)
         self.mouths = deque()              # (first frame, {pid: values})
         self.mouth_rest = {}

@@ -1127,7 +1127,25 @@ def runtime_args(a, seconds):
         out.append("--no-idle")
     if a.idle_profile != "calm":
         out += ["--idle-profile", a.idle_profile]
+    out += ["--breath-gain", f"{breath_gain(a):g}"]
     return out
+
+
+def breath_gain(a, log=print):
+    """The run's breath gain (runtime.breath_setting), resolved once with
+    the voice config this run reads, and passed to the runtime as a number
+    so that the printed render command reproduces it."""
+    got = getattr(a, "_breath", None)
+    if got is None:
+        try:
+            from .runtime import breath_setting
+        except ImportError:
+            from flow.runtime import breath_setting
+        got = breath_setting(a.rig, getattr(a, "breath_gain", None),
+                             voice_config_path(a), log)
+        log(f"director: breath gain {got[0]:g} ({got[1]})")
+        a._breath = got
+    return got[0]
 
 
 def length(acts, end, motions, tail):
@@ -1473,6 +1491,12 @@ def add_args(ap):
                          "(siliconflow), speed/pitch/intonation/volume "
                          "(voicevox). Flags win. Default with --tts: <rig "
                          "without .npz>.voice.json when it exists")
+    ap.add_argument("--breath-gain", default="auto",
+                    help="share of the breath parameter's range the breath "
+                         "swings over; auto [default]: the voice config's "
+                         "top-level \"breath_gain\", else calibrated from "
+                         "<rig>.body.json to the same small displacement on "
+                         "every rig (flow.runtime.breath_setting)")
     ap.add_argument("--voicevox-url", default=sp.VOICEVOX_URL,
                     help="VOICEVOX engine base URL (no proxy for localhost)")
     ap.add_argument("--tts-speed", type=float, default=None,
