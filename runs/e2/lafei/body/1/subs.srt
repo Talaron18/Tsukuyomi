@@ -1,0 +1,12 @@
+1
+00:00:00,104 --> 00:00:00,784
+The beach...
+
+2
+00:00:01,028 --> 00:00:02,319
+that sounds nice.
+
+3
+00:00:03,261 --> 00:00:06,318
+Can we just sit in the shade and watch the waves?
+

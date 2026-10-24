@@ -1,0 +1,8 @@
+1
+00:00:00,098 --> 00:00:01,169
+Oh, you're back!
+
+2
+00:00:02,092 --> 00:00:06,080
+Of course I missed you—it got way too quiet around here.
+

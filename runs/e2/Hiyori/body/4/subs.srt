@@ -1,0 +1,8 @@
+1
+00:00:00,103 --> 00:00:02,090
+Aw, you're making me blush!
+
+2
+00:00:03,100 --> 00:00:06,338
+Did you really mean that, or are you just being nice?
+

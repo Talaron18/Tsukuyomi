@@ -1,0 +1,8 @@
+1
+00:00:00,104 --> 00:00:01,667
+Mm, hello there.
+
+2
+00:00:02,609 --> 00:00:05,530
+The door is over that way, near the wall.
+

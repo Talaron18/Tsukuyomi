@@ -1,0 +1,12 @@
+1
+00:00:00,100 --> 00:00:00,762
+Over there?
+
+2
+00:00:01,625 --> 00:00:03,100
+Hi hi, hello!
+
+3
+00:00:03,962 --> 00:00:06,475
+And the door is right that way behind you.
+
