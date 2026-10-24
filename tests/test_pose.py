@@ -146,6 +146,25 @@ def test_pose_time_is_its_place_in_the_speech(hiyori):
     assert [a["t"] for a in said["acts"]] == [0.6, 1.2]
     assert said["acts"][0]["arg"] == {"targets": {"head.tilt": 8.0}}
 
+    # And from the moras, as VOICEVOX times them (its words are its mora
+    # runs; speak() reports the method by the TTS's "timing").
+    class MoraTTS(FakeTTS):
+        timing = "moras"
+
+        def synth(self, text):
+            x, sr, w = super().synth(text)
+            moras = [{"text": c, "start": a, "vstart": a, "end": b}
+                     for c, a, b in (("o", 0.1, 0.3), ("ha", 0.65, 1.0),
+                                     ("wa", 1.25, 1.7))]
+            return x, sr, w, moras
+
+    words = [("Oh", 0.10, 0.30), ("hello", 0.65, 1.00), ("world", 1.25,
+                                                         1.70)]
+    said = sp.speak(p.spoken, p.tags, MoraTTS([(quiet(2.0, -20), words)]),
+                    w_rate, log=lambda s: None)
+    assert said["method"] == "moras" and said["moras"]
+    assert [a["t"] for a in said["acts"]] == [0.65, 1.25]
+
 
 # ----------------------------------------------------------------- solve
 
@@ -179,6 +198,10 @@ def test_solve_reports_reach_on_what_is_played(hiyori):
     # Between the hanging and the raised arm there is nothing: reported,
     # with where it does reach.
     assert not miss["ok"] and not miss["report"]["hand.L.y"]["ok"]
+    # An arm pose carries its drawing even without a swap: an idle gesture
+    # may be playing the other one.
+    assert miss["parts"] == {"PartArmA": 1.0, "PartArmB": 0.0}
+    assert miss["parts_from"] == miss["parts"]
     assert "alone it reaches" in miss["hints"]["hand.L.y"]
     rs = pz.reach_summary(poses)
     assert rs["markers"] == 4 and rs["targets"] == 5 and rs["miss"] == 1
@@ -321,9 +344,11 @@ def test_prompt_is_byte_stable_and_says_what_the_body_can_do(hiyori, lafei):
         p = _parse(bm, [ex])
         assert p.tags and not p.warnings, p.warnings
     # The pose numbers go to the user message.
-    assert pz.pose_now(hiyori) == ("(your body now: at rest; arm pose 1, "
-                                   "hand.L (0.95, -2.00), hand.R (-0.78, "
-                                   "-2.09))")
+    assert pz.pose_now(hiyori) == ("(your body now: at rest; hand.L (0.95, "
+                                   "-2.00), hand.R (-0.78, -2.09))")
+    up = pz.pose_now(hiyori, {"ParamArmLB": 0.0},
+                     {"PartArmA": 0.0, "PartArmB": 1.0})
+    assert up.startswith("(your body now: arms in another drawing, ")
     now = pz.pose_now(hiyori, {"ParamAngleZ": -8.0})
     assert "head.tilt 8" in now and "at rest" not in now
 

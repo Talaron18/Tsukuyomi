@@ -442,6 +442,12 @@ def _mapped_mouth(tok, pids, hi, lo, fps, n_frames):
     return out
 
 
+def voice_owns(pid: str) -> bool:
+    """The mouth parameters lip sync keeps when a body pose writes them
+    too: the opening and the vowels, not the form."""
+    return "open" in pid.lower() or is_vowel(pid)
+
+
 def authored_motions(model_json: str, fps: float):
     """(name, motion) for every motion the rig ships, in motion_files order."""
     out = []
@@ -1338,8 +1344,10 @@ def main(argv=None) -> int:
             if pose_layer is not None:
                 over, parts = pose_layer.apply(f, over, parts)
                 for p in pose_layer.written:
-                    if p in mouth:
-                        # The voice drives the mouth (flow.pose.NOT_TARGETS).
+                    if p in mouth and voice_owns(p):
+                        # The voice drives the mouth's opening and vowels
+                        # (flow.pose.NOT_TARGETS); a pose's mouth.form wins
+                        # over a calibrated map's form curve.
                         over[p] = float(mouth[p][f])
                         continue
                     col = expr_col.get(p)

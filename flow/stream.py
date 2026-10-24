@@ -454,6 +454,8 @@ class MotionStream:
         if self.poses.busy():
             over, parts = self.poses.apply(f, over, parts)
             for p in self.poses.written:
+                if not rt.voice_owns(p):
+                    continue
                 for f0, curves in mouth:
                     # The voice drives the mouth, as in runtime.main.
                     if f0 <= f and p in curves:

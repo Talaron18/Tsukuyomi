@@ -518,10 +518,9 @@ def describe_body(bm) -> str:
                                  else "") + rng + (f" {unit}" if unit else "")
                  + (f"; {mean}" if mean else ""))
     if nv > 1:
-        L.append(f"Your arms are drawn in {nv} poses; the rest pose is the "
-                 "first. A target only another drawn pose reaches switches "
-                 "to it, halfway through the move (the arm is redrawn, not "
-                 "moved there).")
+        L.append("Your arms have more than one drawing. A target only "
+                 "another drawing reaches switches to it, halfway through "
+                 "the move (the arm is redrawn, not moved there).")
     L.append("Reach of your hands:")
     cannot = []
     sh = bm.landmarks.get("shoulder.y")
@@ -531,17 +530,24 @@ def describe_body(bm) -> str:
             L.append(f"  {_side(s)} hand: not drawn")
             cannot.append(f"you have no {_side(s)} hand to move")
             continue
-        parts = []
+        # One entry per distinct reach: Natori's 12 variants are its left
+        # and right arm drawings combined, so each hand has 3 of its own.
+        groups = {}
         for (k, lo, hi), (_, xlo, xhi) in zip(ry, rx):
+            key = tuple(round(x, 2) for x in (lo, hi, xlo, xhi))
+            groups.setdefault(key, []).append(k)
+        parts = []
+        for n, ((lo, hi, xlo, xhi), ks) in enumerate(groups.items(), 1):
             lv = (_level(bm, lo) if _level(bm, lo) == _level(bm, hi)
                   else f"{_level(bm, lo)} to {_level(bm, hi)}")
             what = f"y {lo:.2f} to {hi:.2f} ({lv}), x {xlo:.2f} to {xhi:.2f}"
-            if nv > 1:
-                red = _redrawn(bm, k) if k else []
-                what = (f"arm pose {k + 1}: " + what
+            if len(groups) > 1:
+                red = [] if 0 in ks else min(
+                    (_redrawn(bm, k) for k in ks), key=len)
+                what = (f"drawing {n}{' (rest)' if 0 in ks else ''}: " + what
                         + (" -- switching to it redraws "
-                           + (" and ".join(f"your {_side(x)}" for x in red)
-                              + (" arms" if len(red) > 1 else " arm"))
+                           + ("both arms" if len(red) > 1
+                              else f"your {_side(red[0])} arm")
                            if red else ""))
             parts.append(what)
         L.append(f"  {_side(s)} hand: " + "; ".join(parts))
@@ -555,7 +561,7 @@ def describe_body(bm) -> str:
             gaps = ", ".join(f"{a[1]:.2f} to {b[0]:.2f}"
                              for a, b in zip(ints, ints[1:]))
             cannot.append(f"your {_side(s)} hand cannot stop between heights "
-                          f"{gaps} (no drawn pose holds it there)")
+                          f"{gaps} (no drawing holds it there)")
         xs = [(lo, hi) for _, lo, hi in rx]
         if s == "L" and min(lo for lo, _ in xs) > 0:
             cannot.append(f"your left hand cannot cross to your right side "
@@ -681,9 +687,9 @@ def pose_now(bm, values=None, parts=None) -> str:
         if f"hand.{s}.x" in st:
             items.append(f"hand.{s} ({st[f'hand.{s}.x']:.2f}, "
                          f"{st[f'hand.{s}.y']:.2f})")
-    if len(bm.variants) > 1:
-        items.insert(0, f"arm pose {k + 1}")
-    rest_word = "" if len(items) > (2 + (len(bm.variants) > 1)) else \
+    if len(bm.variants) > 1 and k:
+        items.insert(0, "arms in another drawing")
+    rest_word = "" if any(not i.startswith("hand.") for i in items) else \
         "at rest; "
     return "(your body now: " + rest_word + ", ".join(items) + ")"
 
@@ -761,6 +767,7 @@ def solve_poses(bm, acts, current=None, parts=None, core=None, log=print,
                   {**bm.blob.get("rest_parts", {}),
                    **bm.variants[bm.match_variant(base0)]["parts"]})
     base_k = bm.match_variant(base0, parts0)
+    arms = arm_params(bm)
     out = []
     order = sorted((i for i, x in enumerate(acts) if x.get("tag") == POSE),
                    key=lambda i: float(acts[i]["t"]))
@@ -811,11 +818,13 @@ def solve_poses(bm, acts, current=None, parts=None, core=None, log=print,
                 amp = max(amp, d)
         step = sorted(p for p in v["switches"])
         new_parts = {}
-        if k != cur_k or k != base_k:
-            # Off the rest drawing, the pose carries its arm variant even
-            # when an earlier pose switched to it: else that pose's release
-            # swapped Hiyori's arms back to the hanging drawing in the
-            # middle of this one's hold (her wave-and-point line).
+        if k != cur_k or k != base_k or set(played) & arms:
+            # The pose carries its arm drawing whenever it moves an arm or
+            # is off the rest drawing, even when the body is already in it:
+            # an earlier pose's release swapped Hiyori's arms back to the
+            # hanging drawing in the middle of a later pose's hold (her
+            # wave-and-point line), and an idle gesture can be playing the
+            # other drawing (Hiyori_m06 and m08, both calm, key PartArmB).
             played.update({p: float(x) for p, x in v["switches"].items()})
             new_parts = {p: float(x) for p, x in v["parts"].items()}
             if k != cur_k:
@@ -963,6 +972,9 @@ def end_time(poses) -> float:
 def arm_params(bm) -> set:
     """Parameters that move a hand or an arm by more than 0.02 hu in some
     variant: an unbound one takes the "arms" group (idle gestures)."""
+    cached = bm.__dict__.get("_arm_params")
+    if cached is not None:
+        return cached
     out = set()
     regs = [r for r in ("arm.L", "arm.R", "hand.L", "hand.R")]
     for v in bm.variants:
@@ -972,6 +984,7 @@ def arm_params(bm) -> set:
                 if np.hypot(D[:, kx], D[:, ky]).max() > 0.02:
                     out.add(p)
                     break
+    bm.__dict__["_arm_params"] = out
     return out
 
 
