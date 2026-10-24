@@ -11,6 +11,7 @@ raised left arm in PartArmB (a pose-group swap) and a whole-model shift.
 
 from __future__ import annotations
 
+import json
 import math
 import os
 
@@ -609,6 +610,14 @@ def test_miss_reported_with_reach(model, tmp_path, capsys):
     out = capsys.readouterr().out
     assert "MISS" in out and "alone it reaches" in out
     assert "hand.L.y reaches" in out
+    assert "missed jointly" not in out
+    # Reachable alone, not together with an impossible partner.
+    y = model.landmarks["hand.R"][1]
+    body.main(["--body", str(path), "--solve",
+               json.dumps({"hand.R.y": y + 0.05, "hand.R.x": 5.0}),
+               "--current", "{}"])
+    out = capsys.readouterr().out
+    assert "MISS" in out
 
 
 def test_v1_file_upgrades(measured, tmp_path):

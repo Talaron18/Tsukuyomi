@@ -2306,8 +2306,13 @@ def main(argv=None) -> int:
                 continue
             msg = []
             if h["reach"]:
-                msg.append(f"alone it reaches [{h['reach'][0]:.3f}, "
-                           f"{h['reach'][1]:.3f}] in this variant")
+                lo, hi = h["reach"]
+                tol = TOL[feature_unit(t)]
+                msg.append(f"alone it reaches [{lo:.3f}, {hi:.3f}] in this "
+                           "variant" + (" (the target is within: missed "
+                                        "jointly with the other targets)"
+                                        if lo - tol <= e["target"] <= hi + tol
+                                        else ""))
             for name, lim in h["variants"].items():
                 msg.append(f"variant {name!r} reaches [{lim[0]:.3f}, "
                            f"{lim[1]:.3f}]")
