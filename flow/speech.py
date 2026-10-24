@@ -817,14 +817,27 @@ class VoicevoxTTS:
                 "voicevox/voicevox_engine:cpu-latest (image name unverified)"
             ) from None
 
-    def speakers(self):
+    def speakers(self, wait=20.0):
+        """GET /speakers. An empty list is asked again for up to `wait`
+        seconds: on the server one run got [] from an engine that listed 45
+        characters when curl asked moments later (most likely still loading
+        its voice libraries)."""
+        import time
         if self._speakers is None:
-            raw = self._req("GET", "/speakers")
-            try:
-                self._speakers = json.loads(raw)
-            except ValueError:
-                raise RuntimeError("voicevox /speakers is not JSON: "
-                                   + raw[:500].decode("utf-8", "replace"))
+            t0 = time.monotonic()
+            while True:
+                raw = self._req("GET", "/speakers")
+                try:
+                    got = json.loads(raw)
+                except ValueError:
+                    raise RuntimeError("voicevox /speakers is not JSON: "
+                                       + raw[:500].decode("utf-8", "replace"))
+                if got or time.monotonic() - t0 >= wait:
+                    break
+                self.log("voicevox: /speakers is empty; waiting for the "
+                         "engine to load its voices")
+                time.sleep(2.0)
+            self._speakers, self._speakers_raw = got, raw[:300]
         return self._speakers
 
     def styles(self):
@@ -870,7 +883,8 @@ class VoicevoxTTS:
                 raise RuntimeError(
                     f"voicevox: the engine at {self.url} lists no voices "
                     f"(GET /speakers returned {len(self.speakers())} "
-                    "characters); its voice models are not loaded -- check "
+                    f"characters: {getattr(self, '_speakers_raw', b'')!r}); "
+                    "its voice models may still be loading -- check "
                     f"`curl --noproxy '*' {self.url}/speakers` and the "
                     "engine's log")
             if hit is None:
