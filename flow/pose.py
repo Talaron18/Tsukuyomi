@@ -846,7 +846,10 @@ def solve_poses(bm, acts, current=None, parts=None, core=None, log=print,
                                             in resolved.items()},
                "vars": sorted(resolved),
                "params": {p: round(x, 6) for p, x in sorted(played.items())},
-               "parts": new_parts, "step": step, "variant": k,
+               "parts": new_parts,
+               "parts_from": {q: float(prt.get(q, 1.0 - x))
+                              for q, x in new_parts.items()},
+               "step": step, "variant": k,
                "variant_name": v["name"], "report": report,
                "ok": all(e["ok"] for e in report.values()),
                "solve_seconds": round(sec, 3)}
@@ -985,6 +988,7 @@ def tokens(poses, roles, arms=()) -> list[dict]:
                 groups.add("arms")
         out.append({"t": p["start"], "type": POSE, "role": POSE,
                     "params": p["params"], "parts": p["parts"],
+                    "parts_from": p.get("parts_from", {}),
                     "step": p["step"], "duration": p["dur"],
                     "hold": p["hold"], "release": p["release"],
                     "groups": sorted(groups), "variant": p["variant_name"],
@@ -1006,7 +1010,9 @@ class PoseLayer:
     nothing jumps when a pose starts, is replaced, or ends. Parameters in
     `step` and part opacities switch at the midpoint of the move (and of
     the release) instead of blending: two arm variants are never drawn at
-    once. Parts, once written, keep being written (the backend keeps a
+    once. A part the frame leaves unset is taken at `part_rest`, else at the
+    token's "parts_from" (the body's opacity before the swap). Parts, once
+    written, keep being written (the backend keeps a
     part's last opacity, while parameters reset every frame), with the
     idle's value or `part_rest`. `written` is the set of parameters this
     frame wrote, for runtime's --dump mask.
@@ -1067,6 +1073,11 @@ class PoseLayer:
             he = t0 + d + max(float(tok.get("hold", 0.0)), 0.0)
             rel = max(float(tok.get("release", d)), 1.0 / self.fps)
             step = set(tok.get("step", ()))
+            for i, v in tok.get("parts_from", {}).items():
+                # Where the frame itself sets no opacity for a swapped part
+                # (a rig whose motions never key it), the body's own state
+                # before the swap stands in: never both arms at 1.
+                self.part_rest.setdefault(i, float(v))
             for kind, items in (("p", tok.get("params", {})),
                                 ("q", tok.get("parts", {}))):
                 for i, v in items.items():

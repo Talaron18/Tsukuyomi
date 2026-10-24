@@ -191,6 +191,35 @@ def side_of(pid):
     return m.group(1).upper() if m else ""
 
 
+def character_side(pid, naming=None):
+    """side_of(pid) as the character's own side: flipped where the rig
+    names sides by screen (flow.body's side_naming, "screen" or
+    "character"; lafei's PARAM_Arm_LT_Angle moves the arm at -x, the
+    character's right). side_of itself stays name-only: flow.body votes
+    names against geometry with it."""
+    s = side_of(pid)
+    if naming == "screen" and s:
+        return {"L": "R", "R": "L"}[s]
+    return s
+
+
+def side_naming(rig):
+    """{"params", "drawables"} naming from rigs/<rig>.body.json when it
+    exists (flow.body measured it from rest geometry), else None: the
+    names are taken as the character's, Cubism's convention."""
+    if not rig:
+        return None
+    path = os.path.splitext(rig)[0] + ".body.json"
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as fh:
+            sn = json.load(fh).get("side_naming")
+    except (OSError, ValueError):
+        return None
+    return sn or None
+
+
 def part_of(pid, group="", role_of=None):
     """Body part a played parameter belongs to, or "" when unclear."""
     role = (role_of or {}).get(pid)
@@ -231,7 +260,7 @@ def _norm(v, p, lo, hi):
 
 
 def measure(m, keep, lo, hi, rest, base_parts=None, groups=None,
-            role_of=None, switches=None):
+            role_of=None, switches=None, naming=None):
     """What one gesture plays: (moves, swaps, flips).
 
     m: authored_motion dict. keep(pid): runtime's gesture keep. lo/hi/rest:
@@ -243,7 +272,9 @@ def measure(m, keep, lo, hi, rest, base_parts=None, groups=None,
     parameters. swaps: {part id: +1 shown / -1 hidden} against the rest
     opacities. flips: {(part, side): +1 / -1} for switches the gesture
     throws away from their rest state (+1 toward the higher state).
+    naming: side_naming() of the rig; sides are the character's.
     """
+    pnaming = (naming or {}).get("params")
     switches = switches or {}
     out, flips = {}, {}
     for p, v in sorted(m["params"].items()):
@@ -252,7 +283,7 @@ def measure(m, keep, lo, hi, rest, base_parts=None, groups=None,
         part = part_of(p, (groups or {}).get(p, ""), role_of)
         if part in IGNORED:
             continue
-        side = side_of(p) if part in SIDED else ""
+        side = character_side(p, pnaming) if part in SIDED else ""
         if p in switches:
             a, b = sorted(switches[p])
             v = np.asarray(v, float)
@@ -296,7 +327,7 @@ PLURAL = {"glasses", "arms", "hands", "shoulders", "legs", "brows", "eyes", "che
 POSE_PARTS = {"arm", "hand", "legs"}
 
 
-def atoms(meas, swaps, flips):
+def atoms(meas, swaps, flips, naming=None):
     """{atom: (amplitude, reversals)}: the features one gesture shows, the
     unit a rig's prevalence is counted in. ("m", part, side) a continuous
     part moves; ("o", part, side) it goes back and forth; ("s", part, side)
@@ -315,7 +346,8 @@ def atoms(meas, swaps, flips):
     for p, d in swaps.items():
         low = p.lower()
         if "arm" in low or "hand" in low:
-            out[("s", "arm", side_of(p))] = (1.0, 0)
+            out[("s", "arm", character_side(
+                p, (naming or {}).get("drawables")))] = (1.0, 0)
         else:
             out[("appear",) if d > 0 else ("hide",)] = (1.0, 0)
     return out
@@ -522,7 +554,7 @@ def opaque_labels(names):
 
 def describe_rig(motions, keep, lo, hi, rest, base_parts=None, groups=None,
                  role_of=None, fps=30.0, max_seconds=None, switches=None,
-                 hashes=None):
+                 hashes=None, naming=None):
     """({motion name: description}, {motion name: group name}).
 
     Measured over what plays: a directed gesture is cut at max_seconds
@@ -553,8 +585,8 @@ def describe_rig(motions, keep, lo, hi, rest, base_parts=None, groups=None,
     feats = {}
     for name, m in motions:
         meas, swaps, flips = measure(m, keep, lo, hi, rest, base_parts,
-                                     groups, role_of, switches)
-        feats[name] = (meas, atoms(meas, swaps, flips))
+                                     groups, role_of, switches, naming)
+        feats[name] = (meas, atoms(meas, swaps, flips, naming))
     rig = rig_stats([feats[n][1] for n in reps])
     opaque = opaque_labels([n for n, _ in motions])
     out = {}
@@ -720,7 +752,8 @@ def apply_overrides(labels, measured, overrides):
 
 
 def rig_descriptions(model_json, rig, roles, clips=None, fps=30.0,
-                     max_seconds=None, probe_dir="out", log=print):
+                     max_seconds=None, probe_dir="out", log=print,
+                     naming="auto"):
     """({motion name: description}, {motion name: group name}) for a rig
     on disk (describe_rig), measured on what the
     runtime's GesturePlayer will play: its expressive columns (rig_columns,
@@ -730,7 +763,11 @@ def rig_descriptions(model_json, rig, roles, clips=None, fps=30.0,
     PARAM_bodyS, PARAM_moveX/Y on aidang_2, which would read as "body
     moves"), from the base pose base_state takes (the idle's first
     frame). Switches are rig_switches'; identical motion files are one
-    group whatever their curves."""
+    group whatever their curves. naming: the rig's side naming ("auto":
+    side_naming(rig), from its body file), so "left arm" is the
+    character's left on rigs that name sides by screen."""
+    if naming == "auto":
+        naming = side_naming(rig)
     try:
         from .runtime import (authored_motions, base_keep, base_state,
                               held_params, rig_columns)
@@ -769,7 +806,7 @@ def rig_descriptions(model_json, rig, roles, clips=None, fps=30.0,
         with open(path, "rb") as fh:
             hashes[os.path.basename(path)] = hashlib.sha1(fh.read()).hexdigest()
     return describe_rig(motions, keep, lo, hi, rest, base_parts, groups,
-                        role_of, fps, max_seconds, switches, hashes)
+                        role_of, fps, max_seconds, switches, hashes, naming)
 
 
 def rig_switches(model_json, pids, groups, fps=30.0, role_of=None):
