@@ -967,6 +967,19 @@ def main(argv=None) -> int:
                     {n: m["frames"] / a.fps for n, m in motions},
                     np.random.default_rng([a.seed, 1]), start,
                     settle=settle)
+                # Body mode (flow.pose): poses the director solved, as
+                # tokens on the groups their parameters are bound to. None
+                # in tag mode, so its merge is the one of before.
+                solved = [x["solved"] for x in acts
+                          if x.get("tag") == "pose" and x.get("solved")]
+                if solved:
+                    try:
+                        from . import pose as pz
+                    except ImportError:
+                        from flow import pose as pz
+                    directed = directed + pz.tokens(
+                        solved, roles, {p for x in solved
+                                        for p in x.get("arm_params", ())})
                 n_idle = len(tokens)
                 tokens = dr.merge(tokens, directed)
                 print(f"director: {len(acts)} actions -> {len(directed)} "
@@ -1140,6 +1153,16 @@ def main(argv=None) -> int:
               f"opacities, {len(base_params)} held parameters")
 
     mouth = {}
+    pose_layer = None
+    if events_on and any(k["type"] == "pose" for k in tokens):
+        try:
+            from . import pose as pz
+        except ImportError:
+            from flow import pose as pz
+        pose_layer = pz.layer_for(tokens, a.fps, dict(zip(pids, dflt.tolist())),
+                                  base_parts)
+        print(f"pose: {sum(k['type'] == 'pose' for k in tokens)} body poses "
+              "over the idle (flow.pose)")
     mtok = next((k for k in tokens if k["type"] == "mouth"),
                 None) if events_on else None
     if mtok is not None:
@@ -1250,6 +1273,7 @@ def main(argv=None) -> int:
     fade_from = None
     pid_index = {p: i for i, p in enumerate(pids)}
     expr_ids = {pids[i] for i in expressive}
+    expr_col = {pids[i]: c for c, i in enumerate(expressive)}
     for f in range(n_frames):
         if static_frames is not None:
             m, t = static_frames[f]
@@ -1311,6 +1335,18 @@ def main(argv=None) -> int:
                 for col in gesture_cols:
                     if pids[expressive[col]] not in player.keyed[f]:
                         applied_mask[f, col] = False
+            if pose_layer is not None:
+                over, parts = pose_layer.apply(f, over, parts)
+                for p in pose_layer.written:
+                    if p in mouth:
+                        # The voice drives the mouth (flow.pose.NOT_TARGETS).
+                        over[p] = float(mouth[p][f])
+                        continue
+                    col = expr_col.get(p)
+                    if col is not None:
+                        i = expressive[col]
+                        applied[f, col] = (over[p] - lo[i]) / span_x[col] * 2 - 1
+                        applied_mask[f, col] = True
         if a.no_parts:
             parts = None
         frames.append((over, parts))

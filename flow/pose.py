@@ -1,0 +1,1329 @@
+#!/usr/bin/env python3
+"""
+Body mode: the language model writes body targets, flow.body solves them,
+and a pose layer plays them over the idle.
+
+Stage E2 of docs/embodiment.md. The tag pipeline (flow.director) asks the
+model to pick symbols ([nod], [look:left]); here it gets a description of
+its own measured body (flow.body: parts, the character's left and right,
+reach per side, landmarks, what it cannot do), its current pose as numbers
+and, where the backend takes images, a picture of itself, and writes
+continuous targets inline in its speech:
+
+    Hi! [pose {"hand.R.y": "@shoulder.y", "head.tilt": 8}] So good to see you.
+
+  parse     PoseParser: the director's incremental parser with markers
+            scanned by brace depth (a JSON body is longer than any tag and
+            may hold brackets), tolerant JSON (single quotes, bare keys,
+            trailing commas are repaired; anything else is dropped with a
+            warning, never spoken). Each target must be a variable this
+            body has, a number or a landmark reference ("@shoulder.y",
+            "@chest.x+0.2"). Optional "dur" (seconds the move takes) and
+            "hold" (seconds kept before relaxing to the idle).
+  mode      Pure body, plus [blink] and [pause:x]. Face shapes (brows,
+            eye smile, mouth form, blush) are canonical variables like any
+            joint, so they go in pose markers; a blink is a transient the
+            autonomic layer owns (a held eye.L.open would stop blinking),
+            and a pause is timing, not body. No [gesture:*]: an authored
+            clip would let the model hand the motion back to the rigger,
+            which is the baseline this mode is compared against. Nods and
+            shakes are pose sequences (markers on the same variables play
+            one after another).
+  time      a marker is a tag ({"tag": "pose", "arg": {...}, "at": n}), so
+            director.timeline and speech.speak time it from the words /
+            moras exactly as they time tags, and the live loop's sentence
+            streaming carries it unchanged.
+  solve     solve_poses: each marker through BodyModel.solve with the prior
+            toward the pose the body is in at that moment (the previous
+            poses still held, else the rest), then only what the pose
+            moves is played (parameters that change by >= PLAY_EPS of their
+            span, plus each target's main mover); the rest stays with the
+            idle. The report per target (forward model, and the Core's own
+            geometry when a model is loaded: body.exact_state) is computed
+            on that played set, so it says what renders.
+  play      PoseLayer: per parameter a minimum-jerk move from what was on
+            screen to the target, a hold, then a minimum-jerk release back
+            to whatever the idle is doing, on top of the frame the idle
+            built (runtime.main's frame loop and stream.MotionStream.frame
+            both call it, so live draws what offline draws). Arm variant
+            changes swap parts (and switch parameters) at the midpoint of
+            the move, as the gesture layer does: never two arms drawn.
+            Parameters the probe banded discrete but the body file says are
+            solvable joints (lafei's PARAM_Arm_LT_Angle, Natori's
+            ParamArmAL01) are written as solved, never snapped.
+  merge     a pose token takes over the role groups its parameters are
+            bound to (and "arms" for unbound arm parameters) for its move
+            plus hold, with director.merge's semantics: idle moves on those
+            groups in that window are dropped, idle gestures starting in it
+            too.
+
+Usage:
+    python -m flow.pose --body rigs/Hiyori.body.json --prompt
+    python -m flow.pose --body rigs/Hiyori.body.json --reply \\
+        'Hi! [pose {"hand.R.y": "@shoulder.y"}] Look.' [--model-json M]
+    python -m flow.pose summary runs/e2/Hiyori        # body vs tags table
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import json
+import math
+import os
+import re
+import sys
+
+import numpy as np
+
+try:
+    from . import body as fb
+    from . import director as dr
+    from . import events as ev
+    from .behaviors import min_jerk
+except ImportError:
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from flow import body as fb
+    from flow import director as dr
+    from flow import events as ev
+    from flow.behaviors import min_jerk
+
+POSE = "pose"
+# A marker's JSON may run to a few hundred characters (six targets with
+# landmark references is ~150); past this it is a runaway, dropped unspoken.
+MAX_MARKER = 600
+BODY_TAGS = ("pose", "blink", "pause")
+# The voice drives these; a target on them would fight the lip sync.
+NOT_TARGETS = {"mouth.open": "the voice drives the mouth"}
+# Timing, hand-set. A pose's default move time grows with its size, from a
+# conversational stroke (director.NOD_STROKE, 0.3 s) for a small change to
+# about the fitted idle head move (median 1.3 s) for a full-span one.
+DUR_MIN, DUR_MAX = 0.3, 1.2
+DUR_RANGE = (0.15, 3.0)
+POSE_HOLD = 1.5         # default hold; director.MIN_HOLD is 1.0
+HOLD_MAX = 8.0
+RELEASE_MIN = 0.5       # relaxing back is never quicker than this
+# A solved parameter is played when it moves at least this fraction of its
+# span from where it was (or is a target's main mover); below it the idle
+# keeps it. Hiyori's hand.R.y = shoulder solve also nudged BodyAngleX by
+# 0.03 of 20 (0.15 %) and ParamShoulder by 0.9 %: freezing those would stop
+# the idle's sway for nothing visible.
+PLAY_EPS = 0.01
+# Variables offered in the prompt besides the declared ones: hand positions.
+# The other measured regions (neck, torso, upper arm centroids) follow from
+# them and from the declared angles, and listing them invited targets that
+# fight each other.
+HAND_VARS = ("hand.L.x", "hand.L.y", "hand.R.x", "hand.R.y")
+# Plain words for declared variables (flow.body.SIGN has the head/torso ones).
+MEANING = {
+    "head.yaw": "+ turns your face toward your left (the viewer's right)",
+    "head.pitch": "+ looks up",
+    "head.tilt": "+ tilts your head counter-clockwise as the viewer sees it "
+                 "(toward your right shoulder)",
+    "torso.yaw": "+ turns your upper body toward your left",
+    "torso.pitch": "+ leans back, - leans in toward the viewer",
+    "torso.tilt": "+ tilts your upper body counter-clockwise as seen "
+                  "(toward your right)",
+    "torso.forward": "+ toward the viewer",
+    "gaze.x": "+ looks toward your left (the viewer's right)",
+    "gaze.y": "+ looks up",
+    "eye.L.open": "0 closed, 1 open", "eye.R.open": "0 closed, 1 open",
+    "eye.L.smile": "+ smiling eye", "eye.R.smile": "+ smiling eye",
+    "brow.L.lift": "+ raises the brow", "brow.R.lift": "+ raises the brow",
+    "brow.L.slide": "brow sideways", "brow.R.slide": "brow sideways",
+    "brow.L.angle": "brow angle", "brow.R.angle": "brow angle",
+    "brow.L.form": "- angry, + gentle", "brow.R.form": "- angry, + gentle",
+    "mouth.form": "- frown, + smile",
+    "cheek.blush": "+ blush",
+    "shoulders.up": "+ shrugs", "shoulder.L.up": "+ raises the shoulder",
+    "shoulder.R.up": "+ raises the shoulder",
+    "hand.L.x": "your left hand, + toward your left",
+    "hand.L.y": "your left hand height",
+    "hand.R.x": "your right hand, + toward your left",
+    "hand.R.y": "your right hand height",
+}
+IMAGE_BACKENDS = ("anthropic", "siliconflow", "ollama")
+
+
+# ----------------------------------------------------------------- parse
+
+def loads_lenient(s: str) -> tuple[dict, bool]:
+    """(object, repaired) from a marker's JSON body. Repairs what language
+    models write instead of JSON: single quotes, bare keys, trailing
+    commas, missing braces. Raises ValueError when nothing works."""
+    s = s.strip()
+    try:
+        d = json.loads(s)
+        if isinstance(d, dict):
+            return d, False
+    except ValueError:
+        pass
+    t = s
+    a, b = t.find("{"), t.rfind("}")
+    if a >= 0 and b > a:
+        t = t[a:b + 1]
+    elif a < 0 and b < 0:
+        t = "{" + t + "}"
+    if '"' not in t:
+        t = t.replace("'", '"')
+    t = re.sub(r'([{,]\s*)([A-Za-z_@][\w.@+\-]*)\s*:', r'\1"\2":', t)
+    t = re.sub(r'(:\s*)(@[\w.]+(?:[+-][\d.]+)?)(\s*[,}])', r'\1"\2"\3', t)
+    t = re.sub(r",\s*}", "}", t)
+    try:
+        d = json.loads(t)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from None
+    if not isinstance(d, dict):
+        raise ValueError("not an object")
+    return d, True
+
+
+def _landmark_ok(ref: str, landmarks) -> bool:
+    m = re.match(r"@([\w.]+?)([+-][\d.]+)?$", ref)
+    if not m:
+        return False
+    name = m.group(1)
+    return name in landmarks or (name[-2:] in (".x", ".y")
+                                 and name[:-2] in landmarks)
+
+
+class PoseParser(dr.TagParser):
+    """director.TagParser for body mode: [pose {...}] markers (also
+    "[pose: {...}]" and a bare "[{...}]"), [blink] and [pause:x]; any other
+    tag is dropped with a warning. `variables`: the canonical variables
+    this body has (None: any); `landmarks`: names a "@" reference may
+    use. A marker split across chunks parses as it would whole."""
+
+    def __init__(self, variables=None, landmarks=(), max_marker=MAX_MARKER):
+        super().__init__((), None)
+        self.variables = None if variables is None else set(variables)
+        self.landmarks = set(landmarks or ())
+        self.max_marker = max_marker
+        self._depth, self._instr, self._esc, self._long = 0, False, False, \
+            False
+
+    def _open(self):
+        self._buf = ""
+        self._depth, self._instr, self._esc, self._long = 0, False, False, \
+            False
+
+    def feed(self, chunk):
+        done = []
+        chunk = chunk.translate(dr._FULLWIDTH)
+        text = []
+        for ch in chunk:
+            if self._buf is None:
+                if ch == "[":
+                    self._text("".join(text))
+                    text = []
+                    self._open()
+                else:
+                    text.append(ch)
+                continue
+            if self._instr:
+                if self._esc:
+                    self._esc = False
+                elif ch == "\\":
+                    self._esc = True
+                elif ch == '"':
+                    self._instr = False
+            elif ch == '"' and self._depth > 0:
+                self._instr = True
+            elif ch == "[" and self._depth == 0:
+                # A new '[' before this one closed: the first was not a
+                # marker. Dropped, as the tag parser drops it.
+                self.warnings.append(f"unclosed '[{self._buf[:40]}' dropped")
+                self._open()
+                continue
+            elif ch in "{[":
+                self._depth += 1
+            elif ch in "}]" and self._depth > 0:
+                self._depth -= 1
+            elif ch == "]":
+                inner, long_ = self._buf, self._long
+                self._buf = None
+                if long_:
+                    self.warnings.append(f"marker longer than "
+                                         f"{self.max_marker} characters "
+                                         "dropped")
+                    continue
+                t = self._marker(inner)
+                if t:
+                    done.append(t)
+                continue
+            if not self._long:
+                self._buf += ch
+                if len(self._buf) > self.max_marker:
+                    if "{" in self._buf:
+                        # JSON that never ends: drop it all, never speak it.
+                        self._long = True
+                    else:
+                        self.warnings.append(
+                            f"'[' never closed within {self.max_marker} "
+                            "characters; kept as text")
+                        rest, self._buf = self._buf, None
+                        self._text(rest)
+        if text:
+            self._text("".join(text))
+        return done
+
+    def close(self):
+        if self._buf is not None:
+            self.warnings.append(f"unterminated marker '[{self._buf[:40]}' at "
+                                 "the end dropped")
+            self._buf = None
+        return super().close()
+
+    def _marker(self, inner):
+        s = inner.strip()
+        m = re.match(r"(?is)pose\b\s*:?\s*(.*)$", s)
+        if m or s.startswith("{"):
+            return self._pose(m.group(1) if m else s, inner)
+        name = re.split(r"[\s:]", s, maxsplit=1)[0].lower() if s else ""
+        if name not in ("blink", "pause"):
+            self.warnings.append(f"[{inner}] is not a body-mode marker "
+                                 "(pose, blink, pause); dropped")
+            return None
+        return self._tag(inner)
+
+    def _pose(self, body, inner):
+        short = inner if len(inner) <= 80 else inner[:77] + "..."
+        try:
+            d, repaired = loads_lenient(body)
+        except ValueError as exc:
+            self.warnings.append(f"[{short}]: bad JSON ({exc}); dropped")
+            return None
+        if repaired:
+            self.warnings.append(f"[{short}]: JSON repaired")
+        targets, spec = {}, {}
+        for k, v in d.items():
+            key = str(k).strip()
+            if key in ("dur", "duration", "hold"):
+                try:
+                    x = float(v)
+                except (TypeError, ValueError):
+                    self.warnings.append(f"[{short}]: {key} {v!r} is not a "
+                                         "number; ignored")
+                    continue
+                if not math.isfinite(x):
+                    continue
+                if key == "hold":
+                    spec["hold"] = round(min(max(x, 0.0), HOLD_MAX), 3)
+                else:
+                    spec["dur"] = round(min(max(x, DUR_RANGE[0]),
+                                            DUR_RANGE[1]), 3)
+                continue
+            if key in NOT_TARGETS:
+                self.warnings.append(f"[{short}]: {key} is not yours to set "
+                                     f"({NOT_TARGETS[key]}); ignored")
+                continue
+            if self.variables is not None and key not in self.variables:
+                self.warnings.append(f"[{short}]: no variable {key!r} on "
+                                     "this body; ignored")
+                continue
+            if isinstance(v, bool) or v is None:
+                self.warnings.append(f"[{short}]: {key}: {v!r} ignored")
+                continue
+            if isinstance(v, (int, float)):
+                if math.isfinite(float(v)):
+                    targets[key] = float(v)
+                continue
+            sv = str(v).strip()
+            if sv.startswith("@"):
+                if self.landmarks and not _landmark_ok(sv, self.landmarks):
+                    self.warnings.append(f"[{short}]: {key}: no landmark "
+                                         f"{sv!r}; ignored")
+                    continue
+                targets[key] = sv
+                continue
+            try:
+                targets[key] = float(sv)
+            except ValueError:
+                self.warnings.append(f"[{short}]: {key}: {sv!r} is not a "
+                                     "number or @landmark; ignored")
+        if not targets:
+            self.warnings.append(f"[{short}]: no usable targets; dropped")
+            return None
+        tag = {"tag": POSE, "arg": {"targets": targets, **spec},
+               "at": len(self.spoken)}
+        self.tags.append(tag)
+        return tag
+
+
+def parser_for(bm, max_marker=MAX_MARKER):
+    return PoseParser(available(bm), bm.landmarks, max_marker)
+
+
+def tag_text(t) -> str:
+    """A tag or pose action as written: "[nod]", "[look:left]",
+    '[pose {"head.tilt": 8}]'."""
+    arg = t.get("arg")
+    if t.get("tag") == POSE and isinstance(arg, dict):
+        d = dict(arg.get("targets", {}))
+        d.update({k: arg[k] for k in ("dur", "hold") if k in arg})
+        return f"[pose {json.dumps(d, ensure_ascii=False)}]"
+    return f"[{t['tag']}{':' + str(arg) if arg else ''}]"
+
+
+# --------------------------------------------------------- the body in words
+
+def available(bm) -> list[str]:
+    """Canonical variables some variant of this body has and can move:
+    what a marker may target. Sorted (byte-stable prompts)."""
+    out = []
+    for f in bm.features:
+        k = bm.fidx[f]
+        if not any(v["present"][k] for v in bm.variants):
+            continue
+        if f in NOT_TARGETS:
+            continue
+        out.append(f)
+    return sorted(out)
+
+
+def _ranges(bm, var):
+    """[(variant, lo, hi)] of a variable's reach alone, per variant."""
+    out = []
+    for k in range(len(bm.variants)):
+        lim = bm.limits(var, k)
+        if lim is not None:
+            out.append((k, float(lim[0]), float(lim[1])))
+    return out
+
+
+def offered(bm) -> list[str]:
+    """The variables the prompt lists: declared ones that move, then hand
+    positions; in flow.body's DECLARED order, then HAND_VARS."""
+    have = set(available(bm))
+    out = []
+    for n, _u, _sid, _deg in fb.DECLARED:
+        if n in have and n not in NOT_TARGETS:
+            r = _ranges(bm, n)
+            if r and max(h for _, _, h in r) - min(lo for _, lo, _ in r) \
+                    >= fb.TOL[fb.feature_unit(n)]:
+                out.append(n)
+    out += [v for v in HAND_VARS if v in have]
+    return out
+
+
+def _fmt(x, unit):
+    s = f"{x:.0f}" if unit == "deg" else f"{x:.2f}"
+    return s.lstrip("-") if float(s) == 0 else s
+
+
+def _level(bm, y):
+    """Plain words for a height in hu."""
+    L = bm.landmarks
+    head = L.get("head", [0, 0.4])[1]
+    sh = L.get("shoulder.y", -0.2)
+    chest = L.get("chest", [0, sh - 0.4])[1]
+    if y >= head + 0.25:
+        return "above your head"
+    if y >= 0.0:
+        return "face height"
+    if y >= sh - 0.05:
+        return "shoulder height"
+    if y >= chest - 0.05:
+        return "chest height"
+    if y >= chest - 0.6:
+        return "waist height"
+    return "hanging low"
+
+
+def _union(ints, tol):
+    """Merge [(lo, hi)] that overlap within tol."""
+    out = []
+    for lo, hi in sorted(ints):
+        if out and lo <= out[-1][1] + tol:
+            out[-1] = (out[-1][0], max(out[-1][1], hi))
+        else:
+            out.append((lo, hi))
+    return out
+
+
+def _side(s):
+    return "left" if s == "L" else "right"
+
+
+def _redrawn(bm, k):
+    """Which hands a switch from the rest variant to variant k redraws:
+    those whose rest position or presence differs."""
+    v0, vk = bm.variants[0], bm.variants[k]
+    out = []
+    for s in "LR":
+        ix, iy = bm.fidx[f"hand.{s}.x"], bm.fidx[f"hand.{s}.y"]
+        p0, pk = bool(v0["present"][ix]), bool(vk["present"][ix])
+        if p0 != pk or (p0 and np.hypot(v0["rest"][ix] - vk["rest"][ix],
+                                         v0["rest"][iy] - vk["rest"][iy])
+                        > 0.05):
+            out.append(s)
+    return out
+
+
+def describe_body(bm) -> str:
+    """The body description of the body-mode prompt, from the body file
+    alone (no Core, no model file): byte-stable per file."""
+    L = []
+    regs = set(bm.blob.get("regions", {}))
+    names = []
+    face = [w for r, w in (("eye.L", "eyes"), ("brow.L", "brows"),
+                           ("mouth", "mouth"), ("cheek", "cheeks"),
+                           ("ear", "ears")) if r in regs or
+            r.replace(".L", ".R") in regs]
+    names.append("head" + (f" ({', '.join(face)})" if face else ""))
+    for r, w in (("neck", "neck"), ("torso", "torso"), ("hips", "hips"),
+                 ("legs", "legs (drawn, not movable)")):
+        if r in regs:
+            names.append(w)
+    arms = [w for r, w in (("upper_arm", "upper arms"),
+                           ("forearm", "forearms"), ("hand", "hands"),
+                           ("arm", "arms")) if f"{r}.L" in regs
+            or f"{r}.R" in regs]
+    if arms:
+        names.append(", ".join(arms) + " (left and right)")
+    if "hand.L" not in regs and "hand.R" not in regs and arms:
+        names.append("no separate hands: hand.L / hand.R are the ends of "
+                     "your arms")
+    if "hair" in regs:
+        names.append("hair (it swings by itself)")
+    L.append("Parts: " + "; ".join(names) + ".")
+    L.append("Left and right are always your own: hand.L is your left hand, "
+             "which the viewer sees on the right side of the picture. "
+             "Coordinates: origin at your chin, x toward your own left, y "
+             "up, unit hu = one head height; angles in degrees; face values "
+             "in your rig's own units.")
+    lm = []
+    for k, v in bm.landmarks.items():
+        if isinstance(v, list):
+            lm.append(f"{k} ({v[0]:.2f}, {v[1]:.2f})")
+        else:
+            lm.append(f"{k} {v:.2f}")
+    L.append("Landmarks (hu; use \"@name\", \"@name.x\" / \"@name.y\", "
+             "optionally with an offset like \"@shoulder.y+0.1\"): "
+             + ", ".join(lm) + ". hand.L / hand.R are where your hands "
+             "rest.")
+    nv = len(bm.variants)
+    L.append("What you can move (variable: rest -> reachable range, each "
+             "alone):")
+    for var in offered(bm):
+        u = fb.feature_unit(var)
+        r = _ranges(bm, var)
+        rest = float(bm.variants[0]["rest"][bm.fidx[var]]) \
+            if bm.variants[0]["present"][bm.fidx[var]] else None
+        ints = _union([(lo, hi) for _, lo, hi in r], fb.TOL[u])
+        rng = " or ".join(f"[{_fmt(lo, u)}, {_fmt(hi, u)}]" for lo, hi in ints)
+        mean = MEANING.get(var) or (fb.SIGN[var][2] if var in fb.SIGN else "")
+        unit = {"deg": "deg", "hu": "hu", "unit": "", "pct": "%"}[u]
+        L.append(f"  {var}: " + (f"{_fmt(rest, u)} -> " if rest is not None
+                                 else "") + rng + (f" {unit}" if unit else "")
+                 + (f"; {mean}" if mean else ""))
+    if nv > 1:
+        L.append(f"Your arms are drawn in {nv} poses; the rest pose is the "
+                 "first. A target only another drawn pose reaches switches "
+                 "to it, halfway through the move (the arm is redrawn, not "
+                 "moved there).")
+    L.append("Reach of your hands:")
+    cannot = []
+    sh = bm.landmarks.get("shoulder.y")
+    for s in "LR":
+        ry, rx = _ranges(bm, f"hand.{s}.y"), _ranges(bm, f"hand.{s}.x")
+        if not ry:
+            L.append(f"  {_side(s)} hand: not drawn")
+            cannot.append(f"you have no {_side(s)} hand to move")
+            continue
+        parts = []
+        for (k, lo, hi), (_, xlo, xhi) in zip(ry, rx):
+            lv = (_level(bm, lo) if _level(bm, lo) == _level(bm, hi)
+                  else f"{_level(bm, lo)} to {_level(bm, hi)}")
+            what = f"y {lo:.2f} to {hi:.2f} ({lv}), x {xlo:.2f} to {xhi:.2f}"
+            if nv > 1:
+                red = _redrawn(bm, k) if k else []
+                what = (f"arm pose {k + 1}: " + what
+                        + (" -- switching to it redraws "
+                           + (" and ".join(f"your {_side(x)}" for x in red)
+                              + (" arms" if len(red) > 1 else " arm"))
+                           if red else ""))
+            parts.append(what)
+        L.append(f"  {_side(s)} hand: " + "; ".join(parts))
+        top = max(hi for _, _, hi in ry)
+        ints = _union([(lo, hi) for _, lo, hi in ry], fb.TOL["hu"])
+        if sh is not None and top < sh - fb.TOL["hu"]:
+            cannot.append(f"your {_side(s)} hand cannot reach shoulder height "
+                          f"(y {sh:.2f}); its highest is {top:.2f}, "
+                          f"{_level(bm, top)}")
+        if len(ints) > 1:
+            gaps = ", ".join(f"{a[1]:.2f} to {b[0]:.2f}"
+                             for a, b in zip(ints, ints[1:]))
+            cannot.append(f"your {_side(s)} hand cannot stop between heights "
+                          f"{gaps} (no drawn pose holds it there)")
+        xs = [(lo, hi) for _, lo, hi in rx]
+        if s == "L" and min(lo for lo, _ in xs) > 0:
+            cannot.append(f"your left hand cannot cross to your right side "
+                          f"(x stays above {min(lo for lo, _ in xs):.2f})")
+        if s == "R" and max(hi for _, hi in xs) < 0:
+            cannot.append(f"your right hand cannot cross to your left side "
+                          f"(x stays below {max(hi for _, hi in xs):.2f})")
+    have = set(offered(bm))
+    missing = [n for n, *_ in fb.DECLARED if n not in have
+               and n not in NOT_TARGETS]
+    if missing:
+        cannot.append("these do not exist on this body: " + ", ".join(missing))
+    cannot.append("no walking, no legs, no fingers; nothing outside the "
+                  "ranges above (a target outside is reached as far as it "
+                  "goes)")
+    L.append("What you cannot do:")
+    L += [f"  - {c}" for c in cannot]
+    return "\n".join(L)
+
+
+BODY_TEMPLATE = """\
+You are {persona}
+
+You are a Live2D character talking with the user face to face. Reply with \
+exactly what you say aloud: one to three short spoken sentences, in the \
+user's language. You move your own body by writing pose markers inline, at \
+the moment in your speech where the move happens. Markers are silent; they \
+are never read out.
+
+Your body, measured from your own model:
+{body}
+
+Pose markers:
+[pose {{"var": value, ...}}]  move to these targets. A value is a number in \
+the variable's unit or a landmark reference ("@shoulder.y"). Optional "dur": \
+seconds the move takes (0.15 to 3; default by its size), "hold": seconds to \
+keep it before relaxing back into your idle (0 to 8; default {hold:g}). \
+Variables you leave out keep moving with your idle. Markers on the same \
+variables play one after another, so a nod is two markers: \
+[pose {{"head.pitch": -12, "dur": 0.25, "hold": 0}}]\
+[pose {{"head.pitch": 0, "dur": 0.3, "hold": 0}}]
+[blink]  a deliberate blink
+[pause:0.5]  stay silent for that many seconds (0.2 to 3)
+Each user message ends with "(your body now: ...)", where your body is at \
+that moment in the same variables{image}.
+
+Rules:
+- One or two markers per sentence, for what that sentence means. Put a \
+marker right before the words it goes with, often mid-sentence.
+- Only the variables listed above, inside their ranges. Valid JSON.
+- No other tags or markup: no asterisk actions, no parentheses stage \
+directions, no emoji, no lists, no narration.
+- Never explain or mention the markers or the numbers.
+
+Examples of placement (not of content; never copy them):
+{examples}"""
+
+
+def _examples(bm) -> list[str]:
+    have = set(offered(bm))
+    ex = []
+    best = None
+    for s in "RL":
+        r = _ranges(bm, f"hand.{s}.y")
+        if r:
+            top = max(hi for _, _, hi in r)
+            if best is None or top > best[1] + 1e-9:
+                best = (s, top)
+    if best is not None:
+        s, top = best
+        sh = bm.landmarks.get("shoulder.y")
+        y = ('"@shoulder.y"' if sh is not None and top >= sh - fb.TOL["hu"]
+             else f"{top - 0.05:.2f}")
+        tilt = ', "head.tilt": 8' if "head.tilt" in have else ""
+        ex.append(f"Hi! [pose {{\"hand.{s}.y\": {y}{tilt}}}] It's so good to "
+                  "see you.")
+    if "head.pitch" in have:
+        ex.append("Hmm, [pose {\"head.pitch\": -12, \"dur\": 0.25, \"hold\": "
+                  "0}][pose {\"head.pitch\": 0, \"dur\": 0.3, \"hold\": 0}] "
+                  "yes, that works for me.")
+    face = [v for v in ("brow.L.lift", "brow.R.lift") if v in have]
+    if face and "head.yaw" in have:
+        ex.append("[pose {" + ", ".join(f"\"{v}\": 0.8" for v in face)
+                  + "}] Really? [pose {\"head.yaw\": -15, \"gaze.x\": -0.6, "
+                  "\"hold\": 2}] I hadn't noticed." if "gaze.x" in have else
+                  "[pose {" + ", ".join(f"\"{v}\": 0.8" for v in face)
+                  + "}] Really? [pose {\"head.yaw\": -15, \"hold\": 2}] I "
+                  "hadn't noticed.")
+    if not ex:
+        ex.append("Oh... [pause:0.5] [blink] I didn't expect that.")
+    return ex
+
+
+def system_prompt(bm, persona=None, images=False) -> str:
+    """Byte-stable for a body file, persona and image setting: the current
+    pose goes in the user message (pose_now), never here."""
+    persona = (persona or "a friendly, expressive character.").strip()
+    return BODY_TEMPLATE.format(
+        persona=persona, body=describe_body(bm), hold=POSE_HOLD,
+        image=(", and with it a picture of how you look right now, as the "
+               "viewer sees you (your left is on the picture's right)"
+               if images else ""),
+        examples="\n".join(_examples(bm)) + "\n")
+
+
+def pose_now(bm, values=None, parts=None) -> str:
+    """"(your body now: ...)": the offered variables at these parameter
+    values, those away from rest by more than their tolerance, and the
+    hands always."""
+    values = dict(values or {})
+    k = bm.match_variant(values, parts)
+    st = bm.perceive({**bm.default_values(), **values}, k)
+    v0 = bm.variants[0]
+    items = []
+    for var in offered(bm):
+        if var in HAND_VARS or var not in st:
+            continue
+        u = fb.feature_unit(var)
+        rest = float(v0["rest"][bm.fidx[var]])
+        if abs(st[var] - rest) > fb.TOL[u]:
+            items.append(f"{var} {_fmt(st[var], u)}")
+    for s in "LR":
+        if f"hand.{s}.x" in st:
+            items.append(f"hand.{s} ({st[f'hand.{s}.x']:.2f}, "
+                         f"{st[f'hand.{s}.y']:.2f})")
+    if len(bm.variants) > 1:
+        items.insert(0, f"arm pose {k + 1}")
+    rest_word = "" if len(items) > (2 + (len(bm.variants) > 1)) else \
+        "at rest; "
+    return "(your body now: " + rest_word + ", ".join(items) + ")"
+
+
+def user_message(text, backend=None, image=None):
+    """A user turn, with a PNG (bytes) when the backend takes images:
+    Anthropic content blocks, OpenAI-compatible image_url data URLs
+    (SiliconFlow's VLMs), Ollama's images field. Other backends (DeepSeek
+    chat is text only) get the text."""
+    if image is None or backend not in IMAGE_BACKENDS:
+        return {"role": "user", "content": text}
+    b64 = base64.b64encode(image).decode("ascii")
+    if backend == "anthropic":
+        return {"role": "user", "content": [
+            {"type": "image", "source": {"type": "base64",
+                                         "media_type": "image/png",
+                                         "data": b64}},
+            {"type": "text", "text": text}]}
+    if backend == "ollama":
+        return {"role": "user", "content": text, "images": [b64]}
+    return {"role": "user", "content": [
+        {"type": "image_url", "image_url": {"url":
+                                            f"data:image/png;base64,{b64}"}},
+        {"type": "text", "text": text}]}
+
+
+def text_only(msg):
+    """The message without its image (history keeps the words only: an old
+    picture of oneself is stale and costs a thousand tokens a turn)."""
+    c = msg.get("content")
+    if isinstance(c, list):
+        c = "".join(b.get("text", "") for b in c if b.get("type") == "text")
+    return {"role": msg["role"], "content": c}
+
+
+# ----------------------------------------------------------------- solve
+
+def _main_movers(bm, k, targets, free):
+    """{target: the free parameter that moves it most} in variant k."""
+    v = bm.variants[k]
+    out = {}
+    for t in targets:
+        j = bm.fidx[t]
+        best, g = None, 0.0
+        for p in free:
+            D = v["sweeps"][p][1]
+            m = float(np.abs(D[:, j]).max())
+            if m > g:
+                best, g = p, m
+        if best is not None:
+            out[t] = best
+    return out
+
+
+def solve_poses(bm, acts, current=None, parts=None, core=None, log=print,
+                keep_shown=False):
+    """Solve the pose actions among `acts` (timeline / speech.speak output:
+    {"t", "tag": "pose", "arg": {"targets", "dur"?, "hold"?}, "at"}).
+
+    Each is solved with the prior toward the pose the body is in at its
+    time: `current` (parameter values; default the rest) with the earlier
+    poses still in their move or hold laid over. A pose on variables an
+    earlier one is still moving starts when that move ends (after its hold
+    too, when the hold was written). Returns one record per pose: {t (as
+    written), start, dur, hold, release, targets (as written), resolved,
+    params (the played set), parts (only on a variant change), step
+    (parameters that switch rather than blend), variant, variant_name,
+    report {var: {target, got, error, unit, ok}}, exact {var: value} and
+    exact_ok with a Core, ok, solve_seconds, act (its index in acts)}.
+    """
+    import time
+    base0 = bm.default_values()
+    base0.update(current or {})
+    parts0 = dict(parts if parts is not None else
+                  {**bm.blob.get("rest_parts", {}),
+                   **bm.variants[bm.match_variant(base0)]["parts"]})
+    out = []
+    order = sorted((i for i, x in enumerate(acts) if x.get("tag") == POSE),
+                   key=lambda i: float(acts[i]["t"]))
+    for idx in order:
+        a = acts[idx]
+        spec = a.get("arg") or {}
+        raw = dict(spec.get("targets") or {})
+        t = float(a["t"])
+        try:
+            resolved = bm.resolve(raw)
+        except (ValueError, KeyError) as exc:
+            log(f"pose: {raw}: {exc}; dropped")
+            continue
+        resolved = {k: v for k, v in resolved.items() if k in bm.fidx}
+        if not resolved:
+            continue
+        # Where the body is at t: the rest, under every earlier pose still
+        # moving or held.
+        vals, prt = dict(base0), dict(parts0)
+        start = t
+        for q in out:
+            q_end = q["start"] + q["dur"] + q["hold"]
+            if t < q_end:
+                vals.update(q["params"])
+                prt.update(q["parts"])
+            if set(q["vars"]) & set(resolved):
+                wait = q["start"] + q["dur"] + (q["hold"] if q["hold_set"]
+                                                 else 0.0)
+                start = max(start, wait if t < wait else start)
+        cur_k = bm.match_variant(vals, prt)
+        t0 = time.monotonic()
+        res = bm.solve(resolved, current=vals, parts=prt)
+        sec = time.monotonic() - t0
+        k = res.get("variant")
+        if k is None:
+            log(f"pose: {raw}: no variant has these variables; dropped")
+            continue
+        v = bm.variants[k]
+        movers = _main_movers(bm, k, resolved, res.get("free", []))
+        played = {}
+        amp = 0.0
+        for p, x in res["params"].items():
+            e = bm.params[p]
+            span = max(e["max"] - e["min"], 1e-9)
+            d = abs(x - vals.get(p, e["default"])) / span
+            if d >= PLAY_EPS or p in movers.values():
+                played[p] = float(x)
+                amp = max(amp, d)
+        step = sorted(p for p in v["switches"])
+        new_parts = {}
+        if k != cur_k:
+            played.update({p: float(x) for p, x in v["switches"].items()})
+            new_parts = {p: float(x) for p, x in v["parts"].items()}
+            amp = max(amp, 0.5)
+        else:
+            step = []
+        step += sorted(p for p in played if bm.params[p]["role"] in
+                       ("switch", "variant") and p not in step)
+        dur = spec.get("dur")
+        dur = float(dur) if dur is not None else round(
+            DUR_MIN + (DUR_MAX - DUR_MIN) * min(amp, 1.0), 3)
+        hold_set = spec.get("hold") is not None
+        hold = float(spec["hold"]) if hold_set else POSE_HOLD
+        # What renders: the played set over the pose the body was in.
+        shown = {**vals, **played}
+        F = bm.forward(shown, k)
+        report = {}
+        for var, y in resolved.items():
+            got = F[bm.fidx[var]]
+            u = fb.feature_unit(var)
+            if math.isnan(got):
+                report[var] = {"target": y, "got": None, "unit": u,
+                               "ok": False}
+                continue
+            err = float(got - y)
+            report[var] = {"target": round(y, 5), "got": round(float(got), 5),
+                           "error": round(err, 5), "unit": u,
+                           "ok": abs(err) <= fb.TOL[u]}
+        rec = {"act": idx, "t": round(t, 4), "at": a.get("at"),
+               "start": round(start, 4), "dur": round(dur, 4),
+               "hold": round(hold, 4), "hold_set": hold_set,
+               "release": round(max(dur, RELEASE_MIN), 4),
+               "targets": raw, "resolved": {k2: round(v2, 5) for k2, v2
+                                            in resolved.items()},
+               "vars": sorted(resolved),
+               "params": {p: round(x, 6) for p, x in sorted(played.items())},
+               "parts": new_parts, "step": step, "variant": k,
+               "variant_name": v["name"], "report": report,
+               "ok": all(e["ok"] for e in report.values()),
+               "solve_seconds": round(sec, 3)}
+        if not rec["ok"]:
+            rec["hints"] = hints_text(bm, res, report)
+        rec["_shown"] = shown
+        out.append(rec)
+    if core is not None:
+        add_exact(bm, core, out, log)
+    if not keep_shown:
+        for rec in out:
+            rec.pop("_shown", None)
+    return out
+
+
+def add_exact(bm, core, poses, log=print):
+    """The Core's own geometry at each pose as played (body.exact_state):
+    rec["exact"] {var: value}, rec["exact_ok"] {var: within tolerance}.
+    Needs the records' "_shown" (solve_poses keep_shown=True, or core
+    given there), which it removes. flow.live runs it after the poses are
+    on the stream, off the path to the first audio."""
+    for rec in poses:
+        shown = rec.pop("_shown", None)
+        if shown is None or core is None:
+            continue
+        try:
+            ex = fb.exact_state(core, bm, shown, rec["variant"])
+        except Exception as exc:  # noqa: BLE001 - a check, not the play
+            log(f"pose: exact check failed: {exc!r}")
+            continue
+        rec["exact"] = {var: round(ex[var], 5) for var in rec["resolved"]
+                        if var in ex}
+        rec["exact_ok"] = {var: abs(rec["exact"][var] - rec["resolved"][var])
+                           <= fb.TOL[fb.feature_unit(var)]
+                           for var in rec["exact"]}
+
+
+def hints_text(bm, res, report) -> dict:
+    """{var: words} for the missed targets (body.miss_hints)."""
+    r = dict(res, report=report)
+    out = {}
+    for t, h in bm.miss_hints(r).items():
+        msg = []
+        if h["reach"]:
+            lo, hi = h["reach"]
+            msg.append(f"alone it reaches {lo:.2f} to {hi:.2f} in this pose")
+        for name, lim in h["variants"].items():
+            msg.append(f"another drawn pose reaches {lim[0]:.2f} to "
+                       f"{lim[1]:.2f}")
+        if h["mirror"] and h["mirror"][1]:
+            m, lim = h["mirror"]
+            msg.append(f"{m} reaches {lim[0]:.2f} to {lim[1]:.2f}")
+        out[t] = "; ".join(msg)
+    return out
+
+
+def reach_summary(poses) -> dict:
+    """{markers, targets, ok, miss, exact_ok, exact_n, solve_seconds}."""
+    n = ok = eok = en = 0
+    for p in poses:
+        for var, e in p["report"].items():
+            n += 1
+            ok += bool(e["ok"])
+        for var, good in p.get("exact_ok", {}).items():
+            en += 1
+            eok += bool(good)
+    return {"markers": len(poses), "targets": n, "ok": ok, "miss": n - ok,
+            "exact_ok": eok, "exact_n": en,
+            "solve_seconds": round(sum(p["solve_seconds"] for p in poses), 3)}
+
+
+def report_lines(poses, spoken="") -> list[str]:
+    """One line per pose for the logs: targets, got, ok/MISS, Core check."""
+    out = []
+    for p in poses:
+        bits = []
+        for var, e in p["report"].items():
+            u = e["unit"]
+            if e["got"] is None:
+                bits.append(f"{var} {_fmt(e['target'], u)}: not drawn MISS")
+                continue
+            ex = p.get("exact", {}).get(var)
+            bits.append(f"{var} {_fmt(e['target'], u)} -> "
+                        f"{_fmt(e['got'], u)}"
+                        + (f" (Core {_fmt(ex, u)})" if ex is not None else "")
+                        + (" ok" if e["ok"] else " MISS"))
+        at = p.get("at")
+        words = (f" at {spoken[at:at + 16].strip()!r}"
+                 if spoken and at is not None else "")
+        out.append(f"pose {p['start']:.2f}s{words} [{p['variant_name']}]: "
+                   + "; ".join(bits)
+                   + "".join(f"  ({v}: {h})" for v, h in
+                             p.get("hints", {}).items()))
+    return out
+
+
+def end_time(poses) -> float:
+    """When the last pose has relaxed back into the idle."""
+    return max((p["start"] + p["dur"] + p["hold"] + p["release"]
+                for p in poses), default=0.0)
+
+
+# ----------------------------------------------------------------- tokens
+
+def arm_params(bm) -> set:
+    """Parameters that move a hand or an arm by more than 0.02 hu in some
+    variant: an unbound one takes the "arms" group (idle gestures)."""
+    out = set()
+    regs = [r for r in ("arm.L", "arm.R", "hand.L", "hand.R")]
+    for v in bm.variants:
+        for p, (_g, D) in v["sweeps"].items():
+            for r in regs:
+                kx, ky = bm.fidx[f"{r}.x"], bm.fidx[f"{r}.y"]
+                if np.hypot(D[:, kx], D[:, ky]).max() > 0.02:
+                    out.add(p)
+                    break
+    return out
+
+
+def tokens(poses, roles, arms=()) -> list[dict]:
+    """Pose tokens for the event stream. roles: runtime's {role: (pid,
+    sign, source)}; a played parameter bound to a role takes that role's
+    group (director.merge then drops the idle's moves on it for the move
+    plus hold), an unbound one in `arms` takes "arms"."""
+    group_of_pid = {p: ev.GROUP_OF.get(r) for r, (p, _s, _src) in
+                    roles.items()}
+    arms = set(arms)
+    out = []
+    for p in poses:
+        groups = set()
+        for pid in list(p["params"]) + list(p["parts"]):
+            g = group_of_pid.get(pid)
+            if g:
+                groups.add(g)
+            elif pid in arms or pid in p["parts"]:
+                groups.add("arms")
+        out.append({"t": p["start"], "type": POSE, "role": POSE,
+                    "params": p["params"], "parts": p["parts"],
+                    "step": p["step"], "duration": p["dur"],
+                    "hold": p["hold"], "release": p["release"],
+                    "groups": sorted(groups), "variant": p["variant_name"],
+                    "src": "director"})
+    return out
+
+
+# ------------------------------------------------------------------- play
+
+class PoseLayer:
+    """Pose tokens played over the frame the idle built, a frame at a time.
+
+    commit(tok) queues a token; apply(f, over, parts) is frame f: tokens
+    whose onset frame (ceil(t * fps)) has come start there, each of their
+    parameters moving from what this frame would show without the new
+    token (an earlier pose's value, or the idle's) to the target with a
+    minimum-jerk profile over `duration`, held until duration + hold, then
+    released over `release` toward the idle's value of each frame -- so
+    nothing jumps when a pose starts, is replaced, or ends. Parameters in
+    `step` and part opacities switch at the midpoint of the move (and of
+    the release) instead of blending: two arm variants are never drawn at
+    once. Parts, once written, keep being written (the backend keeps a
+    part's last opacity, while parameters reset every frame), with the
+    idle's value or `part_rest`. `written` is the set of parameters this
+    frame wrote, for runtime's --dump mask.
+    """
+
+    def __init__(self, fps, defaults=None, part_rest=None):
+        self.fps = float(fps)
+        self.defaults = dict(defaults or {})
+        self.part_rest = dict(part_rest or {})
+        self.queue = []
+        self.state = {}
+        self.touched = set()
+        self.written = set()
+
+    def commit(self, tok):
+        self.queue.append(tok)
+
+    def busy(self):
+        return bool(self.queue or self.state or self.touched)
+
+    @staticmethod
+    def _eval(s, tf, under):
+        t0, d, frm, to, he, rel, step = s
+        if tf < t0 + d:
+            u = max((tf - t0) / d, 0.0)
+            if step:
+                return (to if u >= 0.5 else frm), False
+            return frm + (to - frm) * float(min_jerk(u)), False
+        if tf < he:
+            return to, False
+        if tf < he + rel:
+            u = (tf - he) / rel
+            if step:
+                return (under if u >= 0.5 else to), False
+            return to + (under - to) * float(min_jerk(u)), False
+        return under, True
+
+    def apply(self, f, over, parts):
+        self.written = set()
+        if not self.busy():
+            return over, parts
+        tf = f / self.fps
+        over = dict(over)
+        parts_in = parts
+        parts = dict(parts or {})
+
+        def under(key):
+            kind, i = key
+            if kind == "p":
+                return float(over.get(i, self.defaults.get(i, 0.0)))
+            return float(parts.get(i, self.part_rest.get(i, 1.0)))
+
+        while self.queue and int(math.ceil(float(self.queue[0]["t"])
+                                           * self.fps - 1e-9)) <= f:
+            tok = self.queue.pop(0)
+            t0 = float(tok["t"])
+            d = max(float(tok.get("duration", DUR_MIN)), 1.0 / self.fps)
+            he = t0 + d + max(float(tok.get("hold", 0.0)), 0.0)
+            rel = max(float(tok.get("release", d)), 1.0 / self.fps)
+            step = set(tok.get("step", ()))
+            for kind, items in (("p", tok.get("params", {})),
+                                ("q", tok.get("parts", {}))):
+                for i, v in items.items():
+                    key = (kind, i)
+                    u = under(key)
+                    frm = (self._eval(self.state[key], tf, u)[0]
+                           if key in self.state else u)
+                    self.state[key] = (t0, d, frm, float(v), he, rel,
+                                       kind == "q" or i in step)
+                    if kind == "q":
+                        self.touched.add(i)
+        for key in sorted(self.state):
+            kind, i = key
+            val, done = self._eval(self.state[key], tf, under(key))
+            if done:
+                del self.state[key]
+            if kind == "p":
+                if not done:
+                    over[i] = val
+                    self.written.add(i)
+            else:
+                parts[i] = val
+        for i in self.touched:
+            if ("q", i) not in self.state:
+                parts[i] = under(("q", i))
+        if parts_in is None and not parts:
+            parts = None
+        return over, parts
+
+
+def layer_for(tokens_, fps, defaults, part_rest=None):
+    """A PoseLayer with every pose token of a stream committed, in order;
+    None when there are none (tag mode: nothing changes)."""
+    toks = [k for k in tokens_ if k.get("type") == POSE]
+    if not toks:
+        return None
+    lay = PoseLayer(fps, defaults, part_rest)
+    for k in sorted(toks, key=lambda k: float(k["t"])):
+        lay.commit(k)
+    return lay
+
+
+# ------------------------------------------------------------- self-check
+
+CHECK_PROMPT = (
+    "This is what your body did with your markers (target -> reached; ok, "
+    "or MISS when it is off by more than its tolerance):\n{lines}\n{image}"
+    "If every pose did what you meant, reply with just OK. Otherwise reply "
+    "with your whole reply again, the same words, with corrected markers.")
+
+
+def check_message(poses, spoken, image_note=False) -> str:
+    lines = []
+    for n, p in enumerate(poses, 1):
+        at = p.get("at")
+        words = (spoken[at:at + 24].strip() if spoken and at is not None
+                 else "")
+        bits = []
+        for var, e in p["report"].items():
+            u = e["unit"]
+            got = p.get("exact", {}).get(var, e["got"])
+            if got is None:
+                bits.append(f"{var} {_fmt(e['target'], u)} -> not drawn MISS")
+                continue
+            ok = p.get("exact_ok", {}).get(var, e["ok"])
+            bits.append(f"{var} {_fmt(e['target'], u)} -> {_fmt(got, u)} "
+                        + ("ok" if ok else "MISS"))
+        h = "".join(f" ({v}: {t})" for v, t in p.get("hints", {}).items())
+        lines.append(f"{n}. before {words!r}: " + "; ".join(bits) + h)
+    return CHECK_PROMPT.format(
+        lines="\n".join(lines),
+        image=("The picture shows you at the last pose.\n" if image_note
+               else ""))
+
+
+def is_ok_reply(text) -> bool:
+    return bool(re.match(r"\s*\**\s*ok\b[\s.!]*$", text or "", re.I))
+
+
+# ---------------------------------------------------------------- summary
+
+def summarize(root) -> list[dict]:
+    """Rows per (mode, condition) under root/<cond>/<i>/: replies, actions
+    per reply, reach, MISS, Core checks, model latency, score checks."""
+    rows = []
+    if not os.path.isdir(root):
+        return rows
+    for cond in sorted(os.listdir(root)):
+        d = os.path.join(root, cond)
+        if not os.path.isdir(d):
+            continue
+        r = {"cond": cond, "replies": 0, "actions": 0, "markers": 0,
+             "targets": 0, "ok": 0, "miss": 0, "exact_ok": 0, "exact_n": 0,
+             "warn": 0, "model": [], "first": [], "solve": 0.0,
+             "score_pass": 0, "scored": 0, "checks": {}, "fixed": [],
+             "kinds": {}}
+        for i in sorted(os.listdir(d)):
+            f = os.path.join(d, i, "actions.json")
+            if not os.path.exists(f):
+                continue
+            with open(f, encoding="utf-8") as fh:
+                a = json.load(fh)
+            r["replies"] += 1
+            acts = a.get("actions", [])
+            r["actions"] += len(acts)
+            for x in acts:
+                key = x["tag"] if x["tag"] in (POSE, "pause", "gesture") \
+                    else f"{x['tag']}:{x['arg']}" if x.get("arg") else x["tag"]
+                r["kinds"][key] = r["kinds"].get(key, 0) + 1
+            r["warn"] += len(a.get("warnings", []))
+            rs = a.get("reach")
+            if rs:
+                for k in ("markers", "targets", "ok", "miss", "exact_ok",
+                          "exact_n"):
+                    r[k] += rs.get(k, 0)
+                r["solve"] += rs.get("solve_seconds", 0.0)
+            if a.get("model_seconds") is not None:
+                r["model"].append(a["model_seconds"])
+            if a.get("first_text_seconds") is not None:
+                r["first"].append(a["first_text_seconds"])
+            sf = os.path.join(d, i, "score.json")
+            if os.path.exists(sf):
+                with open(sf, encoding="utf-8") as fh:
+                    s = json.load(fh)
+                r["scored"] += 1
+                r["score_pass"] += bool(s.get("pass"))
+                for k, v in (s.get("checks") or {}).items():
+                    r["checks"][k] = r["checks"].get(k, 0) + bool(v)
+            cf = os.path.join(d, i, "check", "check.json")
+            if os.path.exists(cf):
+                with open(cf, encoding="utf-8") as fh:
+                    c = json.load(fh)
+                r["fixed"].append(c)
+        if r["replies"]:
+            rows.append(r)
+    return rows
+
+
+def print_summary(rows, out=sys.stdout):
+    avg = lambda v: f"{sum(v) / len(v):6.1f}" if v else f"{'-':>6}"  # noqa
+    print(f"{'condition':<24} {'n':>2} {'act/r':>5} {'mark':>4} {'tgt':>4} "
+          f"{'reach':>6} {'MISS':>4} {'Core':>7} {'warn':>4} {'model':>6} "
+          f"{'first':>6} {'solve':>6} {'score':>6}  checks / kinds", file=out)
+    for r in rows:
+        reach = f"{r['ok'] / r['targets']:.0%}" if r["targets"] else "-"
+        core = (f"{r['exact_ok']}/{r['exact_n']}" if r["exact_n"] else "-")
+        sc = f"{r['score_pass']}/{r['scored']}" if r["scored"] else "-"
+        checks = ", ".join(f"{k} {v}/{r['scored']}" for k, v in
+                           sorted(r["checks"].items()))
+        kinds = ", ".join(f"{k} {v}" for k, v in sorted(
+            r["kinds"].items(), key=lambda x: -x[1]))
+        print(f"{r['cond']:<24} {r['replies']:>2} "
+              f"{r['actions'] / r['replies']:>5.1f} {r['markers']:>4} "
+              f"{r['targets']:>4} {reach:>6} {r['miss']:>4} {core:>7} "
+              f"{r['warn']:>4} {avg(r['model'])} {avg(r['first'])} "
+              f"{r['solve']:>6.1f} {sc:>6}  {checks}" + (f" | {kinds}"
+                                                          if kinds else ""),
+              file=out)
+        if r["fixed"]:
+            b = sum(c["before"]["ok"] for c in r["fixed"])
+            bt = sum(c["before"]["targets"] for c in r["fixed"])
+            a = sum(c["after"]["ok"] for c in r["fixed"])
+            at = sum(c["after"]["targets"] for c in r["fixed"])
+            n_ok = sum(c.get("model_ok", False) for c in r["fixed"])
+            print(f"{'':<24}    self-check: {len(r['fixed'])} rounds, "
+                  f"{n_ok} answered OK; reach {b}/{bt} -> {a}/{at}", file=out)
+
+
+# -------------------------------------------------------------------- cli
+
+def snapshot_main(argv) -> int:
+    """`snapshot`: the body at some parameter values, as a PNG on a light
+    background (what a vision model is shown). Needs GL."""
+    ap = argparse.ArgumentParser(prog="flow.pose snapshot")
+    ap.add_argument("--body", required=True)
+    ap.add_argument("--model-json", required=True)
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--current", default=None, help="JSON parameter values")
+    ap.add_argument("--parts", default=None, help="JSON part opacities")
+    ap.add_argument("--size", type=int, default=512)
+    a = ap.parse_args(argv)
+    try:
+        from ..l2dprobe.backend import Live2DBackend, ensure_display
+    except ImportError:
+        sys.path.insert(0, os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))))
+        from l2dprobe.backend import Live2DBackend, ensure_display
+    ensure_display(["-m", "flow.pose", "snapshot"] + list(argv))
+    from PIL import Image
+    bm = fb.load(a.body)
+    cur = json.loads(a.current) if a.current else {}
+    parts = json.loads(a.parts) if a.parts else None
+    k = bm.match_variant(cur, parts)
+    vals = {**bm.variants[k]["switches"], **cur}
+    prt = {**bm.blob.get("rest_parts", {}), **bm.variants[k]["parts"],
+           **(parts or {})}
+    with Live2DBackend(a.model_json, size=a.size) as be:
+        be.calibrate()
+        img = be.render(vals, parts=prt)
+    im = Image.fromarray(img, "RGBA")
+    bg = Image.new("RGBA", im.size, (236, 236, 240, 255))
+    Image.alpha_composite(bg, im).convert("RGB").save(a.out)
+    print(f"snapshot -> {a.out}")
+    return 0
+
+
+def main(argv=None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
+    if argv[:1] == ["snapshot"]:
+        return snapshot_main(argv[1:])
+    if argv[:1] == ["summary"]:
+        rows = []
+        for root in argv[1:]:
+            rows += summarize(root)
+        print_summary(rows)
+        return 0
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("--body", required=True, help="rigs/<rig>.body.json")
+    ap.add_argument("--prompt", action="store_true",
+                    help="print the body-mode system prompt")
+    ap.add_argument("--images", action="store_true",
+                    help="--prompt as for a backend that gets images")
+    ap.add_argument("--persona", default=None)
+    ap.add_argument("--reply", default=None,
+                    help="a body-mode reply to parse, time and solve")
+    ap.add_argument("--model-json", default=None,
+                    help="check each solve on the Core's own geometry")
+    a = ap.parse_args(argv)
+    bm = fb.load(a.body)
+    if a.prompt:
+        print(system_prompt(bm, a.persona, a.images))
+        print("\n--- user message suffix at rest:\n" + pose_now(bm))
+    if a.reply:
+        p = parser_for(bm)
+        p.feed(a.reply)
+        p.close()
+        for w in p.warnings:
+            print(f"pose: {w}")
+        acts, _spans, end = dr.timeline(p.spoken, p.tags)
+        core = None
+        if a.model_json:
+            try:
+                from ..l2dprobe import core as l2dcore
+            except ImportError:
+                from l2dprobe import core as l2dcore
+            core = l2dcore.load(a.model_json)
+        poses = solve_poses(bm, acts, core=core)
+        print(f"spoken ({end:.2f}s): {p.spoken}")
+        for line in report_lines(poses, p.spoken):
+            print("  " + line)
+        for q in poses:
+            print(f"    params {q['params']}" + (f" parts {q['parts']}"
+                                                 if q["parts"] else ""))
+        print("  reach: " + json.dumps(reach_summary(poses)))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

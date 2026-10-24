@@ -58,13 +58,25 @@ one process on the server:
              tags, latencies) and session.mp4 with all of them muxed,
              written at exit.
 
+  body       --mode body (docs/embodiment.md E2, flow.pose): the model
+             gets its measured body in the system prompt and, with each
+             line, where its body is now (the last frame plus the poses
+             still to come) and, with --body-image on a backend that takes
+             images, the frame on screen. It writes [pose {...}] markers;
+             each sentence's markers are solved with the prior toward that
+             pose and merged into the stream as pose tokens beside the
+             tags' tokens; the Core check of each solve runs after they are
+             on the stream, and its per-target report goes to the log, the
+             page and turns.jsonl.
+
 Usage (see --help; the rig, model and TTS arguments are flow.director's):
     xvfb-run -a -s "-screen 0 1024x1024x24" python -m flow.live \\
         --model-json M --rig rigs/R.npz --clips clips2/R.npz --events ev.json \\
         --backend deepseek --tts auto --persona "..." --port 8765 \\
         [--record runs/live/R]
     then on your machine: ssh -L 8765:127.0.0.1:8765 server, and open
-    http://127.0.0.1:8765/
+    http://127.0.0.1:8765/ (add --mode body [--body-image] for body
+    targets instead of tags)
 """
 
 from __future__ import annotations
@@ -89,11 +101,13 @@ import numpy as np
 
 try:
     from . import director as dr
+    from . import pose as pz
     from . import speech as sp
     from . import stream as fs
 except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from flow import director as dr
+    from flow import pose as pz
     from flow import speech as sp
     from flow import stream as fs
 
@@ -140,9 +154,11 @@ class SentenceCutter:
     first audio.
     """
 
-    def __init__(self, first_cap=None, cap=None):
+    def __init__(self, first_cap=None, cap=None, max_tag=None):
         self.first_cap = first_cap or FIRST_CAP
         self.cap = cap or CAP
+        # Body mode's pose markers hold JSON (flow.pose.MAX_MARKER).
+        self.max_tag = max_tag or dr.MAX_TAG
         self.buf = ""
         self.i = 0                  # next character of buf to look at
         self.count = 0              # spoken characters since the last cut
@@ -168,11 +184,11 @@ class SentenceCutter:
             b, i = self.buf, self.i
             c = b[i]
             if c == "[":
-                k = b.find("]", i + 1, i + dr.MAX_TAG + 2)
+                k = b.find("]", i + 1, i + self.max_tag + 2)
                 if k >= 0:
                     self.i = k + 1
                     continue
-                if len(b) - i <= dr.MAX_TAG + 1:
+                if len(b) - i <= self.max_tag + 1:
                     break                      # the tag may still close
                 # Too long to be a tag: text (the parser keeps it too).
             if c in sp.SENT_END:
@@ -475,6 +491,11 @@ class Performer:
         self.busy = False
         self.thread = None
         self.lang, self.lang_set = "en", False
+        # Body mode (--mode body): the run from director.prepare_body, and
+        # a callable giving the latest rendered frame (RGBA array) for the
+        # picture a vision backend gets.
+        self.body = run if run.get("mode") == "body" else None
+        self.snap = None
 
     def start(self):
         self.thread = threading.Thread(target=self._loop, name="turns",
@@ -515,12 +536,15 @@ class Performer:
         # user's language; the first sentence whose script settles it wins
         # (lang_of), and the rest of the turn keeps it.
         self.lang, self.lang_set = sp.language(text), False
-        self.messages.append({"role": "user", "content": text})
+        if self.body is None:
+            self.messages.append({"role": "user", "content": text})
+        else:
+            self.messages.append(self.body_message(text))
         q = queue.Queue()
         raw, info = [], {"first": None, "stop": None, "error": None}
 
         def produce():
-            cut = SentenceCutter()
+            cut = SentenceCutter(max_tag=self.run.get("max_tag"))
             try:
                 for chunk in self.backend.stream(self.run["system"],
                                                  self.messages):
@@ -551,6 +575,8 @@ class Performer:
                 lat.append(res)
         th.join()
         reply = "".join(raw)
+        if self.body is not None:
+            self.messages[-1] = pz.text_only(self.messages[-1])
         if info["error"] is not None:
             self.emit(f"live: turn {n}: model failed: {info['error']!r}")
         refused = info["stop"] == "refusal"
@@ -579,7 +605,8 @@ class Performer:
         """Plan one sentence and put it on the stream. Returns its
         latencies (seconds after the line was entered)."""
         a, fps = self.a, self.fps
-        p = dr.TagParser(self.run["labels"], self.run["offered"])
+        p = (dr.TagParser(self.run["labels"], self.run["offered"])
+             if self.body is None else self.body["parser"]())
         p.feed(raw)
         p.close()
         for w in p.warnings:
@@ -627,6 +654,20 @@ class Performer:
         directed = dr.realize(shifted, self.rig.stats, list(self.rig.roles),
                               self.rig.motion_seconds, self.rng,
                               self.stream.pose(), settle=self.rig.settle)
+        poses = []
+        if self.body is not None and any(x["tag"] == pz.POSE for x in acts):
+            bm = self.body["body"]
+            t_s = self.clock.now()
+            cur, cur_parts = self.stream.body_now()
+            poses = pz.solve_poses(bm, acts, cur, cur_parts, log=self.log,
+                                   keep_shown=True)
+            arms = self.body.setdefault("arm_params", pz.arm_params(bm))
+            for rec in poses:
+                rec["arm_params"] = sorted(set(rec["params"]) & arms)
+            for k_ in pz.tokens(poses, self.rig.roles, arms):
+                k_["t"] = round(float(k_["t"]) + t_start, 4)
+                directed.append(k_)
+            lat_solve = self.clock.now() - t_s
         gone = self.stream.direct(directed) if directed else 0
         if mouth is not None:
             self.stream.add_mouth(f0, mouth, len(mouth["open"]))
@@ -645,8 +686,7 @@ class Performer:
         voice = (self.tts.mood_voice(mood)
                  if self.tts is not None and mood != "neutral"
                  and hasattr(self.tts, "mood_voice") else None)
-        tags_s = " ".join(f"[{x['tag']}{':' + x['arg'] if x['arg'] else ''}]"
-                          for x in acts)
+        tags_s = " ".join(pz.tag_text(x) for x in acts)
         lat = {"k": k, "cut_at": round(t_cut, 3),
                "tts": round(t_tts, 3),
                "audio_at": round(t_start - t_in, 3),
@@ -661,7 +701,33 @@ class Performer:
                   + (f"; {tags_s}" if tags_s else "")
                   + (f"; {gone} idle tokens displaced" if gone else "")
                   + f": {spoken}")
+        if poses:
+            # The exact check after the poses are on the stream: the Core's
+            # geometry is a report, not something the motion waits for.
+            pz.add_exact(self.body["body"], self.body.get("core"), poses,
+                         self.log)
+            for line in pz.report_lines(poses, spoken):
+                self.emit(f"live: turn {n}.{k} {line}")
+            lat["solve"] = round(lat_solve, 3)
+            lat["reach"] = pz.reach_summary(poses)
         return lat
+
+    def body_message(self, text):
+        """The user line with where the body is now and, for a backend that
+        takes images (--body-image), the frame on screen."""
+        bm = self.body["body"]
+        vals, parts = self.stream.body_now()
+        img = None
+        if self.body.get("images") and self.snap is not None:
+            frame = self.snap()
+            if frame is not None:
+                from PIL import Image
+                buf = io.BytesIO()
+                Image.fromarray(np.asarray(frame)).convert("RGB").save(
+                    buf, "PNG")
+                img = buf.getvalue()
+        return pz.user_message(text + "\n" + pz.pose_now(bm, vals, parts),
+                               self.a.backend, img)
 
     def lang_of(self, spoken):
         """The language to speak this sentence in. Offline, the voice is
@@ -777,6 +843,7 @@ class RenderLoop:
         self.absent = set(absent)
         self.report = report
         self.rendered = self.skipped = 0
+        self.last_img = None                   # body mode's self-image
         self.f = 0
         self.cost = deque(maxlen=300)          # seconds per rendered frame
 
@@ -804,6 +871,7 @@ class RenderLoop:
                 over = {p: v for p, v in over.items() if p not in self.absent}
             self.backend.dt = dt0 * (skip + 1)
             img = self.backend.render(over, parts=parts)
+            self.last_img = img
             self.backend.dt = dt0
             self.cost.append(time.perf_counter() - t0)
             self.encoder.submit(self.f, self.f / self.fps, img)
@@ -991,6 +1059,7 @@ def main(argv=None) -> int:
 
     def serve(be, absent=()):
         loop = RenderLoop(stream, be, clock, encoder, a.fps, absent=absent)
+        perf.snap = lambda: loop.last_img
         app = App(clock, hub, a.fps, perf, loop)
         srv = Server(app, a.host, a.port)
         srv.start()

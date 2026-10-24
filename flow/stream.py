@@ -275,6 +275,16 @@ class MotionStream:
                 und = ev.underlay_token(rig.stats, rig.settle, 1e9)
                 self.und = rig.player.underlay(und)
         self.ges_cur = self.ges_prev = None
+        # Body mode (flow.pose): pose tokens over the frame the idle built,
+        # applied where runtime.main applies them. Idle until one comes.
+        try:
+            from . import pose as pz
+        except ImportError:
+            from flow import pose as pz
+        self.poses = pz.PoseLayer(rig.fps, dict(zip(rig.pids,
+                                                    rig.dflt.tolist())),
+                                  rig.base_parts)
+        self.last = (dict(rig.base_params), dict(rig.base_parts or {}))
         self.switches = rig.switches()
         self.auto = (rt.Autonomic(rig.fps, np.random.default_rng([seed, 3]))
                      if autonomic else None)
@@ -357,6 +367,22 @@ class MotionStream:
         director.realize's start positions (it sizes durations by them)."""
         return {r: self.track.position(r) for r in self.rig.roles}
 
+    def body_now(self):
+        """(parameter values, part opacities) the body is heading for: the
+        last frame computed, with every pose token not yet finished laid
+        over in order (their targets). The prior of a body-mode solve
+        (flow.live), which has to continue from where the earlier
+        sentences' poses will have put the body."""
+        with self.lock:
+            vals, parts = dict(self.last[0]), dict(self.last[1])
+            for key, s in sorted(self.poses.state.items()):
+                (vals if key[0] == "p" else parts)[key[1]] = s[3]
+            for k in list(self.poses.queue) + [x for x in self.pending
+                                               if x["type"] == "pose"]:
+                vals.update(k.get("params", {}))
+                parts.update(k.get("parts", {}))
+        return vals, parts
+
     def _commit(self, tf):
         while self.pending and float(self.pending[0]["t"]) <= tf + 1e-9:
             k = self.pending.pop(0)
@@ -372,6 +398,8 @@ class MotionStream:
                 self.ges_prev, self.ges_cur = self.ges_cur, k
             elif typ == "blink" and self.auto is not None:
                 self.auto.request(float(k["t"]))
+            elif typ == "pose":
+                self.poses.commit(k)
 
     # ------------------------------------------------------------- frames
 
@@ -423,6 +451,19 @@ class MotionStream:
         for p, v in gp.items():
             if p not in rig.expr_ids:
                 over[p] = v
+        if self.poses.busy():
+            over, parts = self.poses.apply(f, over, parts)
+            for p in self.poses.written:
+                for f0, curves in mouth:
+                    # The voice drives the mouth, as in runtime.main.
+                    if f0 <= f and p in curves:
+                        over[p] = float(curves[p][f - f0])
+                if p in self.mouth_rest and not any(
+                        f0 <= f and p in c for f0, c in mouth):
+                    over[p] = self.mouth_rest[p]
+        # Where the body is, before blink and breath: the prior a body-mode
+        # solve continues from (flow.live).
+        self.last = (dict(over), dict(parts or {}))
         if self.auto is not None:
             eye, breath = self.auto.step()
             for i in rig.eye_idx:

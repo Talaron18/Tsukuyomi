@@ -665,7 +665,8 @@ MOVES = ("saccade", "head_turn", "body_shift", "brow")
 
 def windows(directed):
     """{group: [(start, end)]} that directed tokens take over: a move for its
-    duration plus hold, a gesture for its duration."""
+    duration plus hold, a gesture for its duration, a pose (flow.pose) its
+    groups for its move plus hold."""
     win = {}
     for k in directed:
         if k["type"] in MOVES:
@@ -675,6 +676,13 @@ def windows(directed):
         elif k["type"] == "gesture":
             win.setdefault("arms", []).append(
                 (float(k["t"]), float(k["t"]) + float(k["duration"])))
+        elif k["type"] == "pose":
+            # flow.pose: the groups its parameters are bound to, for its
+            # move plus hold (it then relaxes back into the idle).
+            end = float(k["t"]) + float(k["duration"]) + float(k.get("hold",
+                                                                     0.0))
+            for g in k.get("groups", ()):
+                win.setdefault(g, []).append((float(k["t"]), end))
     return win
 
 
@@ -1068,13 +1076,15 @@ def make_backend(a, log=print):
 
 # ------------------------------------------------------------------- turns
 
-def ask(backend, system, messages, gestures, log=print, offered=None):
+def ask(backend, system, messages, gestures, log=print, offered=None,
+        parser=None):
     """Stream one reply through the parser. Returns a dict: raw tagged text,
     spoken text, tags, warnings, stop_reason, usage, refused. A refusal
     yields no spoken text and no tags, whatever streamed before it.
-    `offered`: the tags the prompt offered (TagParser)."""
+    `offered`: the tags the prompt offered (TagParser). `parser`: another
+    parser to use instead (body mode: flow.pose.PoseParser)."""
     import time
-    p = TagParser(gestures, offered)
+    p = parser if parser is not None else TagParser(gestures, offered)
     raw = []
     t0 = time.monotonic()
     first = None
@@ -1206,7 +1216,7 @@ def make_tts(a, log=print):
     return sp.VoiceRouter(kind, cli, cfg, make, log)
 
 
-def plan(a, reply, out_dir, motions, log=print, tts=None):
+def plan(a, reply, out_dir, motions, log=print, tts=None, body=None):
     """Write reply.txt, spoken.txt, actions.json, subs.srt/json, then plan
     tokens.json in-process (runtime --direct --dump-only). Returns (render
     argv, seconds) or None for a refusal.
@@ -1214,8 +1224,38 @@ def plan(a, reply, out_dir, motions, log=print, tts=None):
     tts (make_tts): speak the reply too. speech.wav is written, every tag's
     time and the subtitles come from the audio, the render runs as long as
     the audio plus the tail, and actions.json carries the mouth curve the
-    runtime plays (speech.mouth_track)."""
+    runtime plays (speech.mouth_track).
+
+    body (prepare()'s run in --mode body): the pose markers are solved
+    (flow.pose.solve_poses, checked on the Core when one loaded), each pose
+    action carries its solve as "solved" for the runtime to play, and
+    actions.json gets the reach summary; the render runs until the last
+    pose has relaxed."""
     os.makedirs(out_dir, exist_ok=True)
+    extra = {}
+
+    def body_solve(acts, seconds):
+        if body is None:
+            return seconds
+        try:
+            from . import pose as pz
+        except ImportError:
+            from flow import pose as pz
+        bm = body["body"]
+        poses = pz.solve_poses(bm, acts, core=body.get("core"), log=log)
+        arms = body.setdefault("arm_params", pz.arm_params(bm))
+        for rec in poses:
+            rec["arm_params"] = sorted(set(rec["params"]) & arms)
+            acts[rec["act"]]["solved"] = rec
+        for line in pz.report_lines(poses, reply["spoken"]):
+            log("pose: " + line)
+        rs = pz.reach_summary(poses)
+        log(f"pose: {rs['markers']} markers, {rs['ok']}/{rs['targets']} "
+            "targets reached"
+            + (f", {rs['exact_ok']}/{rs['exact_n']} on the Core"
+               if rs["exact_n"] else "") + f" (solve {rs['solve_seconds']}s)")
+        extra.update(mode="body", reach=rs)
+        return max(seconds, pz.end_time(poses) + a.tail)
     if reply["refused"]:
         with open(os.path.join(out_dir, "refusal.txt"), "w",
                   encoding="utf-8") as fh:
@@ -1226,7 +1266,6 @@ def plan(a, reply, out_dir, motions, log=print, tts=None):
         fh.write(reply["raw"])
     with open(os.path.join(out_dir, "spoken.txt"), "w", encoding="utf-8") as fh:
         fh.write(reply["spoken"] + "\n")
-    extra = {}
     if tts is not None and reply["spoken"]:
         moods = None
         if getattr(a, "mood", None) != "off":
@@ -1238,11 +1277,11 @@ def plan(a, reply, out_dir, motions, log=print, tts=None):
         acts, spans, end = said["acts"], said["spans"], said["end"]
         sp.write_wav(os.path.join(out_dir, "speech.wav"), said["audio"],
                      said["sr"])
-        seconds = length(acts, end, motions, a.tail)
-        extra = {"tts": {"backend": getattr(tts, "kind", None) or a.tts,
+        seconds = body_solve(acts, length(acts, end, motions, a.tail))
+        extra.update({"tts": {"backend": getattr(tts, "kind", None) or a.tts,
                          "voice": tts.last_voice,
                          "timing": said["method"],
-                         "voiced_end": round(said["speech_end"], 3)}}
+                         "voiced_end": round(said["speech_end"], 3)}})
         credit = getattr(tts, "credit", None)
         if credit:
             extra["tts"]["credit"] = credit
@@ -1282,7 +1321,7 @@ def plan(a, reply, out_dir, motions, log=print, tts=None):
             os.remove(stale)
         acts, spans, end = timeline(reply["spoken"], reply["tags"],
                                     a.cjk_rate, a.latin_rate)
-        seconds = length(acts, end, motions, a.tail)
+        seconds = body_solve(acts, length(acts, end, motions, a.tail))
     segs = subtitles(reply["spoken"], spans)
     with open(os.path.join(out_dir, "actions.json"), "w",
               encoding="utf-8") as fh:
@@ -1485,6 +1524,20 @@ def add_args(ap):
                          "true}; wins over the measured lines (flow."
                          "gestures). Default: <rig without .npz>.gestures."
                          "json when it exists")
+    ap.add_argument("--mode", default="tags", choices=("tags", "body"),
+                    help="tags [default]: the action tag vocabulary; body: "
+                         "the model gets its measured body (flow.body, "
+                         "--body) and writes [pose {...}] targets that the "
+                         "solver plays (flow.pose; docs/embodiment.md E2)")
+    ap.add_argument("--body", default=None, metavar="BODY.json",
+                    help="--mode body: the rig's body file (default <rig "
+                         "without .npz>.body.json)")
+    ap.add_argument("--body-image", action="store_true",
+                    help="--mode body: send the model a picture of itself "
+                         "with each line (anthropic; siliconflow and ollama "
+                         "with a vision model; deepseek chat is text only "
+                         "and gets none). Offline it is rendered in a "
+                         "subprocess, so it needs GL")
     ap.add_argument("--mood", default="auto", choices=("auto", "off"),
                     help="with --tts: speak each sentence in its mood "
                          "(speech.mood_of: from its brow/nod/shake tags, "
@@ -1494,11 +1547,100 @@ def add_args(ap):
                          "them. off: the base voice always")
 
 
+def body_path(a):
+    """--body, else <rig without .npz>.body.json."""
+    return getattr(a, "body", None) or (os.path.splitext(a.rig)[0]
+                                        + ".body.json")
+
+
+def prepare_body(a, info=sys.stdout):
+    """prepare() for --mode body: the body file, the body-mode system
+    prompt (flow.pose), a parser factory and, when the model file loads,
+    the Core for the exact check of every solve."""
+    try:
+        from . import body as fb
+        from . import pose as pz
+        from .runtime import authored_motions
+    except ImportError:
+        from flow import body as fb
+        from flow import pose as pz
+        from flow.runtime import authored_motions
+    path = body_path(a)
+    if not os.path.exists(path):
+        raise SystemExit(f"--mode body needs the body file {path} (python -m "
+                         "flow.body --measure)")
+    bm = fb.load(path)
+    images = bool(getattr(a, "body_image", False))
+    if images and a.backend not in pz.IMAGE_BACKENDS:
+        print(f"director: --body-image: {a.backend} takes no images "
+              f"(only {', '.join(pz.IMAGE_BACKENDS)}); text only",
+              file=info)
+        images = False
+    core = None
+    try:
+        try:
+            from ..l2dprobe import core as l2dcore
+        except ImportError:
+            from l2dprobe import core as l2dcore
+        with _quiet_stdout(info):
+            core = l2dcore.load(a.model_json)
+    except Exception as exc:  # noqa: BLE001 - the check is optional
+        print(f"director: no exact Core check ({exc.__class__.__name__}: "
+              f"{exc})", file=info)
+    motions = {n: m["frames"] / a.fps
+               for n, m in authored_motions(a.model_json, a.fps)}
+    print(f"director: body mode, {path}: {len(pz.offered(bm))} variables, "
+          f"{len(bm.variants)} arm variants"
+          + (", images" if images else ""), file=info)
+    return {"labels": {}, "offered": None, "descriptions": {},
+            "system": pz.system_prompt(bm, a.persona, images),
+            "motions": motions, "stats": None, "roles": None,
+            "mode": "body", "body": bm, "body_path": path, "core": core,
+            "images": images, "max_tag": pz.MAX_MARKER,
+            "parser": lambda: pz.parser_for(bm)}
+
+
+def _quiet_stdout(info):
+    """The Core prints its version banner from C; keep it off stdout when
+    stdout is the prompt (--print-system)."""
+    import contextlib
+    if info is sys.stderr:
+        try:
+            from .runtime import _stdout_to_stderr
+        except ImportError:
+            from flow.runtime import _stdout_to_stderr
+        return _stdout_to_stderr()
+    return contextlib.nullcontext()
+
+
+def snapshot(a, run, png, values=None, parts=None, log=print):
+    """Render the body at these parameter values (default its rest) to
+    png in a subprocess (one GL backend per process); the PNG bytes, or
+    None when it could not be rendered."""
+    cmd = [sys.executable, "-m", "flow.pose", "snapshot", "--body",
+           run["body_path"], "--model-json", a.model_json, "--out", png,
+           "--size", str(min(int(a.size), 512))]
+    if values:
+        cmd += ["--current", json.dumps(values)]
+    if parts:
+        cmd += ["--parts", json.dumps(parts)]
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    r = subprocess.run(cmd, cwd=root, capture_output=True, text=True)
+    if r.returncode or not os.path.exists(png):
+        log("director: snapshot failed, no image this turn: "
+            + (r.stderr or r.stdout)[-300:])
+        return None
+    with open(png, "rb") as fh:
+        return fh.read()
+
+
 def prepare(a, info=sys.stdout):
     """What a director run needs before its first turn, from add_args'
     arguments: {"labels", "offered", "system", "motions", "stats",
     "roles"}. Prints what it offers and what each gesture shows to
-    `info`; flow.live calls it too."""
+    `info`; flow.live calls it too. --mode body: prepare_body."""
+    if getattr(a, "mode", "tags") == "body":
+        return prepare_body(a, info)
     try:
         from ..l2dprobe.motions import motion_files
     except ImportError:
@@ -1575,6 +1717,60 @@ def make_voice(a, log=print):
     return tts
 
 
+def self_check(a, body, backend, system, messages, reply, out_dir, motions,
+               log=print):
+    """--body-check: one round of self-correction, offline. The model is
+    shown what each of its poses reached (the Core's numbers where it
+    loaded, the miss hints) and, with images, a picture of the last pose;
+    an "OK" ends it, anything else is parsed as the corrected reply and
+    planned (without speech: reach is what is judged) into out_dir/check.
+    check.json: both replies, reach before and after. The exchange is not
+    kept in the conversation."""
+    try:
+        from . import pose as pz
+    except ImportError:
+        from flow import pose as pz
+    with open(os.path.join(out_dir, "actions.json"), encoding="utf-8") as fh:
+        before = json.load(fh)
+    poses = [x["solved"] for x in before["actions"] if x.get("solved")]
+    rs0 = before.get("reach") or pz.reach_summary(poses)
+    out = {"reply": reply["raw"], "before": rs0}
+    if not poses:
+        out.update(model_ok=None, after=rs0, note="no pose markers")
+    else:
+        img = None
+        if body["images"]:
+            last = poses[-1]
+            vals = {}
+            for q in poses:
+                vals.update(q["params"])
+            img = snapshot(a, body, os.path.join(out_dir, "check_seen.png"),
+                           vals, last["parts"] or None, log)
+        msg = pz.check_message(poses, reply["spoken"], img is not None)
+        out["message"] = msg
+        conv = list(messages) + [pz.user_message(msg, a.backend, img)]
+        rep2 = ask(backend, system, conv, {}, log=log,
+                   parser=body["parser"]())
+        out["correction"] = rep2["raw"]
+        out["model_ok"] = pz.is_ok_reply(rep2["raw"])
+        log(f"director: self-check reply: {rep2['raw'].strip()}")
+        if out["model_ok"] or rep2["refused"] or not rep2["spoken"]:
+            out["after"] = rs0
+        else:
+            d = os.path.join(out_dir, "check")
+            plan(a, rep2, d, motions, log=log, tts=None, body=body)
+            with open(os.path.join(d, "actions.json"), encoding="utf-8") as fh:
+                out["after"] = json.load(fh).get("reach") or rs0
+    os.makedirs(os.path.join(out_dir, "check"), exist_ok=True)
+    with open(os.path.join(out_dir, "check", "check.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump(out, fh, indent=1, ensure_ascii=False)
+    log(f"director: self-check: reach {rs0['ok']}/{rs0['targets']} -> "
+        f"{out['after']['ok']}/{out['after']['targets']}"
+        + (" (model said OK)" if out.get("model_ok") else ""))
+    return out
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     add_args(ap)
@@ -1590,7 +1786,21 @@ def main(argv=None) -> int:
                          "directory each (turn01, ...)")
     ap.add_argument("--print-system", action="store_true",
                     help="print the system prompt and stop")
+    ap.add_argument("--body-targets", action="store_true",
+                    help="= --mode body: the reply's actions are body "
+                         "targets, solved and played over the idle")
+    ap.add_argument("--body-check", action="store_true",
+                    help="--mode body, an offline evaluation: after the "
+                         "turn, show the model what each pose reached (and "
+                         "its picture with --body-image), let it correct "
+                         "the markers once, and re-plan the correction "
+                         "into <out>/check (check.json: reach before and "
+                         "after)")
     a = ap.parse_args(argv)
+    if a.body_targets:
+        a.mode = "body"
+    if a.body_check and a.mode != "body":
+        ap.error("--body-check needs --mode body")
     if a.gestures and not os.path.exists(a.gestures):
         ap.error(f"--gestures {a.gestures}: no such file")
     info = sys.stderr if a.print_system else sys.stdout
@@ -1604,17 +1814,43 @@ def main(argv=None) -> int:
     tts = make_voice(a)
     messages = []
 
+    body = run if run.get("mode") == "body" else None
+    if body is not None:
+        try:
+            from . import pose as pz
+        except ImportError:
+            from flow import pose as pz
+
     def turn(text, out_dir):
-        messages.append({"role": "user", "content": text})
-        reply = ask(backend, system, messages, labels, offered=offered)
+        if body is None:
+            messages.append({"role": "user", "content": text})
+            parser = None
+        else:
+            # Each offline turn starts from the idle's rest: the pose the
+            # body file measured. The numbers (and the picture) go here,
+            # never in the system prompt, which stays byte-stable.
+            img = None
+            if body["images"]:
+                os.makedirs(out_dir, exist_ok=True)
+                img = snapshot(a, body, os.path.join(out_dir, "seen.png"))
+            messages.append(pz.user_message(
+                text + "\n" + pz.pose_now(body["body"]), a.backend, img))
+            parser = body["parser"]()
+        reply = ask(backend, system, messages, labels, offered=offered,
+                    parser=parser)
         print(f"director: reply: {reply['raw'].strip()}")
-        res = plan(a, reply, out_dir, motions, tts=tts)
+        res = plan(a, reply, out_dir, motions, tts=tts, body=body)
+        if body is not None:
+            messages[-1] = pz.text_only(messages[-1])
         if res is None:
             messages.pop()            # a refused turn is not history
             return 3
         # The tagged reply is what the model wrote; keep it as its turn so
         # the next turn sees the same tags it is asked to use.
         messages.append({"role": "assistant", "content": reply["raw"]})
+        if a.body_check:
+            self_check(a, body, backend, system, messages, reply, out_dir,
+                       motions)
         cmd, _ = res
         if a.render:
             return render(cmd, out_dir)
