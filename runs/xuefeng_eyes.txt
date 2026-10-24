@@ -1,0 +1,202 @@
+Live2D Cubism SDK Core Version 5.1.0
+[live2d] third-party wrapper (0.7.0.4), not affiliated with Live2D Inc.
+continuous deformers in the Core, not switches: ParamEyeLOpen discrete->autonomic, ParamEyeROpen discrete->autonomic
+48 params: expressive 36, physics 1, autonomic 3, mouth 6, discrete 2
+{'ParamEyeLOpen': ('discrete', 'autonomic'), 'ParamEyeROpen': ('discrete', 'autonomic')}
+[live2d.v3] Cubism Native, Python 3.10.20
+[live2d.v3] official: https://www.live2d.com/sdk/download/native/
+Live2D Cubism SDK Core Version 5.1.0
+[live2d] third-party wrapper (0.7.0.4), not affiliated with Live2D Inc.
+[live2d.v3] Cubism Native, Python 3.10.20
+[live2d.v3] official: https://www.live2d.com/sdk/download/native/
+Live2D Cubism SDK Core Version 5.1.0
+Live2D Cubism SDK Core Version 5.1.0
+body: side naming drawables character [6, 6], params screen [2, 8] (agree, disagree with geometry)
+body: 97 drawables, 57 live params, 2 arm variant(s), held ['PARAM_bodyS', 'PARAM_moveX', 'PARAM_moveY']
+  variant rest: 31 params move it, 39 interaction pairs
+  variant ParamHl5=1: 31 params move it, 39 interaction pairs
+body -> rigs/xuefeng.body.json
+body: unit 1 hu = 4.1432 model units; x toward the character's left, y up; origin chin
+side naming: drawables character, params screen (votes agree/disagree with rest geometry: [6, 6], [2, 8]); sides below are the character's
+landmarks (hu): chin [0.0, 0.0], head [-0.0, 0.3897], shoulder.L [0.295, -0.0921], shoulder.R [-0.2821, -0.0855], shoulder.y -0.0888, chest [0.0017, -0.4309], hand.L [0.5503, -1.191], hand.R [-0.586, -1.2035]
+regions:
+  brow.L         1 drawables    17 verts  [high 1]
+  brow.R         1 drawables    19 verts  [high 1]
+  cheek          2 drawables    21 verts  [high 2]
+  effect        14 drawables   355 verts  [high 14]
+  eye.L          5 drawables   106 verts  [high 5]
+  eye.R          5 drawables    98 verts  [high 5]
+  face           5 drawables   184 verts  [high 5]
+  hair          20 drawables   553 verts  [high 20]
+  hitarea        3 drawables    12 verts  [high 3]
+  legs           2 drawables    36 verts  [high 2]
+  mouth          3 drawables    84 verts  [high 3]
+  nose           1 drawables    10 verts  [high 1]
+  torso         31 drawables  1010 verts  [high 31]
+  upper_arm.L    2 drawables   112 verts  [high 2]
+  upper_arm.R    2 drawables   113 verts  [high 2]
+held: PARAM_bodyS, PARAM_moveX, PARAM_moveY
+variant: ParamHl5
+switch: PARAM_Hand_L1, PARAM_Hand_L2, PARAM_Hand_L3, PARAM_Hand_R1, PARAM_Hand_R2, PARAM_Hand_R3, PARAM_hand_L7, PARAM_mouth, ParamHl4, ParamHr4, ParamHr5
+physics: PARAM_Hairfront_vive
+effects (never variants or solved; set them on purpose): PARAM_FXeye, PARAM_FXhand, PARAM_FXmouth1, PARAM_FXmouth2, PARAM_FXmouth3; 14 effect drawables
+continuous deformers in the Core, solved although the probe called them discrete: PARAM_Arm_LB_Agle (band discrete: 7 drawables move up to 7.467 model units, largest step 0.11 of the path, no opacity change); PARAM_Arm_RB_Agle (band discrete: 9 drawables move up to 7.686 model units, largest step 0.11 of the path, no opacity change); ParamEyeLOpen (band autonomic: 2 drawables move up to 0.7593 model units, largest step 0.10 of the path, monotonic, no opacity change); ParamEyeROpen (band autonomic: 2 drawables move up to 0.7827 model units, largest step 0.10 of the path, monotonic, no opacity change)
+variants: [0] rest; [1] ParamHl5=1
+what moves each region (variant [0] rest; max |shift| hu / roll deg / scale %):
+  head         ParamAngleZ 0.08/15/0; ParamBodyAngleZ 0.22/10/0; ParamAngleX 0.09/0/3; ParamAngleY 0.05/0/1; ParamBreath 0.02/0/0
+  face         ParamAngleZ 0.09/15/0; ParamBodyAngleZ 0.22/10/0; ParamAngleX 0.08/0/3; ParamAngleY 0.04/0/1; ParamBreath 0.02/0/0
+  eye.L        ParamAngleZ 0.09/15/0; ParamBodyAngleZ 0.22/10/0; ParamAngleX 0.15/1/18; ParamAngleY 0.06/3/5; ParamEyeROpen 0.03/3/8; PARAM_Angry_eye 0.00/1/0
+  eye.R        ParamAngleZ 0.09/15/0; ParamBodyAngleZ 0.22/10/0; ParamAngleX 0.12/1/8; ParamEyeLOpen 0.04/3/9; ParamAngleY 0.07/2/4; ParamBreath 0.02/0/0
+  brow.L       ParamAngleZ 0.14/15/0; ParamBodyAngleZ 0.25/10/0; ParamBrowRX 0.07/13/1; ParamAngleY 0.08/10/3; ParamAngleX 0.15/3/39; ParamBrowRY 0.05/1/1
+  brow.R       ParamBrowLX 0.07/18/1; ParamAngleZ 0.14/15/0; ParamBodyAngleZ 0.25/10/0; ParamAngleY 0.08/13/5; ParamAngleX 0.16/2/15; ParamBrowLY 0.03/0/0
+  mouth        ParamAngleZ 0.03/15/0; ParamBodyAngleZ 0.18/10/0; PARAM_Mouth_Angle 0.01/8/0; ParamAngleX 0.13/1/12; ParamAngleY 0.06/1/6; PARAM_Mouth 0.01/1/36
+  torso        PARAM_Arm_RT_Angle 0.08/14/10; PARAM_Arm_LT_Angle 0.08/14/10; ParamBodyAngleZ 0.06/10/0; PARAM_Arm_LB_Agle 0.07/9/8; PARAM_Arm_RB_Agle 0.07/8/8; ParamBreath 0.07/0/0
+  legs         ParamBodyAngleZ 0.05/1/0; ParamBreath 0.03/0/2; ParamBodyAngleX 0.02/0/3
+  arm.L        PARAM_Arm_RT_Angle 0.56/80/0; PARAM_Arm_RB_Agle 0.22/52/32; ParamBodyAngleZ 0.08/10/0; ParamBreath 0.07/0/0; ParamBodyAngleX 0.04/0/0
+  arm.R        PARAM_Arm_LT_Angle 0.57/78/0; PARAM_Arm_LB_Agle 0.24/56/34; ParamBodyAngleZ 0.08/10/0; ParamBreath 0.07/0/0; ParamBodyAngleX 0.03/0/0
+  upper_arm.L  PARAM_Arm_RT_Angle 0.56/80/0; PARAM_Arm_RB_Agle 0.22/52/32; ParamBodyAngleZ 0.08/10/0; ParamBreath 0.07/0/0; ParamBodyAngleX 0.04/0/0
+  upper_arm.R  PARAM_Arm_LT_Angle 0.57/78/0; PARAM_Arm_LB_Agle 0.24/56/34; ParamBodyAngleZ 0.08/10/0; ParamBreath 0.07/0/0; ParamBodyAngleX 0.03/0/0
+  hand.L       PARAM_Arm_RB_Agle 1.07/169/0; PARAM_Arm_RT_Angle 1.30/80/0; ParamBodyAngleZ 0.10/10/0; ParamBreath 0.07/0/0; ParamBodyAngleX 0.04/0/0
+  hand.R       PARAM_Arm_LB_Agle 1.10/168/0; PARAM_Arm_LT_Angle 1.30/78/0; ParamBodyAngleZ 0.11/10/0; ParamBreath 0.07/0/0; ParamBodyAngleX 0.03/0/0
+  hair         ParamAngleZ 0.10/15/0; ParamBodyAngleZ 0.23/10/0; ParamAngleX 0.06/4/10; PARAM_Hairfront_vive 0.02/2/2; ParamAngleY 0.05/0/8; ParamBreath 0.02/0/0
+reach by side (variant [0]; the character's sides, each variable alone):
+  hand.L  rest (0.550, -1.191) -> x [-0.219, 1.431], y [-1.294, 0.362] hu; mainly PARAM_Arm_RB_Agle
+  hand.R  rest (-0.586, -1.204) -> x [-1.455, 0.152], y [-1.323, 0.430] hu; mainly PARAM_Arm_LB_Agle
+canonical variables (variant [0]): rest -> range
+  head.x             -0.000 -> [-0.375, 0.371] hu
+  head.y              0.390 -> [0.284, 0.414] hu
+  head.roll           0.000 -> [-35.108, 34.546] deg
+  torso.x             0.001 -> [-0.203, 0.203] hu
+  torso.y            -0.583 -> [-0.596, -0.413] hu
+  torso.roll          0.000 -> [-27.943, 29.854] deg
+  arm.L.x             0.391 -> [0.160, 0.857] hu
+  arm.L.y            -0.639 -> [-0.703, -0.028] hu
+  arm.L.roll          0.000 -> [-61.460, 89.900] deg
+  arm.R.x            -0.407 -> [-0.874, -0.154] hu
+  arm.R.y            -0.650 -> [-0.722, -0.016] hu
+  arm.R.roll          0.000 -> [-87.300, 65.968] deg
+  upper_arm.L.x       0.391 -> [0.160, 0.857] hu
+  upper_arm.L.y      -0.639 -> [-0.703, -0.028] hu
+  upper_arm.L.roll    0.000 -> [-61.460, 89.900] deg
+  upper_arm.R.x      -0.407 -> [-0.874, -0.154] hu
+  upper_arm.R.y      -0.650 -> [-0.722, -0.016] hu
+  upper_arm.R.roll    0.000 -> [-87.300, 65.968] deg
+  hand.L.x            0.550 -> [-0.219, 1.431] hu
+  hand.L.y           -1.191 -> [-1.294, 0.362] hu
+  hand.L.roll         0.000 -> [-362.060, 89.900] deg
+  hand.R.x           -0.586 -> [-1.455, 0.152] hu
+  hand.R.y           -1.204 -> [-1.323, 0.430] hu
+  hand.R.roll         0.000 -> [-87.300, 369.600] deg
+  brow.L.lift         0.000 -> [-1.000, 1.000] unit
+  brow.L.slide        0.000 -> [-1.000, 1.000] unit
+  brow.R.lift         0.000 -> [-1.000, 1.000] unit
+  brow.R.slide        0.000 -> [-1.000, 1.000] unit
+  cheek.blush         1.000 -> [0.000, 1.000] unit
+  eye.L.open          1.000 -> [0.000, 1.000] unit
+  eye.R.open          1.000 -> [0.000, 1.000] unit
+  gaze.x              0.000 -> [-1.000, 1.000] unit
+  gaze.y              0.000 -> [-1.000, 1.000] unit
+  head.pitch          0.000 -> [-30.000, 30.000] deg
+  head.tilt          -0.000 -> [-30.000, 30.000] deg
+  head.yaw            0.000 -> [-30.000, 30.000] deg
+  mouth.form          0.000 -> [-1.000, 1.000] unit
+  mouth.open          0.000 -> [0.000, 1.000] unit
+  torso.pitch         0.000 -> [-10.000, 10.000] deg
+  torso.tilt         -0.000 -> [-10.000, 10.000] deg
+  torso.yaw           0.000 -> [-10.000, 10.000] deg
+[live2d.v3] Cubism Native, Python 3.10.20
+[live2d.v3] official: https://www.live2d.com/sdk/download/native/
+Live2D Cubism SDK Core Version 5.1.0
+[INFO]  [Pal] Init Shader Dir: /home/main/venv/hongenv/lib/python3.11/site-packages/live2d/v3/
+[INFO]  [CSM][I]Live2D Cubism Core version: 05.01.0000 (83951616)
+
+[INFO]  [CSM][I]CubismFramework::StartUp() is complete.
+
+[INFO]  [CSM][I]CubismFramework::Initialize() is complete.
+
+[INFO]  allocate: cpp Model(at=0x205d44d0)
+[INFO]  load modelSetting: /home/main/yachiyo/live2d-models/live2d_3/model/Azue Lane(JP)/xuefeng/xuefeng.probe.model3.json
+[INFO]  create model: xuefeng.moc3
+Live2D Cubism SDK Core Version 5.1.0
+[INFO]  deallocate: cpp Model(at=0x205d44d0)
+[INFO]  deallocate: PyModelObject(at=0x7f429126ce30)
+variant [0] rest  cost 0.360
+  eye.L.open     target    0.400 got    0.400 err +0.000 unit ok
+  eye.R.open     target    0.400 got    0.400 err +0.000 unit ok
+  ok: all 2 targets within tolerance
+  params: ParamEyeLOpen=0.400, ParamEyeROpen=0.400
+[live2d] third-party wrapper (0.7.0.4), not affiliated with Live2D Inc.
+  exact (Core): eye.L.open 0.400, eye.R.open 0.400
+render -> runs/body_xuefeng_eyes.png
+[live2d] third-party wrapper (0.7.0.4), not affiliated with Live2D Inc.
+continuous deformers in the Core, not switches: ParamEyeLOpen discrete->autonomic, ParamEyeROpen discrete->autonomic
+48 params: expressive 36, physics 1, autonomic 3, mouth 6, discrete 2
+holding 3 whole-model parameters still: PARAM_bodyS, PARAM_moveX, PARAM_moveY
+events: switch-like role columns left to the rig's own motions: brow_l=ParamBrowLY, brow_lx=ParamBrowLX, brow_r=ParamBrowRY, brow_rx=ParamBrowRX
+  role body_x   -> ParamBodyAngleX  [id]
+  role body_z   -> ParamBodyAngleZ  [id]
+  role gaze_x   -> ParamEyeBallX  [id]
+  role gaze_y   -> ParamEyeBallY  [id]
+  role head_x   -> ParamAngleX  [id]
+  role head_y   -> ParamAngleY  [id]
+  role head_z   -> ParamAngleZ  [id]
+events: unbound roles (no standard id; --binding to add): body_y, brow_la, brow_lf, brow_ra, brow_rf
+events: body adapted to the rig's own motions (weights {'body_x': 0.933, 'body_z': 0.933, 'w_hold': 0.844, 'w_move': 0.828}; own holds 9 +18 censored, 3 unanimated clips, moves 24): hold 1.70s move 0.64s p_chain 0.17
+events: idle profile calm; gestures from 5 of 14 motions (by label): complete 0.0938, home* 0.0938, idle* 0.0161, login 0.0972, mail 0.0938, main_1* 0.0845, main_2* 0.0864, main_3* 0.0938, mission 0.0687, mission_complete 0.0938, touch_body 0.0687, touch_head 0.0666, touch_special 0.0813, wedding 0.0161  (* calm; mean speed/frame)
+['ParamEyeLOpen', 'ParamEyeROpen']
+[1.   1.   1.   1.   1.   1.   0.74 0.19 0.18 0.46 0.74 1.   1.   1.
+ 1.   1.   1.   1.   1.   0.47 0.04 0.32 0.6  0.88 1.   1.   1.   1.
+ 1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.
+ 1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.
+ 1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.
+ 1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.
+ 1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.
+ 1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.
+ 1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.
+ 1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.
+ 1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.
+ 1.   1.   1.   1.   1.   1.   0.46 0.05 0.32 0.6  0.88 1.   1.   1.
+ 1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.
+ 1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.
+ 1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.
+ 1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.
+ 1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.
+ 1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   0.47
+ 0.04 0.32 0.6  0.87 1.   1.   1.   1.   1.   1.   1.   1.   1.   1.
+ 1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.   1.
+ 1.   1.   1.   1.   0.65 0.09 0.23 0.51 0.79 1.   1.   1.   1.   1.
+ 1.   1.   1.   1.   1.   1.  ]
+[live2d.v3] Cubism Native, Python 3.10.20
+[live2d.v3] official: https://www.live2d.com/sdk/download/native/
+Live2D Cubism SDK Core Version 5.1.0
+.F                                                                       [100%]
+=================================== FAILURES ===================================
+______________ test_azur_lane_v1_files[xuefeng-character-screen] _______________
+
+rig = 'xuefeng', drawables = 'character', params = 'screen'
+
+    @pytest.mark.parametrize("rig,drawables,params", [
+        ("lafei", "screen", "screen"), ("xuefeng", "character", "screen")])
+    def test_azur_lane_v1_files(rig, drawables, params):
+        """The measured Azur Lane files (format 1): naming detected, the
+        character's right hand on -x moved by the rig's ...LT param, effects
+        out of the variants."""
+        path = os.path.join(RIGS, f"{rig}.body.json")
+        if not os.path.exists(path):
+            pytest.skip(f"no {path}")
+        bm = body.load(path)
+        sn = bm.blob["side_naming"]
+        assert (sn["drawables"], sn["params"]) == (drawables, params)
+        assert bm.landmarks["hand.R"][0] < 0 < bm.landmarks["hand.L"][0]
+>       assert bm.movers("hand.R", 0, top=1)[0][0] == "PARAM_Arm_LT_Angle"
+E       AssertionError: assert 'PARAM_Arm_LB_Agle' == 'PARAM_Arm_LT_Angle'
+E         
+E         - PARAM_Arm_LT_Angle
+E         ?            ^  -
+E         + PARAM_Arm_LB_Agle
+E         ?            ^
+
+tests/test_body.py:658: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_body.py::test_azur_lane_v1_files[xuefeng-character-screen]
+1 failed, 1 passed, 38 deselected in 0.49s
