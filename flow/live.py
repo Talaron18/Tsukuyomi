@@ -53,9 +53,10 @@ one process on the server:
              delay keep lip sync whatever the network delay, as long as it
              stays under D.
   record     --record DIR: video.mp4 (every frame on the clock, a skipped
-             frame repeated), speech.wav (the clips mixed at their times),
-             subs.srt, turns.jsonl (lines, replies, tags, latencies) and
-             session.mp4 with all of them muxed, written at exit.
+             or dropped frame filled with the next), speech.wav (the clips
+             mixed at their times), subs.srt, turns.jsonl (lines, replies,
+             tags, latencies) and session.mp4 with all of them muxed,
+             written at exit.
 
 Usage (see --help; the rig, model and TTS arguments are flow.director's):
     xvfb-run -a -s "-screen 0 1024x1024x24" python -m flow.live \\
@@ -473,6 +474,7 @@ class Performer:
         self.turns = 0
         self.busy = False
         self.thread = None
+        self.lang, self.lang_set = "en", False
 
     def start(self):
         self.thread = threading.Thread(target=self._loop, name="turns",
@@ -509,6 +511,10 @@ class Performer:
         n = self.turns
         t_in = clock.now()
         self.hub.event("user", text=text, t=t_in)
+        # The reply's language, for the voice: the prompt asks for the
+        # user's language; the first sentence whose script settles it wins
+        # (lang_of), and the rest of the turn keeps it.
+        self.lang, self.lang_set = sp.language(text), False
         self.messages.append({"role": "user", "content": text})
         q = queue.Queue()
         raw, info = [], {"first": None, "stop": None, "error": None}
@@ -586,7 +592,8 @@ class Performer:
             if getattr(a, "mood", "auto") != "off":
                 mood = sp.mood_of(spoken, tags)[0]
             said = sp.speak(spoken, tags, self.tts, self._weight,
-                            log=self.log, moods=[(0, mood)])
+                            log=self.log, moods=[(0, mood)],
+                            lang=self.lang_of(spoken))
             acts, spans, end = said["acts"], said["spans"], said["end"]
             audio, sr, moras = said["audio"], said["sr"], said.get("moras")
         elif spoken:
@@ -656,6 +663,23 @@ class Performer:
                   + f": {spoken}")
         return lat
 
+    def lang_of(self, spoken):
+        """The language to speak this sentence in. Offline, the voice is
+        picked from the whole reply; here a sentence comes alone, and
+        "本当？" (no kana) reads as Chinese, "OK！" as English. Kana or
+        Hangul settle it whenever they appear; enough Latin letters, or
+        Han alone (Chinese unless the turn is Japanese), settle it only
+        while nothing has; anything else keeps the turn's language."""
+        s = sp.script_language(spoken)
+        if s in ("ja", "ko"):
+            self.lang, self.lang_set = s, True
+        elif not self.lang_set and s == "en":
+            self.lang, self.lang_set = "en", True
+        elif not self.lang_set and s == "han":
+            self.lang = "ja" if self.lang == "ja" else "zh"
+            self.lang_set = True
+        return self.lang
+
     def _weight(self, ch):
         return 1.0 / (self.a.cjk_rate if dr._is_cjk(ch) else self.a.latin_rate)
 
@@ -672,14 +696,15 @@ class Encoder:
             recorder, log
         self.q = queue.Queue(maxsize=4)
         self.dropped = 0
+        self.errors = 0
         self.encode_s = deque(maxlen=300)
         self.thread = threading.Thread(target=self._loop, name="jpeg",
                                        daemon=True)
         self.thread.start()
 
-    def submit(self, f, t, img, repeat=1):
+    def submit(self, f, t, img):
         try:
-            self.q.put_nowait((f, t, img, repeat))
+            self.q.put_nowait((f, t, img))
         except queue.Full:
             self.dropped += 1
 
@@ -692,13 +717,18 @@ class Encoder:
             item = self.q.get()
             if item is None:
                 return
-            f, t, img, repeat = item
-            t0 = time.perf_counter()
-            jpeg = encode_jpeg(img, self.quality)
-            self.encode_s.append(time.perf_counter() - t0)
-            self.hub.frame(f, t, jpeg)
-            if self.recorder is not None:
-                self.recorder.frame(f, jpeg, repeat)
+            f, t, img = item
+            try:
+                t0 = time.perf_counter()
+                jpeg = encode_jpeg(img, self.quality)
+                self.encode_s.append(time.perf_counter() - t0)
+                self.hub.frame(f, t, jpeg)
+                if self.recorder is not None:
+                    self.recorder.frame(f, jpeg)
+            except Exception as exc:  # noqa: BLE001 - say so, keep going
+                self.errors += 1
+                if self.errors <= 3:
+                    self.log(f"live: frame {f} not encoded: {exc!r}")
 
 
 def encode_jpeg(img, quality=80):
@@ -776,7 +806,7 @@ class RenderLoop:
             img = self.backend.render(over, parts=parts)
             self.backend.dt = dt0
             self.cost.append(time.perf_counter() - t0)
-            self.encoder.submit(self.f, self.f / self.fps, img, skip + 1)
+            self.encoder.submit(self.f, self.f / self.fps, img)
             self.rendered += 1
             self.f += 1
             now = self.clock.now()
@@ -794,8 +824,9 @@ class RenderLoop:
 
 class Recorder:
     """--record DIR (module docstring). Frames are the encoder's JPEGs piped
-    to ffmpeg (image2pipe -> H.264), a skipped frame written again so the
-    video keeps the clock."""
+    to ffmpeg (image2pipe -> H.264). Keyed on frame numbers: a frame the
+    render skipped or the encoder dropped is filled with the next frame
+    that arrives, so the video keeps the clock the speech is mixed on."""
 
     def __init__(self, out_dir, fps, log=print):
         os.makedirs(out_dir, exist_ok=True)
@@ -817,13 +848,15 @@ class Recorder:
             log("live: no ffmpeg; --record keeps audio, subtitles and turns "
                 "only")
 
-    def frame(self, f, jpeg, repeat=1):
+    def frame(self, f, jpeg):
         if self.proc is None:
             return
         try:
-            for _ in range(repeat):
+            # Any frames missing before this one (skipped, dropped) are
+            # this one again.
+            for _ in range(max(f + 1 - self.frames, 0)):
                 self.proc.stdin.write(jpeg)
-            self.frames += repeat
+            self.frames = max(self.frames, f + 1)
         except (BrokenPipeError, OSError):
             self.proc = None
 
@@ -923,6 +956,9 @@ def main(argv=None) -> int:
     ap.add_argument("--bg", default="0.12,0.12,0.14",
                     help="background colour, r,g,b in 0..1")
     a = ap.parse_args(argv)
+    import importlib.util
+    if importlib.util.find_spec("PIL") is None:     # frames are JPEG via PIL
+        ap.error("flow.live needs Pillow for the frames: pip install Pillow")
     if a.renderer == "gl":
         _, ensure_display = fs.rt._backend()
         ensure_display(["-m", f"{__package__ or 'flow'}.live"]

@@ -442,29 +442,31 @@ MOOD_TAGS = {"brow:down": {"sad": 2.0}, "brow:furrow": {"annoyed": 2.0},
              "lean:in": {"whisper": 0.5}, "look:away": {"shy": 0.75}}
 MOOD_WORD = 1.5
 MOOD_MIN = 1.5
-# Words that carry a mood, matched case-insensitively (Latin at word
-# starts, CJK anywhere). Short and conservative: a wrong style is worse
-# than the base one. "もう" is left out ("もう少し"), "ふん" needs its
-# small tsu ("ふんわり").
+# Words that carry a mood, matched case-insensitively: CJK anywhere, Latin
+# as whole words ("fun" is not in "function"), or as a word start where it
+# ends in "*" ("thank*": thanks, thank you). Short and conservative: a
+# wrong style is worse than the base one. "もう" is left out ("もう少し"),
+# "ふん" needs its small tsu ("ふんわり"), 困 only as Chinese sleepy (困った
+# is "troubled" in Japanese).
 MOOD_WORDS = {
-    "happy": ("yay", "great", "glad", "love", "wonderful", "happy", "fun",
-              "haha", "awesome", "thank", "嬉し", "うれし", "楽し", "たのし",
+    "happy": ("yay*", "great", "glad", "love*", "wonderful", "happy", "fun",
+              "haha*", "awesome", "thank*", "嬉し", "うれし", "楽し", "たのし",
               "やった", "わーい", "好き", "ありがと", "よかった", "开心",
               "高兴", "太好了", "喜欢", "谢谢", "哈哈"),
-    "sad": ("sorry", "sad", "miss you", "lonely", "unfortunately", "cry",
-            "ごめん", "悲し", "かなし", "寂し", "さびし", "残念", "泣",
-            "对不起", "难过", "伤心", "可惜", "寂寞", "抱歉"),
-    "annoyed": ("hmph", "ugh", "seriously", "idiot", "baka", "whatever",
+    "sad": ("sorry", "sad", "sadly", "miss you", "lonely", "unfortunately",
+            "cry", "crying", "ごめん", "悲し", "かなし", "寂し", "さびし",
+            "残念", "泣", "对不起", "难过", "伤心", "可惜", "寂寞", "抱歉"),
+    "annoyed": ("hmph*", "ugh*", "seriously", "idiot*", "baka", "whatever",
                 "annoying", "ふんっ", "フン", "バカ", "ばか", "うるさい",
                 "べつに", "別に", "なによ", "哼", "笨蛋", "讨厌"),
-    "whisper": ("secret", "whisper", "between us", "内緒", "ないしょ",
+    "whisper": ("secret*", "whisper*", "between us", "内緒", "ないしょ",
                 "秘密", "こっそり", "ひそひそ", "悄悄"),
-    "surprised": ("wow", "whoa", "no way", "what?!", "えっ", "まさか",
-                  "びっくり", "うそ", "哇", "天哪", "竟然"),
-    "shy": ("embarrass", "blush", "恥ずかし", "はずかし", "照れ", "てれ",
+    "surprised": ("wow*", "whoa*", "no way", "えっ", "まさか", "びっくり",
+                  "うそ", "哇", "天哪", "竟然"),
+    "shy": ("embarrass*", "blush*", "恥ずかし", "はずかし", "照れ", "てれ",
             "怖い", "こわい", "害羞", "不好意思"),
-    "sleepy": ("sleepy", "tired", "yawn", "zzz", "nap", "眠", "ねむ", "ふぁ",
-               "疲れ", "つかれ", "困", "累"),
+    "sleepy": ("sleepy", "tired", "yawn*", "zzz*", "nap", "眠", "ねむ", "ふぁ",
+               "疲れ", "つかれ", "好困", "困了", "累"),
 }
 # A sentence end, and what may follow one and still belong to it (as
 # flow.director's subtitles; it takes these from here).
@@ -475,9 +477,13 @@ SENT_TAIL = SENT_END - {"\n"} | set("\"'”’」』)）")
 def _has_word(low, w):
     if not w.isascii():
         return w in low
+    stem = w.endswith("*")
+    w = w.rstrip("*")
     i = low.find(w)
     while i >= 0:
-        if i == 0 or not low[i - 1].isalnum():
+        j = i + len(w)
+        if ((i == 0 or not low[i - 1].isalnum())
+                and (stem or j >= len(low) or not low[j].isalnum())):
             return True
         i = low.find(w, i + 1)
     return False
@@ -662,6 +668,27 @@ def language(text):
     return "zh" if han else "en"
 
 
+def script_language(text, min_latin=8):
+    """The language a text's script settles, or None: 'ja' with kana, 'ko'
+    with Hangul, 'han' with only Han ideographs (Chinese, or Japanese
+    without kana: "本当？"), 'en' with at least `min_latin` Latin letters
+    and no CJK ("OK！" settles nothing)."""
+    han = latin = 0
+    for ch in text:
+        o = ord(ch)
+        if 0x3040 <= o <= 0x30FF or 0x31F0 <= o <= 0x31FF:
+            return "ja"
+        if 0xAC00 <= o <= 0xD7AF or 0x1100 <= o <= 0x11FF:
+            return "ko"
+        if 0x4E00 <= o <= 0x9FFF or 0x3400 <= o <= 0x4DBF:
+            han += 1
+        elif ch.isascii() and ch.isalpha():
+            latin += 1
+    if han:
+        return "han"
+    return "en" if latin >= min_latin else None
+
+
 def post(url, body, key, name, timeout=120, retries=4):
     """POST JSON with a bearer key; the open response. The response body is
     surfaced on errors, since that is where SiliconFlow says what was wrong;
@@ -711,10 +738,12 @@ class EdgeTTS:
         r, p, v = edge_prosody(self.rate, mood, self.moods or None)
         return f"rate {r} pitch {p} volume {v}"
 
-    def begin(self, spoken):
+    def begin(self, spoken, lang=None):
         """Pick the voice from the whole reply: a piece after a [pause]
-        ("本当？") has no kana and would otherwise be read in Chinese."""
-        self._now = self.voice or EDGE_VOICES[language(spoken)]
+        ("本当？") has no kana and would otherwise be read in Chinese.
+        `lang`: the reply's language decided by the caller (flow.live
+        speaks a sentence at a time, and "本当？" alone is no clue)."""
+        self._now = self.voice or EDGE_VOICES[lang or language(spoken)]
 
     def synth(self, text, mood=None):
         try:
@@ -1340,10 +1369,14 @@ class VoiceRouter:
         self.kind = kind
         return self._made[key]
 
-    def begin(self, spoken):
-        self.cur = self.pick(language(spoken))
+    def begin(self, spoken, lang=None):
+        lang = lang or language(spoken)
+        self.cur = self.pick(lang)
         if hasattr(self.cur, "begin"):
-            self.cur.begin(spoken)
+            if isinstance(self.cur, EdgeTTS):
+                self.cur.begin(spoken, lang=lang)
+            else:
+                self.cur.begin(spoken)
 
     @property
     def whole(self):
@@ -1375,7 +1408,7 @@ class VoiceRouter:
 
 # ----------------------------------------------------------------- speak
 
-def speak(spoken, tags, tts, weight, log=print, moods=None):
+def speak(spoken, tags, tts, weight, log=print, moods=None, lang=None):
     """Synthesize `spoken` and time it. Returns {audio, sr, spans (per
     character, seconds), acts (non-pause tags with t, as timeline()), end
     (audio seconds), speech_end, method, moras (VOICEVOX: query_moras of
@@ -1388,10 +1421,14 @@ def speak(spoken, tags, tts, weight, log=print, moods=None):
     `moods`: [(at, mood)] (sentence_moods); the text is split where the
     mood changes too (no silence added: the cut is at a sentence end) and
     each piece is spoken with mood= its mood. None, or one neutral mood,
-    makes exactly the calls of before."""
+    makes exactly the calls of before. `lang`: the language to pick the
+    voice for, when the caller knows it better than this text's script."""
     n = len(spoken)
     if hasattr(tts, "begin"):
-        tts.begin(spoken)
+        if lang is None:
+            tts.begin(spoken)
+        else:
+            tts.begin(spoken, lang=lang)
     pauses = [(t["at"], float(t["arg"])) for t in tags if t["tag"] == "pause"]
     if tts.whole and pauses:
         log(f"speech: {len(pauses)} [pause] tags taken from the recording's "

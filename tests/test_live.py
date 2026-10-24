@@ -668,3 +668,52 @@ def test_render_loop_skips_late_frames_but_steps_them(tmp_path):
     assert loop.skipped > 10 and loop.rendered + loop.skipped == 45
     assert max(be.dts) > 1.5 / FPS
     assert [t for f, t in got] == [f / FPS for f, _ in got]
+
+
+def test_a_japanese_turn_keeps_its_voice_on_kana_less_sentences(tmp_path):
+    """Sentence by sentence, "本当？" has no kana and "OK！" no Japanese at
+    all; the turn's language (settled by うん。) picks the voice for them
+    too, as the whole reply does offline."""
+    picked = []
+
+    class Router(SpeakingTTS):
+        def begin(self, spoken, lang=None):
+            picked.append(lang)
+    p, hub, *_ = _performer(tmp_path, "うん。本当？大丈夫。OK！",
+                            tts=Router())
+    p.turn("ねえ、聞いて")
+    assert picked == ["ja"] * 4
+    picked.clear()
+    p.backend = dr.TextBackend("本当？それはいいね。")
+    p.turn("hello")                     # Han first, then kana
+    assert picked == ["zh", "ja"]
+    picked.clear()
+    p.backend = dr.TextBackend("Well. 好的。")
+    p.turn("hi")                        # too short to settle; then Han
+    assert picked == ["en", "zh"]
+
+
+def test_mood_words_are_whole_words():
+    assert sp.mood_of("This function returns a crystal saddle napkin.")[0] \
+        == "neutral"
+    assert sp.mood_of("Thanks so much, that was fun.")[0] == "happy"
+    assert sp.mood_of("困ったな。")[0] == "neutral"
+
+
+def test_recording_keeps_the_clock_over_dropped_frames(tmp_path):
+    import io as _io
+    import types
+    r = lv.Recorder(str(tmp_path / "rec"), FPS, log=lambda s: None)
+    if r.proc is not None:
+        r.proc.kill()
+    sink = _io.BytesIO()
+    r.proc = types.SimpleNamespace(stdin=sink)
+    for f in (0, 1, 4, 5):              # 2 and 3 skipped or dropped
+        r.frame(f, bytes([f]))
+    assert sink.getvalue() == bytes([0, 1, 4, 4, 4, 5]) and r.frames == 6
+    r.proc = None
+    r.audio(0.5, np.ones(800, np.float32) * 0.1, 16000)
+    r.close()
+    from flow.speech import read_audio
+    x, sr = read_audio(str(tmp_path / "rec" / "speech.wav"))
+    assert abs(len(x) / sr - 0.55) < 0.01 and abs(x[:7000]).max() < 1e-3
