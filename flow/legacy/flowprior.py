@@ -47,7 +47,7 @@ module is created and the state_dict, forward and sampling are exactly the
 unconditioned model's.
 
 Usage:
-    python -m flow.flowprior clips/ --rigs rigs/ \
+    python -m flow.legacy.flowprior clips/ --rigs rigs/ \
         --holdout aidang_2,Natori,Hiyori,lafei,xuefeng \
         --epochs 40 --threads 36 --save flowprior.pt
 """

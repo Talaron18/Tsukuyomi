@@ -8,11 +8,11 @@ that judgement, so this hides it: every pair of sources on the same rig is
 shown as A and B in random order, the answer key goes to a separate file,
 and the tally is computed only after the judgements are written.
 
-    python -m flow.abtest make ab/ Natori/behaviors=runs/beh/preview.mp4 \\
+    python -m flow.legacy.abtest make ab/ Natori/behaviors=runs/beh/preview.mp4 \\
         Natori/flow=runs/flow/preview.mp4 Natori/static=runs/static/preview.mp4
     # open ab/index.html, write one line per pair in ab/judgments.txt:
     #   01 A        (or B, or = for no preference)
-    python -m flow.abtest tally ab/
+    python -m flow.legacy.abtest tally ab/
 
 `make` copies the videos to ab/pNN_A.mp4 / pNN_B.mp4, writes index.html and
 judgments.txt (to fill in) and answer_key.json. Do not open the key before
@@ -77,7 +77,7 @@ def make(out: str, items: list[str], seed: int | None) -> int:
                  "sources are hidden; do not open answer_key.json first.</p>"
                  + "".join(rows))
     print(f"{len(pairs)} pairs -> {out}/index.html; fill {out}/judgments.txt, "
-          f"then: python -m flow.abtest tally {out}")
+          f"then: python -m flow.legacy.abtest tally {out}")
     return 0
 
 

@@ -50,15 +50,16 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import numpy as np
 
-PKG_DIR = os.path.dirname(os.path.abspath(__file__))
+PKG_DIR = os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))))
 
 # Imported at module level, not inside the worker: ProcessPoolExecutor
 # re-imports this module in each child, so module-level imports resolve there
 # too. Doing it in the worker also meant hardcoding the package directory name,
 # which broke as soon as the package was not called l2dprobe.
 try:
-    from ..l2dprobe.backend import Live2DBackend, ensure_display
-    from ..l2dprobe.motions import band_of, physics_params
+    from ...l2dprobe.backend import Live2DBackend, ensure_display
+    from ...l2dprobe.motions import band_of, physics_params
 except ImportError:
     if PKG_DIR not in sys.path:
         sys.path.insert(0, PKG_DIR)

@@ -32,8 +32,8 @@ does the opposite and loads the rig intact, because secondary motion is most of
 what makes the result look alive.
 
 Expressive sources, one per run:
-  --ckpt prior.pt        deterministic next-frame prior (flow.prior)
-  --ckpt flowprior.pt    flow-matching prior (flow.flowprior --save), sampled
+  --ckpt prior.pt        deterministic next-frame prior (flow.legacy.prior)
+  --ckpt flowprior.pt    flow-matching prior (flow.legacy.flowprior --save), sampled
                          a chunk at a time; --seed picks the noise
   --events stats.json    event scheduler (flow.events, fitted --fit): gaze,
                          head, body and brow roles as fixate/saccade/hold
@@ -128,9 +128,9 @@ def _prior():
     except ImportError as exc:  # pragma: no cover
         raise SystemExit(f"needs pytorch: {exc}") from exc
     try:
-        from .prior import Prior
+        from .legacy.prior import Prior
     except ImportError:
-        from flow.prior import Prior
+        from flow.legacy.prior import Prior
     return torch, Prior
 
 
@@ -559,7 +559,7 @@ def main(argv=None) -> int:
                     help="extra comma-separated parameter ids to hold still")
     ap.add_argument("--ckpt", default=None,
                     help="prior checkpoint: the deterministic prior "
-                         "(flow.prior) or a flow-matching one (flow.flowprior "
+                         "(flow.legacy.prior) or a flow-matching one (flow.legacy.flowprior "
                          "--save), told apart by their config keys; not "
                          "needed for --static/--neutral/--behaviors")
     ap.add_argument("--behaviors", default=None, metavar="STATS.json",
@@ -734,9 +734,9 @@ def main(argv=None) -> int:
                 ap.error("--anchor/--reseed apply to the deterministic prior "
                          "only")
             try:
-                from .flowprior import FlowStream, load_checkpoint
+                from .legacy.flowprior import FlowStream, load_checkpoint
             except ImportError:
-                from flow.flowprior import FlowStream, load_checkpoint
+                from flow.legacy.flowprior import FlowStream, load_checkpoint
             device = ("cuda" if torch.cuda.is_available() else "cpu") \
                 if a.device == "auto" else a.device
             fmodel, cfg = load_checkpoint(a.ckpt, device)

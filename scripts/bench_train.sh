@@ -29,7 +29,7 @@ for b in $BATCHES; do
     for t in $THREADS_LIST; do
         s=$(date +%s.%N)
         # --holdout NONE matches no rig, so no held-out evaluation runs.
-        python -m flow.flowprior "$CLIPS" --rigs "$RIGS" --holdout NONE \
+        python -m flow.legacy.flowprior "$CLIPS" --rigs "$RIGS" --holdout NONE \
             --epochs 1 --steps "$STEPS" --batch "$b" --threads "$t" \
             --base hold > /dev/null 2>&1
         e=$(date +%s.%N)

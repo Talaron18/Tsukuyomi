@@ -20,7 +20,13 @@ targets=(preview_* chk_* dbg rigcheck_* tmp
          # Cross-validation logs of the flow prior (abandoned for events).
          fold_*.log
          # Leftover listings and an archive of out/ (out/ itself is kept).
-         tree_output.txt project_structure.txt out.tar.gz)
+         tree_output.txt project_structure.txt out.tar.gz
+         # First clip set (clips2/ replaced it) and the synthetic render
+         # dataset of the original phase 1 (flow/legacy/render_dataset.py).
+         clips data synth manifest*.json
+         # Checkpoints of the abandoned priors; fp.pt stays, phase2_eval.sh
+         # still renders the flow source from it.
+         prior_*.pt fp_damped.pt flowprior_log.json)
 
 # Rendered frames: every render/ folder keeps its preview.mp4; the PNGs it
 # was encoded from are 20k+ files under runs/ and 12k under vids/.

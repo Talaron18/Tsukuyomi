@@ -1,5 +1,5 @@
 """
-flow.flowprior: conditioning slot, seeding and checkpoints. Needs torch.
+flow.legacy.flowprior: conditioning slot, seeding and checkpoints. Needs torch.
 
 cond_dim=0 must be the unconditioned model exactly (same parameters, same
 output), so old checkpoints load and nothing changes for callers that never
@@ -17,7 +17,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from flow.flowprior import (FlowPrior, FlowStream, load_checkpoint,  # noqa: E402
+from flow.legacy.flowprior import (FlowPrior, FlowStream, load_checkpoint,  # noqa: E402
                             save_checkpoint)
 
 DDIM, P, CTX, CHUNK = 8, 5, 6, 4
@@ -95,8 +95,8 @@ def test_stream_keep_commits_part_of_each_chunk():
 
 # --- smooth chunk basis and context noise --------------------------------
 
-from flow import flowprior as fp  # noqa: E402
-from flow.flowprior import chunk_basis, perturb_context  # noqa: E402
+from flow.legacy import flowprior as fp  # noqa: E402
+from flow.legacy.flowprior import chunk_basis, perturb_context  # noqa: E402
 
 
 def test_basis_round_trip_and_low_frequency():

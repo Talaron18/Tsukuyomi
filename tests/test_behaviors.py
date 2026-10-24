@@ -85,7 +85,7 @@ def test_fit_skips_holdout(tmp_path):
 
 
 def test_abtest_hides_sources_and_tallies(tmp_path):
-    from flow.abtest import make, tally
+    from flow.legacy.abtest import make, tally
     vids = []
     for src in ("beh", "flow", "static"):
         p = tmp_path / f"{src}.mp4"

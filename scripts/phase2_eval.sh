@@ -98,7 +98,7 @@ if has fit; then
         2>&1 | tee "${EVENTS%.json}.fit.txt"
 fi
 if has train; then
-    python -m flow.flowprior clips2 --rigs rigs --holdout "$HOLDOUT" \
+    python -m flow.legacy.flowprior clips2 --rigs rigs --holdout "$HOLDOUT" \
         --epochs "$EPOCHS" --steps 200 --threads "${THREADS:-$(physical_cores)}" \
         --batch "${BATCH:-16}" --device auto \
         --base "$BASE" --rollout-seconds "$SECS" \
@@ -190,7 +190,7 @@ if has ab; then
             [[ -f "$v" ]] && items+=("$R/$x=$v")
         done
     done
-    python -m flow.abtest make ab "${items[@]}"
+    python -m flow.legacy.abtest make ab "${items[@]}"
     echo "Judge ab/index.html, write ab/judgments.txt, then:"
-    echo "  python -m flow.abtest tally ab"
+    echo "  python -m flow.legacy.abtest tally ab"
 fi
