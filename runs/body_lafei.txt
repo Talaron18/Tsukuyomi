@@ -1,21 +1,22 @@
 [live2d] third-party wrapper (0.7.0.4), not affiliated with Live2D Inc.
+body: side naming drawables screen [1, 11], params screen [0, 10] (agree, disagree with geometry)
 body: 100 drawables, 81 live params, 1 arm variant(s), held ['PARAM_ALL_moveZ', 'PARAM_bodyS', 'PARAM_moveX', 'PARAM_moveY']
-  variant rest: 34 params move it, 27 interaction pairs
+  variant rest: 28 params move it, 27 interaction pairs
 body -> rigs/lafei.body.json
-D_FX_12                  PartFx                 unclear      unclear 
-D_FX_10                  PartFx                 unclear      unclear   guess head
-D_FX_09                  PartFx                 unclear      unclear   guess head
-D_FX_08                  PartFx                 unclear      unclear   guess head
-D_FX_07                  PartFx                 unclear      unclear 
-D_FX_06                  PartFx                 unclear      unclear 
-D_FX_05                  PartFx                 unclear      unclear 
-D_FX_11                  PartFx                 unclear      unclear 
-D_FX_04                  PartFx                 unclear      unclear 
-D_FX_03                  PartFx                 unclear      unclear 
-D_FX_02                  PartFx                 unclear      unclear 
-D_FX_01                  PartFx                 unclear      unclear 
-D_FX_00                  PartFx                 unclear      unclear   guess head
-D_BODY_70                PartFx                 torso        high    torso<-D_BODY_70
+D_FX_12                  PartFx                 effect       high    effect<-D_FX_12
+D_FX_10                  PartFx                 effect       high    effect<-D_FX_10
+D_FX_09                  PartFx                 effect       high    effect<-D_FX_09
+D_FX_08                  PartFx                 effect       high    effect<-D_FX_08
+D_FX_07                  PartFx                 effect       high    effect<-D_FX_07
+D_FX_06                  PartFx                 effect       high    effect<-D_FX_06
+D_FX_05                  PartFx                 effect       high    effect<-D_FX_05
+D_FX_11                  PartFx                 effect       high    effect<-D_FX_11
+D_FX_04                  PartFx                 effect       high    effect<-D_FX_04
+D_FX_03                  PartFx                 effect       high    effect<-D_FX_03
+D_FX_02                  PartFx                 effect       high    effect<-D_FX_02
+D_FX_01                  PartFx                 effect       high    effect<-D_FX_01
+D_FX_00                  PartFx                 effect       high    effect<-D_FX_00
+D_BODY_70                PartFx                 effect       high    effect<-PartFx
 D_BODY_71                Part01Body             torso        high    torso<-D_BODY_71
 D_BODY_39                Part01Body             torso        high    torso<-D_BODY_39
 D_BODY_38                Part01Body             torso        high    torso<-D_BODY_38
@@ -53,11 +54,11 @@ D_BODY_36                Part01Body             torso        high    torso<-D_BO
 D_BODY_35                Part01Body             torso        high    torso<-D_BODY_35
 D_BODY_34                Part01Body             torso        high    torso<-D_BODY_34
 D_BODY_17                Part01Body             torso        high    torso<-D_BODY_17
-arm_L2                   Part01Body             upper_arm.L  high    arm<-arm_L2; not moved by wrist/elbow params; side from name
-arm_L1                   Part01Body             upper_arm.L  high    arm<-arm_L1; not moved by wrist/elbow params; side from name
+arm_L2                   Part01Body             upper_arm.R  high    arm<-arm_L2; not moved by wrist/elbow params; side from name
+arm_L1                   Part01Body             upper_arm.R  high    arm<-arm_L1; not moved by wrist/elbow params; side from name
 D_BODY_11                Part01Body             torso        high    torso<-D_BODY_11
-arm_R2                   Part01Body             upper_arm.R  high    arm<-arm_R2; not moved by wrist/elbow params; side from name
-arm_R1                   Part01Body             upper_arm.R  high    arm<-arm_R1; not moved by wrist/elbow params; side from name
+arm_R2                   Part01Body             upper_arm.L  high    arm<-arm_R2; not moved by wrist/elbow params; side from name
+arm_R1                   Part01Body             upper_arm.L  high    arm<-arm_R1; not moved by wrist/elbow params; side from name
 body                     Part01Body             torso        high    torso<-body
 bodyH                    Part01Body             torso        high    torso<-bodyH
 leg_L                    Part01Body             legs         high    legs<-leg_L
@@ -84,93 +85,99 @@ D_MOUTH_01               Part01Mouth001         mouth        high    mouth<-D_MO
 D_MOUTH_00               Part01Mouth001         mouth        high    mouth<-D_MOUTH_00
 D_BROW_01                Part01Brow001          brow.L       medium  brow<-D_BROW_01; side from position
 D_BROW_00                Part01Brow001          brow.R       medium  brow<-D_BROW_00; side from position
-face_browL1              Part01Brow001          brow.L       low     brow<-face_browL1; name says L, motion R; side from name
-face_browL               Part01Brow001          brow.L       high    brow<-face_browL; side from name
-face_eye_pupilR          Part01EyeBall001       eye.R        high    eye<-face_eye_pupilR; side from name
-face_eye_pupilL          Part01EyeBall001       eye.L        high    eye<-face_eye_pupilL; side from name
-face_eye_highlightR      Part01Eye001           eye.R        high    eye<-face_eye_highlightR; side from name
-face_eye_eyelidDR        Part01Eye001           eye.R        high    eye<-face_eye_eyelidDR; side from motion
-face_eye_whiteballR      Part01Eye001           eye.R        high    eye<-face_eye_whiteballR; side from name
+face_browL1              Part01Brow001          brow.R       low     brow<-face_browL1; name says R, motion L; side from name; lies on the L side
+face_browL               Part01Brow001          brow.R       high    brow<-face_browL; side from name
+face_eye_pupilR          Part01EyeBall001       eye.L        high    eye<-face_eye_pupilR; side from name
+face_eye_pupilL          Part01EyeBall001       eye.R        high    eye<-face_eye_pupilL; side from name
 [live2d.v3] Cubism Native, Python 3.10.20
 [live2d.v3] official: https://www.live2d.com/sdk/download/native/
 Live2D Cubism SDK Core Version 5.1.0
-face_eye_eyelidTR        Part01Eye001           eye.R        high    eye<-face_eye_eyelidTR; side from motion
-face_eye_highlightL      Part01Eye001           eye.L        high    eye<-face_eye_highlightL; side from name
-face_eye_eyelidDL        Part01Eye001           eye.L        high    eye<-face_eye_eyelidDL; side from motion
-face_eye_whiteballL      Part01Eye001           eye.L        high    eye<-face_eye_whiteballL; side from name
-face_eye_eyelidTL        Part01Eye001           eye.L        high    eye<-face_eye_eyelidTL; side from motion
+face_eye_highlightR      Part01Eye001           eye.L        high    eye<-face_eye_highlightR; side from name
+face_eye_eyelidDR        Part01Eye001           eye.L        high    eye<-face_eye_eyelidDR; side from motion
+face_eye_whiteballR      Part01Eye001           eye.L        high    eye<-face_eye_whiteballR; side from name
+face_eye_eyelidTR        Part01Eye001           eye.L        high    eye<-face_eye_eyelidTR; side from motion
+face_eye_highlightL      Part01Eye001           eye.R        high    eye<-face_eye_highlightL; side from name
+face_eye_eyelidDL        Part01Eye001           eye.R        high    eye<-face_eye_eyelidDL; side from motion
+face_eye_whiteballL      Part01Eye001           eye.R        high    eye<-face_eye_whiteballL; side from name
+face_eye_eyelidTL        Part01Eye001           eye.R        high    eye<-face_eye_eyelidTL; side from motion
 face_blushR              Part01Face001          cheek        high    cheek<-face_blushR
 face_blushL              Part01Face001          cheek        high    cheek<-face_blushL
 face_base                Part01Face001          face         high    face<-face_base
-TouchHead                Part                   face         high    head<-TouchHead
-TouchBody                Part                   torso        high    torso<-TouchBody
-TouchSpecial             Part                   unclear      unclear 
+TouchHead                Part                   hitarea      high    hitarea<-TouchHead
+TouchBody                Part                   hitarea      high    hitarea<-TouchBody
+TouchSpecial             Part                   hitarea      high    hitarea<-TouchSpecial
 body: unit 1 hu = 4.3998 model units; x toward the character's left, y up; origin chin
-landmarks (hu): chin [0.0, 0.0], head [0.0009, 0.4942], shoulder.L [-0.222, -0.0077], shoulder.R [0.2785, -0.0278], shoulder.y -0.0177, chest [0.0325, -0.53], hand.L [-0.4753, -1.1486], hand.R [0.5287, -1.1027]
+side naming: drawables screen, params screen (votes agree/disagree with rest geometry: [1, 11], [0, 10]); sides below are the character's
+landmarks (hu): chin [0.0, 0.0], head [0.0009, 0.4933], shoulder.L [0.279, -0.0278], shoulder.R [-0.2216, -0.0077], shoulder.y -0.0177, chest [0.0329, -0.53], hand.L [0.5291, -1.1027], hand.R [-0.4748, -1.1486]
 regions:
-  brow.L         3 drawables    54 verts  [high 1, low 1, medium 1]
-  brow.R         1 drawables    22 verts  [medium 1]
+  brow.L         1 drawables    22 verts  [medium 1]
+  brow.R         3 drawables    54 verts  [high 1, low 1, medium 1]
   cheek          2 drawables    21 verts  [high 2]
-  eye.L          5 drawables   135 verts  [high 5]
-  eye.R          5 drawables   121 verts  [high 5]
-  face           8 drawables   248 verts  [high 8]
+  effect        14 drawables   141 verts  [high 14]
+  eye.L          5 drawables   121 verts  [high 5]
+  eye.R          5 drawables   135 verts  [high 5]
+  face           7 drawables   244 verts  [high 7]
   hair           9 drawables   447 verts  [high 9]
+  hitarea        3 drawables    12 verts  [high 3]
   legs           2 drawables    42 verts  [high 2]
   mouth          3 drawables    80 verts  [high 3]
   neck           1 drawables    29 verts  [high 1]
   nose           1 drawables    10 verts  [high 1]
-  torso         42 drawables  1292 verts  [high 42]
-  unclear       14 drawables   123 verts  [unclear 14]
-  upper_arm.L    2 drawables   131 verts  [high 2]
-  upper_arm.R    2 drawables   140 verts  [high 2]
+  torso         40 drawables  1266 verts  [high 40]
+  upper_arm.L    2 drawables   140 verts  [high 2]
+  upper_arm.R    2 drawables   131 verts  [high 2]
 held: PARAM_ALL_moveZ, PARAM_bodyS, PARAM_moveX, PARAM_moveY
-switch: PARAM_Arm_LB_Agle, PARAM_Arm_RB_Agle, PARAM_Hand_L1, PARAM_Hand_L2, PARAM_Hand_L3, PARAM_Hand_R1, PARAM_Hand_R2, PARAM_Hand_R3, PARAM_Smile_eye, PARAM_arm_LFX, PARAM_beixin_FX, PARAM_deng_moveZ, PARAM_ear_FX, PARAM_eyeFX, PARAM_hand_FX, PARAM_wall_FX, PARAM_wall_X
+switch: PARAM_Arm_LB_Agle, PARAM_Arm_RB_Agle, PARAM_Hand_L1, PARAM_Hand_L2, PARAM_Hand_L3, PARAM_Hand_R1, PARAM_Hand_R2, PARAM_Hand_R3, PARAM_Smile_eye, PARAM_deng_moveZ
 physics: PARAM_Hairfront_vive
+effects (never variants or solved; set them on purpose): PARAM_FXmouth, PARAM_arm_LFX, PARAM_beixin_FX, PARAM_deng_moveX, PARAM_deng_moveY, PARAM_deng_qiehuan, PARAM_dengguang, PARAM_dengguang_FX, PARAM_dengxianshi, PARAM_ear_FX, PARAM_eyeFX, PARAM_face_FX, PARAM_handFX_move, PARAM_handFX_moveY, PARAM_handFX_moveZ, PARAM_hand_FX, PARAM_kaideng, PARAM_wall_FX, PARAM_wall_X, PARAM_wall_Y; 14 effect drawables
 variants: [0] rest
 what moves each region (variant [0] rest; max |shift| hu / roll deg / scale %):
   head         ParamAngleZ 0.09/15/0; ParamBodyAngleZ 0.21/10/0; ParamAngleX 0.09/0/1; ParamAngleY 0.05/1/2; PARAM_Hairfront_vive 0.01/1/0; ParamBreath 0.02/0/0
   face         ParamAngleZ 0.09/15/0; ParamBodyAngleZ 0.21/10/0; ParamAngleX 0.08/1/1; ParamAngleY 0.05/1/1; PARAM_Hairfront_vive 0.01/1/0; ParamBreath 0.02/0/0
-  eye.L        ParamAngleZ 0.08/15/0; ParamBodyAngleZ 0.20/10/0; ParamAngleX 0.14/3/15; ParamAngleY 0.06/2/4; ParamEyeLOpen 0.02/1/6; ParamBreath 0.02/0/0
-  eye.R        ParamAngleZ 0.08/15/0; ParamBodyAngleZ 0.20/10/0; ParamAngleX 0.12/2/8; ParamAngleY 0.06/2/5; ParamEyeROpen 0.02/3/6; PARAM_Angry_eye 0.00/1/1
-  brow.L       ParamAngleZ 0.10/15/0; ParamBodyAngleZ 0.22/10/0; ParamAngleX 0.13/4/3; ParamBrowRY 0.02/4/0; ParamBrowLY 0.01/4/0; ParamAngleY 0.08/1/6
+  eye.L        ParamAngleZ 0.08/15/0; ParamBodyAngleZ 0.20/10/0; ParamAngleX 0.12/2/8; ParamAngleY 0.06/2/5; ParamEyeROpen 0.02/3/6; PARAM_Angry_eye 0.00/1/1
+  eye.R        ParamAngleZ 0.08/15/0; ParamBodyAngleZ 0.20/10/0; ParamAngleX 0.14/3/15; ParamAngleY 0.06/2/4; ParamEyeLOpen 0.02/1/6; ParamBreath 0.02/0/0
+  brow.R       ParamAngleZ 0.10/15/0; ParamBodyAngleZ 0.22/10/0; ParamAngleX 0.13/4/3; ParamBrowRY 0.02/4/0; ParamBrowLY 0.01/4/0; ParamAngleY 0.08/1/6
   mouth        ParamAngleZ 0.02/15/0; ParamBodyAngleZ 0.17/10/0; ParamAngleX 0.12/4/11; PARAM_Mouth_Angle 0.01/7/0; ParamAngleY 0.06/1/4; ParamBreath 0.02/0/0
   neck         ParamBodyAngleZ 0.16/10/0; ParamBreath 0.04/0/6; ParamAngleX 0.01/0/6
-  torso        PARAM_Arm_LT_Angle 0.20/18/29; ParamBodyAngleZ 0.01/10/0; PARAM_Arm_RT_Angle 0.06/4/10; ParamBreath 0.07/0/0; PARAM_Arm_L_hand 0.01/1/1; PARAM_Arm_R_hand 0.01/1/1
+  torso        PARAM_Arm_LT_Angle 0.20/18/29; ParamBodyAngleZ 0.01/10/0; PARAM_Arm_RT_Angle 0.06/5/10; ParamBreath 0.07/0/0; PARAM_Arm_L_hand 0.01/1/1; PARAM_Arm_R_hand 0.01/1/1
   legs         ParamBodyAngleZ 0.03/4/1; ParamBreath 0.03/0/2; ParamBodyAngleX 0.01/0/1
-  arm.L        PARAM_Arm_LT_Angle 0.64/78/1; ParamBodyAngleZ 0.07/10/0; ParamBreath 0.06/0/0; ParamBodyAngleX 0.03/0/0
-  arm.R        PARAM_Arm_RT_Angle 0.25/25/1; ParamBodyAngleZ 0.07/10/0; ParamBreath 0.06/0/0; ParamBodyAngleX 0.03/0/0
-  upper_arm.L  PARAM_Arm_LT_Angle 0.64/78/1; ParamBodyAngleZ 0.07/10/0; ParamBreath 0.06/0/0; ParamBodyAngleX 0.03/0/0
-  upper_arm.R  PARAM_Arm_RT_Angle 0.25/25/1; ParamBodyAngleZ 0.07/10/0; ParamBreath 0.06/0/0; ParamBodyAngleX 0.03/0/0
-  hand.L       PARAM_Arm_LT_Angle 1.35/78/0; ParamBodyAngleZ 0.10/10/0; ParamBreath 0.06/0/0; ParamBodyAngleX 0.03/0/0
-  hand.R       PARAM_Arm_RT_Angle 0.45/24/0; ParamBodyAngleZ 0.10/10/0; ParamBreath 0.06/0/0; ParamBodyAngleX 0.03/0/0
+  arm.L        PARAM_Arm_RT_Angle 0.25/25/1; ParamBodyAngleZ 0.07/10/0; ParamBreath 0.06/0/0; ParamBodyAngleX 0.03/0/0
+  arm.R        PARAM_Arm_LT_Angle 0.64/78/1; ParamBodyAngleZ 0.07/10/0; ParamBreath 0.06/0/0; ParamBodyAngleX 0.03/0/0
+  upper_arm.L  PARAM_Arm_RT_Angle 0.25/25/1; ParamBodyAngleZ 0.07/10/0; ParamBreath 0.06/0/0; ParamBodyAngleX 0.03/0/0
+  upper_arm.R  PARAM_Arm_LT_Angle 0.64/78/1; ParamBodyAngleZ 0.07/10/0; ParamBreath 0.06/0/0; ParamBodyAngleX 0.03/0/0
+  hand.L       PARAM_Arm_RT_Angle 0.45/24/0; ParamBodyAngleZ 0.10/10/0; ParamBreath 0.06/0/0; ParamBodyAngleX 0.03/0/0
+  hand.R       PARAM_Arm_LT_Angle 1.35/78/0; ParamBodyAngleZ 0.10/10/0; ParamBreath 0.06/0/0; ParamBodyAngleX 0.03/0/0
   hair         ParamBodyAngleZ 0.17/10/0; ParamAngleZ 0.08/11/4; ParamAngleY 0.08/1/4; ParamAngleX 0.02/3/5; PARAM_Hairfront_vive 0.04/1/0; ParamBreath 0.02/0/0
+reach by side (variant [0]; the character's sides, each variable alone):
+  hand.L  rest (0.529, -1.103) -> x [0.440, 0.945], y [-1.179, -0.751] hu; mainly PARAM_Arm_RT_Angle
+  hand.R  rest (-0.475, -1.149) -> x [-1.422, -0.372], y [-1.227, 0.098] hu; mainly PARAM_Arm_LT_Angle
 canonical variables (variant [0]): rest -> range
   head.x              0.001 -> [-0.370, 0.371] hu
-  head.y              0.494 -> [0.453, 0.532] hu
-  head.roll           0.000 -> [-35.371, 35.703] deg
-  neck.x              0.019 -> [-0.140, 0.172] hu
+  head.y              0.493 -> [0.364, 0.532] hu
+  head.roll           0.000 -> [-35.455, 35.777] deg
+  neck.x              0.020 -> [-0.140, 0.172] hu
   neck.roll           0.000 -> [-9.617, 9.600] deg
-  torso.x             0.024 -> [-0.112, 0.100] hu
-  torso.y            -0.835 -> [-0.863, -0.626] hu
-  torso.roll          0.000 -> [-27.971, 15.555] deg
-  arm.L.x            -0.361 -> [-0.872, -0.295] hu
-  arm.L.y            -0.609 -> [-0.676, 0.004] hu
-  arm.L.roll          0.000 -> [-87.460, 9.600] deg
-  arm.R.x             0.408 -> [0.351, 0.667] hu
-  arm.R.y            -0.648 -> [-0.711, -0.441] hu
-  arm.R.roll          0.000 -> [-9.200, 34.210] deg
-  upper_arm.L.x      -0.361 -> [-0.872, -0.295] hu
-  upper_arm.L.y      -0.609 -> [-0.676, 0.004] hu
-  upper_arm.L.roll    0.000 -> [-87.460, 9.600] deg
-  upper_arm.R.x       0.408 -> [0.351, 0.667] hu
-  upper_arm.R.y      -0.648 -> [-0.711, -0.441] hu
-  upper_arm.R.roll    0.000 -> [-9.200, 34.210] deg
-  hand.L.x           -0.475 -> [-1.423, -0.372] hu
-  hand.L.y           -1.149 -> [-1.227, 0.098] hu
-  hand.L.roll         0.000 -> [-87.200, 9.600] deg
-  hand.R.x            0.529 -> [0.439, 0.944] hu
-  hand.R.y           -1.103 -> [-1.179, -0.751] hu
-  hand.R.roll         0.000 -> [-9.200, 33.690] deg
+  torso.x             0.024 -> [-0.113, 0.101] hu
+  torso.y            -0.835 -> [-0.863, -0.625] hu
+  torso.roll          0.000 -> [-28.183, 15.624] deg
+  arm.L.x             0.409 -> [0.352, 0.668] hu
+  arm.L.y            -0.648 -> [-0.711, -0.441] hu
+  arm.L.roll          0.000 -> [-9.200, 34.210] deg
+  arm.R.x            -0.360 -> [-0.872, -0.295] hu
+  arm.R.y            -0.609 -> [-0.676, 0.004] hu
+  arm.R.roll          0.000 -> [-87.460, 9.600] deg
+  upper_arm.L.x       0.409 -> [0.352, 0.668] hu
+  upper_arm.L.y      -0.648 -> [-0.711, -0.441] hu
+  upper_arm.L.roll    0.000 -> [-9.200, 34.210] deg
+  upper_arm.R.x      -0.360 -> [-0.872, -0.295] hu
+  upper_arm.R.y      -0.609 -> [-0.676, 0.004] hu
+  upper_arm.R.roll    0.000 -> [-87.460, 9.600] deg
+  hand.L.x            0.529 -> [0.440, 0.945] hu
+  hand.L.y           -1.103 -> [-1.179, -0.751] hu
+  hand.L.roll         0.000 -> [-9.200, 33.690] deg
+  hand.R.x           -0.475 -> [-1.422, -0.372] hu
+  hand.R.y           -1.149 -> [-1.227, 0.098] hu
+  hand.R.roll         0.000 -> [-87.200, 9.600] deg
   brow.L.lift         0.000 -> [-1.000, 1.000] unit
   brow.L.slide        0.000 -> [-1.000, 1.000] unit
   brow.R.lift         0.000 -> [-1.000, 1.000] unit
@@ -188,3 +195,50 @@ canonical variables (variant [0]): rest -> range
   torso.pitch         0.000 -> [-10.000, 10.000] deg
   torso.tilt         -0.000 -> [-10.000, 10.000] deg
   torso.yaw           0.000 -> [-10.000, 10.000] deg
+[live2d.v3] Cubism Native, Python 3.10.20
+[live2d.v3] official: https://www.live2d.com/sdk/download/native/
+Live2D Cubism SDK Core Version 5.1.0
+[INFO]  [Pal] Init Shader Dir: /home/main/venv/hongenv/lib/python3.11/site-packages/live2d/v3/
+[INFO]  [CSM][I]Live2D Cubism Core version: 05.01.0000 (83951616)
+
+[INFO]  [CSM][I]CubismFramework::StartUp() is complete.
+
+[INFO]  [CSM][I]CubismFramework::Initialize() is complete.
+
+[INFO]  allocate: cpp Model(at=0x39b58860)
+[INFO]  load modelSetting: /home/main/yachiyo/live2d-models/live2d_3/model/Azue Lane(JP)/lafei/lafei.probe.model3.json
+[INFO]  create model: lafei.moc3
+Live2D Cubism SDK Core Version 5.1.0
+[INFO]  deallocate: cpp Model(at=0x39b58860)
+[INFO]  deallocate: PyModelObject(at=0x7f5a38269950)
+variant [0] rest  cost 2.726
+  hand.R.y       target   -0.018 got   -0.019 err -0.001 hu ok
+  ok: all 1 targets within tolerance
+  params: PARAM_Arm_LT_Angle=10.000, ParamBodyAngleZ=4.458
+[live2d] third-party wrapper (0.7.0.4), not affiliated with Live2D Inc.
+  exact (Core): hand.R.y -0.016
+render -> runs/body_lafei_handR.png
+[live2d.v3] Cubism Native, Python 3.10.20
+[live2d.v3] official: https://www.live2d.com/sdk/download/native/
+Live2D Cubism SDK Core Version 5.1.0
+[INFO]  [Pal] Init Shader Dir: /home/main/venv/hongenv/lib/python3.11/site-packages/live2d/v3/
+[INFO]  [CSM][I]Live2D Cubism Core version: 05.01.0000 (83951616)
+
+[INFO]  [CSM][I]CubismFramework::StartUp() is complete.
+
+[INFO]  [CSM][I]CubismFramework::Initialize() is complete.
+
+[INFO]  allocate: cpp Model(at=0x1d291660)
+[INFO]  load modelSetting: /home/main/yachiyo/live2d-models/live2d_3/model/Azue Lane(JP)/lafei/lafei.probe.model3.json
+[INFO]  create model: lafei.moc3
+Live2D Cubism SDK Core Version 5.1.0
+[INFO]  deallocate: cpp Model(at=0x1d291660)
+[INFO]  deallocate: PyModelObject(at=0x7fedb6161a30)
+variant [0] rest  cost 1349.561
+  hand.L.y       target   -0.018 got   -0.751 err -0.734 hu MISS
+      alone it reaches [-1.179, -0.751] in this variant; the other side's hand.R.y reaches [-1.227, 0.098]
+  MISS: 1 of 1 targets outside tolerance (rendering the best effort)
+  params: PARAM_Arm_RT_Angle=10.000, ParamBodyAngleZ=-10.000
+[live2d] third-party wrapper (0.7.0.4), not affiliated with Live2D Inc.
+  exact (Core): hand.L.y -0.751
+render -> runs/body_lafei_handL.png
