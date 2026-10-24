@@ -7,7 +7,8 @@ From the repo root:
 
 - `test_runtime_units.py`, `test_motions.py`, `test_score.py`,
   `test_behaviors.py`, `test_events.py`, `test_director.py`,
-  `test_speech.py`, `test_voicevox.py`, `test_mouth.py`, `test_live.py` are pure numpy: no GL, no torch, no sample rigs. They
+  `test_speech.py`, `test_voicevox.py`, `test_mouth.py`, `test_live.py`,
+  `test_pose.py` are pure numpy: no GL, no torch, no sample rigs. They
   always run (`test_live.py` starts its web server on an ephemeral
   127.0.0.1 port; one of its checks replays Hiyori through the stream when
   `TSUKUYOMI_SAMPLES` is set). `test_flowprior.py` needs torch and skips without it.

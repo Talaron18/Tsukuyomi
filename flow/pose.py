@@ -760,6 +760,7 @@ def solve_poses(bm, acts, current=None, parts=None, core=None, log=print,
     parts0 = dict(parts if parts is not None else
                   {**bm.blob.get("rest_parts", {}),
                    **bm.variants[bm.match_variant(base0)]["parts"]})
+    base_k = bm.match_variant(base0, parts0)
     out = []
     order = sorted((i for i, x in enumerate(acts) if x.get("tag") == POSE),
                    key=lambda i: float(acts[i]["t"]))
@@ -810,10 +811,15 @@ def solve_poses(bm, acts, current=None, parts=None, core=None, log=print,
                 amp = max(amp, d)
         step = sorted(p for p in v["switches"])
         new_parts = {}
-        if k != cur_k:
+        if k != cur_k or k != base_k:
+            # Off the rest drawing, the pose carries its arm variant even
+            # when an earlier pose switched to it: else that pose's release
+            # swapped Hiyori's arms back to the hanging drawing in the
+            # middle of this one's hold (her wave-and-point line).
             played.update({p: float(x) for p, x in v["switches"].items()})
             new_parts = {p: float(x) for p, x in v["parts"].items()}
-            amp = max(amp, 0.5)
+            if k != cur_k:
+                amp = max(amp, 0.5)
         else:
             step = []
         step += sorted(p for p in played if bm.params[p]["role"] in

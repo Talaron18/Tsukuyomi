@@ -124,3 +124,33 @@ training is the route.
 
 E1 also helps the current pipeline: gesture descriptions can say "raises the
 right hand to face height" from measurement instead of naming parameters.
+
+## E2 as built (2026-10)
+
+`flow/pose.py`; `python -m flow.director --mode body` (or `--body-targets`)
+offline, `python -m flow.live --mode body` live, `scripts/body_vs_tags.sh`
+for the comparison.
+
+- **Prompt**: generated from `rigs/<rig>.body.json` alone (byte-stable per
+  file): parts, the character's own left and right, landmarks, every offered
+  variable with its rest and reachable range (union over the drawn arm
+  poses, so Hiyori's hands read "[-2.24, -1.66] or [-0.32, -0.02]"), reach
+  per hand per drawn pose in words, and what cannot be done (lafei's left
+  hand cannot reach shoulder height; Hiyori's hands cannot stop between the
+  hanging and the raised drawing). No parameter ids. The pose now goes in
+  each user message; a picture of the current frame too with
+  `--body-image` on Anthropic, SiliconFlow VLMs or Ollama (DeepSeek chat is
+  text only and gets none).
+- **Output**: `[pose {"hand.R.y": "@shoulder.y", "head.tilt": 8}]` inline,
+  optional `"dur"` / `"hold"`; plus `[blink]` and `[pause:x]`. Pure body:
+  face shapes are canonical variables, a blink is the autonomic layer's
+  transient, gestures would hand the motion back to authored clips (the
+  baseline). Markers time like tags (words, moras, sentence streaming).
+- **Play**: solved with the prior toward the pose the body is in; only
+  what moves is played; minimum-jerk move, hold, release back into the
+  idle, over the idle frame in both `runtime` and `stream`; arm variant
+  parts swap at the midpoint; pose tokens take their role groups with
+  `director.merge`'s semantics. Tag mode is unchanged byte for byte.
+- **Feedback**: per target, the forward model's value and the Core's own
+  geometry go to `actions.json` / the live log; `--body-check` runs one
+  offline correction round (`check/check.json`).

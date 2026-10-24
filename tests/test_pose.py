@@ -169,11 +169,13 @@ def test_solve_reports_reach_on_what_is_played(hiyori):
     assert a["params"]["ParamAngleZ"] == pytest.approx(-8.0, abs=0.1)
     # Tiny prior nudges (BodyAngleX 0.15 % of its span) stay with the idle.
     assert "ParamBodyAngleX" not in a["params"]
-    # A nod: the second stroke waits for the first, the head-only poses
-    # keep the arm pose the body is in (no parts).
+    # A nod: the second stroke waits for the first. The head-only poses
+    # keep the arm pose the body is in, and carry it: the first pose's
+    # release must not swap the arms back under them.
     assert n1["start"] == pytest.approx(0.6)
     assert n2["start"] == pytest.approx(0.85)
-    assert n1["parts"] == {} and n1["variant_name"] == "PartArmB"
+    assert n1["variant_name"] == "PartArmB" and n1["parts"] == a["parts"]
+    assert n1["parts_from"] == a["parts"]          # no swap: already there
     # Between the hanging and the raised arm there is nothing: reported,
     # with where it does reach.
     assert not miss["ok"] and not miss["report"]["hand.L.y"]["ok"]
@@ -410,7 +412,9 @@ def test_director_body_mode_end_to_end(tmp_path, capsys):
     assert a["seconds"] >= pz.end_time(solved)
     blob = json.loads((out / "tokens.json").read_text())
     pt = [k for k in blob["tokens"] if k["type"] == "pose"]
-    assert "arms" in pt[0]["groups"] and pt[1]["groups"] == ["head"]
+    # The head pose comes while the raised arm is held, and holds that
+    # drawing too.
+    assert "arms" in pt[0]["groups"] and pt[1]["groups"] == ["arms", "head"]
     plan = np.load(out / "plan.npz", allow_pickle=True)
     pid = list(plan["pid"])
     lb = plan["traj"][:, pid.index("ParamArmLB")]
