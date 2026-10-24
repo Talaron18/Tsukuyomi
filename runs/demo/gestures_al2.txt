@@ -1,0 +1,28 @@
+director: gesture complete [measured, same motion as home / login / mail / mission / mission_complete]: body swings back and forth; left arm moves widely; switches arm pose; 8.0 s
+director: gesture home [measured, same motion as complete / login / mail / mission / mission_complete]: body swings back and forth; left arm moves widely; switches arm pose; 8.0 s
+director: gesture idle [measured]: body swings back and forth; shoulders swing back and forth; eyes change; 8.0 s
+director: gesture login [measured, same motion as complete / home / mail / mission / mission_complete]: body swings back and forth; left arm moves widely; switches arm pose; 8.0 s
+director: gesture mail [measured, same motion as complete / home / login / mission / mission_complete]: body swings back and forth; left arm moves widely; switches arm pose; 8.0 s
+director: gesture main_1 [measured]: left arm moves; eyes move less than in the other gestures; switches left hand pose; 8.0 s
+director: gesture main_2 [measured]: left arm swings back and forth; switches left arm pose; a part switches; 8.0 s
+director: gesture main_3 [measured]: eyes swing back and forth; left arm moves widely; switches left hand pose; 8.0 s
+director: gesture mission [measured, same motion as complete / home / login / mail / mission_complete]: body swings back and forth; left arm moves widely; switches arm pose; 8.0 s
+director: gesture mission_complete [measured, same motion as complete / home / login / mail / mission]: body swings back and forth; left arm moves widely; switches arm pose; 8.0 s
+director: gesture touch_body [measured]: body swings back and forth; switches right arm pose; a part switches; 8.0 s, lively
+director: gesture touch_head [measured]: 2.9 s, short, lively
+director: gesture touch_special [measured]: left arm moves widely; switches arm pose; a part switches; 8.0 s, lively
+director: gesture wedding [measured]: eyes swing back and forth; left arm moves widely; switches hand pose; 8.0 s
+director: gesture complete [measured, same motion as home / mail / mission / mission_complete / touch_head]: right arm swings back and forth; unclear parts move; 6.5 s
+director: gesture home [measured, same motion as complete / mail / mission / mission_complete / touch_head]: right arm swings back and forth; unclear parts move; 6.5 s
+director: gesture idle [measured, same motion as wedding]: unclear parts move; eyes change; 8.0 s, calm
+director: gesture login [measured]: right arm moves widely; unclear parts move; 5.4 s
+director: gesture mail [measured, same motion as complete / home / mission / mission_complete / touch_head]: right arm swings back and forth; unclear parts move; 6.5 s
+director: gesture main_1 [measured]: unclear parts move; 2.2 s, short
+director: gesture main_2 [measured]: switches hand pose; 5.6 s, calm
+director: gesture main_3 [measured]: right arm moves; 3.0 s, short
+director: gesture mission [measured, same motion as complete / home / mail / mission_complete / touch_head]: right arm swings back and forth; unclear parts move; 6.5 s
+director: gesture mission_complete [measured, same motion as complete / home / mail / mission / touch_head]: right arm swings back and forth; unclear parts move; 6.5 s
+director: gesture touch_body [measured]: right arm moves widely; switches left arm pose; an effect plays; 2.7 s, short, lively
+director: gesture touch_head [measured, same motion as complete / home / mail / mission / mission_complete]: right arm swings back and forth; unclear parts move; 6.5 s
+director: gesture touch_special [measured]: switches hand pose; an effect plays; 6.1 s, calm
+director: gesture wedding [measured, same motion as idle]: unclear parts move; eyes change; 8.0 s, calm
