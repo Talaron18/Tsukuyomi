@@ -655,7 +655,10 @@ def test_azur_lane_v1_files(rig, drawables, params):
     sn = bm.blob["side_naming"]
     assert (sn["drawables"], sn["params"]) == (drawables, params)
     assert bm.landmarks["hand.R"][0] < 0 < bm.landmarks["hand.L"][0]
-    assert bm.movers("hand.R", 0, top=1)[0][0] == "PARAM_Arm_LT_Angle"
+    # The rig's screen-named L arm (upper ...LT_Angle, or ...LB_Agle once a
+    # re-measure solves it as the continuous deformer it is: xuefeng moves
+    # 9 drawables up to 7.7 model units with it, no opacity change).
+    assert bm.movers("hand.R", 0, top=1)[0][0].startswith("PARAM_Arm_L")
     assert bm.blob["declared"]["eye.L.open"][0] == "ParamEyeROpen"
     for v in bm.variants:
         assert not any("FX" in k for k in v["switches"]), v["name"]
