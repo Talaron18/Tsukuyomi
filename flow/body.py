@@ -325,6 +325,12 @@ def assign_regions(texts, rest_xy, response, params, face_x=None,
     heads = [j for j, p in enumerate(params) if p["head"]]
     arms = [j for j, p in enumerate(params) if p["arm"]]
     peak = R.max(axis=0) if n else np.zeros(len(params))
+    # Each drawable's outermost part that is not shared by all drawables
+    # (Natori: PartArmALFore's drawables and PartArmAL's are one arm).
+    chains = [list(t[1::2]) for t in texts]
+    common = set.intersection(*(set(c) for c in chains)) if chains else set()
+    group = [next((p for p in reversed(c) if p not in common), "")
+             for c in chains]
     out = []
     for d in range(n):
         leaf, ev = name_leaf(texts[d])
@@ -345,14 +351,22 @@ def assign_regions(texts, rest_xy, response, params, face_x=None,
         conf = "high" if leaf else "unclear"
         guess = ""
         if leaf in ("arm", "forearm"):
-            # Split by joint parameters of the drawable's side.
+            # Split by the joint parameters of the drawable's side that act
+            # within its own part: Hiyori's ParamHandL turns the A arm's
+            # hand and nothing in PartArmB, whose hand is not split this
+            # way (it stays "arm" and gets the distal hand).
             s = side_name or side_motion or side_pos
+            mates = [e for e in range(n) if group[e] == group[d]]
+
+            def acts(j):
+                return peak[j] > motion_floor and \
+                    R[mates, j].max() >= SPLIT * peak[j]
             wr = [j for j, p in enumerate(params) if p["arm"]
                   and p["joint"] == "wrist" and p["side"] in (s, "")
-                  and peak[j] > motion_floor]
+                  and acts(j)]
             el = [j for j, p in enumerate(params) if p["arm"]
                   and p["joint"] == "elbow" and p["side"] in (s, "")
-                  and peak[j] > motion_floor]
+                  and acts(j)]
             if any(R[d, j] >= SPLIT * peak[j] for j in wr):
                 ev += "; moved by wrist/hand param"
                 leaf = "hand"
@@ -784,6 +798,15 @@ def measure(core, info: dict, log=print) -> dict:
             if sides:
                 side_of_dim[("PartOpacity", part)] = (
                     sides.pop() if len(sides) == 1 else "")
+    # One side per pose group: Hiyori's PartArmA holds both arms, and a
+    # group whose members fell on different sides would be enumerated per
+    # side with two members shown at once.
+    for g in groups:
+        dg = [("PartOpacity", part) for part in g
+              if ("PartOpacity", part) in side_of_dim]
+        if len({side_of_dim[d] for d in dg}) > 1:
+            for d in dg:
+                side_of_dim[d] = ""
     for p in variant_switch:
         sides = {regs[d]["side"] for d in opac_switch[p]
                  if leaf_of[d] in arm_regions}
