@@ -406,9 +406,12 @@ class Live2DBackend:
                 fn(0.0)
             except TypeError:
                 continue
-            dt = self.dt
-            self._update = lambda: fn(dt)
-            self._api_report["timestep"] = f"fixed {dt:.4f}s ({label})"
+            # self.dt read at each call, not bound here: flow.live skips the
+            # GL render of a frame it cannot keep up with and sets dt to the
+            # frames that passed, so physics and pose fades still advance
+            # with the clock.
+            self._update = lambda: fn(self.dt)
+            self._api_report["timestep"] = f"fixed {self.dt:.4f}s ({label})"
             return
         self._update = self.model.Update
         self._api_report["timestep"] = "wallclock (no fixed-step API found)"
