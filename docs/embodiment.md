@@ -142,10 +142,16 @@ for the comparison.
   `--body-image` on Anthropic, SiliconFlow VLMs or Ollama (DeepSeek chat is
   text only and gets none).
 - **Output**: `[pose {"hand.R.y": "@shoulder.y", "head.tilt": 8}]` inline,
-  optional `"dur"` / `"hold"`; plus `[blink]` and `[pause:x]`. Pure body:
-  face shapes are canonical variables, a blink is the autonomic layer's
-  transient, gestures would hand the motion back to authored clips (the
-  baseline). Markers time like tags (words, moras, sentence streaming).
+  optional `"dur"` / `"hold"`; plus `[blink]` and `[pause:x]`, and the
+  rig's own motions (`[gesture:NAME]`, as tag mode offers them) unless
+  `--no-body-gestures`. Face shapes are canonical variables, a blink is the
+  autonomic layer's transient. A gesture gives way to a pose that moves
+  an arm. Markers time like tags (words, moras, sentence streaming).
+- **Prompt guidance** (after the first A/B, below): brief beats (a glance
+  away and back, a nod as a quick pair), short holds unless stressing one
+  moment, the hand that reaches highest named with how high it goes,
+  variety from reply to reply, no held half-shut eyes (they stop the
+  blinks).
 - **Play**: solved with the prior toward the pose the body is in; only
   what moves is played; minimum-jerk move, hold, release back into the
   idle, over the idle frame in both `runtime` and `stream`; arm variant
@@ -157,3 +163,22 @@ for the comparison.
 - **Feedback**: per target, the forward model's value and the Core's own
   geometry go to `actions.json` / the live log; `--body-check` runs one
   offline correction round (`check/check.json`).
+
+### First A/B (runs/e2) and what changed
+
+Blind A/B on the server, 12 pairs (DeepSeek, Hiyori and lafei, 6 lines
+each): a tie overall (body 46%, tags 54%); Hiyori body 2-1 with 3 ties,
+lafei tags 3-1 with 2 ties. The body replies were long static holds (hold
+2-3 s, 9 of 13 Hiyori markers with an explicit hold; head and gaze frozen
+in 58% of the hold frames), face-only on lafei (2 of 12 poses moved a
+hand), few quick moves; the tags gave quick nods and looks plus the rig's
+own gestures. And on lafei the breath bobbed the whole figure (~3 px std
+at 0.25 Hz). Changed for the second round (runs/e2b):
+
+- breath calibrated per rig from the body file (`flow.runtime.
+  breath_setting`): Hiyori 1, Natori 0.467, lafei 0.109, xuefeng 0.107 of
+  ParamBreath's range, so it moves each body at most 0.0075 hu;
+- held poses keep the idle's life (LIFE 0.35, SETTLE 0.2) and the idle's
+  head/gaze/brow/body moves run on under poses; default hold 1.5 -> 1 s;
+- the prompt guidance above, and gestures offered by default.
+

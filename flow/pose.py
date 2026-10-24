@@ -20,13 +20,19 @@ continuous targets inline in its speech:
             body has, a number or a landmark reference ("@shoulder.y",
             "@chest.x+0.2"). Optional "dur" (seconds the move takes) and
             "hold" (seconds kept before relaxing to the idle).
-  mode      Pure body, plus [blink] and [pause:x]. Face shapes (brows,
+  mode      Body targets, plus [blink], [pause:x] and, with
+            --body-gestures (the default since E2's A/B), the rig's own
+            motions as tag mode offers them. Face shapes (brows,
             eye smile, mouth form, blush) are canonical variables like any
             joint, so they go in pose markers; a blink is a transient the
             autonomic layer owns (a held eye.L.open would stop blinking),
-            and a pause is timing, not body. No [gesture:*]: an authored
-            clip would let the model hand the motion back to the rigger,
-            which is the baseline this mode is compared against. Nods and
+            and a pause is timing, not body. Gestures were left out at
+            first (an authored clip hands the motion back to the rigger,
+            the baseline); but lafei's tag replies won the A/B with one
+            (login) where her body replies moved a hand twice in 12 poses,
+            so they are offered next to the poses, and a gesture gives way
+            to a pose that moves an arm (drop_clashing_gestures).
+            --no-body-gestures is the pure condition. Nods and
             shakes are pose sequences (markers on the same variables play
             one after another).
   time      a marker is a tag ({"tag": "pose", "arg": {...}, "at": n}), so
@@ -96,7 +102,7 @@ POSE = "pose"
 # A marker's JSON may run to a few hundred characters (six targets with
 # landmark references is ~150); past this it is a runaway, dropped unspoken.
 MAX_MARKER = 600
-BODY_TAGS = ("pose", "blink", "pause")
+BODY_TAGS = ("pose", "blink", "pause", "gesture")
 # The voice drives these; a target on them would fight the lip sync.
 NOT_TARGETS = {"mouth.open": "the voice drives the mouth"}
 # Timing, hand-set. A pose's default move time grows with its size, from a
@@ -214,8 +220,11 @@ class PoseParser(dr.TagParser):
     this body has (None: any); `landmarks`: names a "@" reference may
     use. A marker split across chunks parses as it would whole."""
 
-    def __init__(self, variables=None, landmarks=(), max_marker=MAX_MARKER):
-        super().__init__((), None)
+    def __init__(self, variables=None, landmarks=(), max_marker=MAX_MARKER,
+                 gestures=()):
+        # gestures: the labels [gesture:NAME] may name (--body-gestures);
+        # none, and a gesture marker is dropped like any other tag.
+        super().__init__(gestures, None)
         self.variables = None if variables is None else set(variables)
         self.landmarks = set(landmarks or ())
         self.max_marker = max_marker
@@ -300,9 +309,10 @@ class PoseParser(dr.TagParser):
         if m or s.startswith("{"):
             return self._pose(m.group(1) if m else s, inner)
         name = re.split(r"[\s:]", s, maxsplit=1)[0].lower() if s else ""
-        if name not in ("blink", "pause"):
+        ok = ("blink", "pause") + (("gesture",) if self.gestures else ())
+        if name not in ok:
             self.warnings.append(f"[{inner}] is not a body-mode marker "
-                                 "(pose, blink, pause); dropped")
+                                 f"({', '.join((POSE,) + ok)}); dropped")
             return None
         return self._tag(inner)
 
@@ -370,8 +380,8 @@ class PoseParser(dr.TagParser):
         return tag
 
 
-def parser_for(bm, max_marker=MAX_MARKER):
-    return PoseParser(available(bm), bm.landmarks, max_marker)
+def parser_for(bm, max_marker=MAX_MARKER, gestures=()):
+    return PoseParser(available(bm), bm.landmarks, max_marker, gestures)
 
 
 def tag_text(t) -> str:
@@ -619,17 +629,30 @@ Pose markers:
 the variable's unit or a landmark reference ("@shoulder.y"). Optional "dur": \
 seconds the move takes (0.15 to 3; default by its size), "hold": seconds to \
 keep it before relaxing back into your idle (0 to 8; default {hold:g}). \
-Variables you leave out keep moving with your idle. Markers on the same \
-variables play one after another, so a nod is two markers: \
+Variables you leave out keep moving with your idle, and a held pose still \
+moves a little with it. Markers on the same variables play one after \
+another, so a nod is two quick markers: \
 [pose {{"head.pitch": -12, "dur": 0.25, "hold": 0}}]\
 [pose {{"head.pitch": 0, "dur": 0.3, "hold": 0}}]
-[blink]  a deliberate blink
+{gestures}[blink]  a deliberate blink
 [pause:0.5]  stay silent for that many seconds (0.2 to 3)
 Each user message ends with "(your body now: ...)", where your body is at \
 that moment in the same variables{image}.
 
+How to move:
+- Move in brief beats, as people do while they talk: a quick glance away \
+and back (gaze with a little head turn), a nod or a shake as a quick pair \
+of markers, brows up on a surprise, a tilt on a question. The markers of \
+one nod or one glance-and-back count as one beat.
+- Keep holds short: leave "hold" out, or 0 for a quick beat. Hold 2 seconds \
+or more only for the one moment in a reply you mean to stress.
+{whole}- Vary your moves from reply to reply; do not open every reply the \
+same way or repeat the same pose.
+- Do not hold your eyes half shut with eye.L.open / eye.R.open: held eyes \
+stop blinking. A blink is [blink].
+
 Rules:
-- One or two markers per sentence, for what that sentence means. Put a \
+- One or two beats per sentence, for what that sentence means. Put a \
 marker right before the words it goes with, often mid-sentence.
 - Only the variables listed above, inside their ranges. Valid JSON.
 - No other tags or markup: no asterisk actions, no parentheses stage \
@@ -640,9 +663,8 @@ Examples of placement (not of content; never copy them):
 {examples}"""
 
 
-def _examples(bm) -> list[str]:
-    have = set(offered(bm))
-    ex = []
+def _best_hand(bm):
+    """(side, highest y) of the hand that reaches highest, or None."""
     best = None
     for s in "RL":
         r = _ranges(bm, f"hand.{s}.y")
@@ -650,6 +672,37 @@ def _examples(bm) -> list[str]:
             top = max(hi for _, _, hi in r)
             if best is None or top > best[1] + 1e-9:
                 best = (s, top)
+    return best
+
+
+def _whole_body(bm, gestures=False) -> str:
+    """The "use your whole body" line: the hand that reaches highest and
+    how high, the upper body where it turns, the rig's own motions when
+    offered. E2's replies stayed on the face (lafei's 12 poses: two moved
+    a hand) although lafei's right hand reaches face height."""
+    have = set(offered(bm))
+    bits = []
+    best = _best_hand(bm)
+    if best is not None:
+        s, top = best
+        bits.append(f"your {_side(s)} hand reaches up to {_level(bm, top)}, "
+                    "so raise it to greet, point or show something, then let "
+                    "it fall back")
+    if have & {"torso.yaw", "torso.pitch", "torso.tilt"}:
+        bits.append("lean in or turn your upper body when it gets personal")
+    if gestures:
+        bits.append("now and then one of your own motions, at most one per "
+                    "reply and never while you pose a hand")
+    if not bits:
+        return ""
+    return "- Use your whole body, not only your face: " + "; ".join(bits) \
+        + ".\n"
+
+
+def _examples(bm) -> list[str]:
+    have = set(offered(bm))
+    ex = []
+    best = _best_hand(bm)
     if best is not None:
         s, top = best
         sh = bm.landmarks.get("shoulder.y")
@@ -663,27 +716,34 @@ def _examples(bm) -> list[str]:
                   "0}][pose {\"head.pitch\": 0, \"dur\": 0.3, \"hold\": 0}] "
                   "yes, that works for me.")
     face = [v for v in ("brow.L.lift", "brow.R.lift") if v in have]
-    if face and "head.yaw" in have:
+    look = [v for v in ("gaze.x", "head.yaw") if v in have]
+    if face and look:
+        # A glance away and back, quick: the brief beat the tags' look:away
+        # gave and E2's body replies (holds of 2-3 s) did not.
+        away = {"gaze.x": -0.6, "head.yaw": -12}
+        out_ = ", ".join(f"\"{v}\": {away[v]:g}" for v in look)
+        back = ", ".join(f"\"{v}\": 0" for v in look)
         ex.append("[pose {" + ", ".join(f"\"{v}\": 0.8" for v in face)
-                  + "}] Really? [pose {\"head.yaw\": -15, \"gaze.x\": -0.6, "
-                  "\"hold\": 2}] I hadn't noticed." if "gaze.x" in have else
-                  "[pose {" + ", ".join(f"\"{v}\": 0.8" for v in face)
-                  + "}] Really? [pose {\"head.yaw\": -15, \"hold\": 2}] I "
-                  "hadn't noticed.")
+                  + ", \"dur\": 0.2}] Really? [pose {" + out_
+                  + ", \"dur\": 0.3, \"hold\": 0.5}] I hadn't [pose {" + back
+                  + ", \"dur\": 0.35, \"hold\": 0}] noticed.")
     if not ex:
         ex.append("Oh... [pause:0.5] [blink] I didn't expect that.")
     return ex
 
 
-def system_prompt(bm, persona=None, images=False) -> str:
-    """Byte-stable for a body file, persona and image setting: the current
-    pose goes in the user message (pose_now), never here."""
+def system_prompt(bm, persona=None, images=False, gestures="") -> str:
+    """Byte-stable for a body file, persona, image setting and gesture
+    lines: the current pose goes in the user message (pose_now), never
+    here. gestures: the [gesture:NAME] entry (director.gesture_lines) when
+    body mode offers the rig's own motions (--body-gestures)."""
     persona = (persona or "a friendly, expressive character.").strip()
     return BODY_TEMPLATE.format(
         persona=persona, body=describe_body(bm), hold=POSE_HOLD,
         image=(", and with it a picture of how you look right now, as the "
                "viewer sees you (your left is on the picture's right)"
                if images else ""),
+        gestures=gestures or "", whole=_whole_body(bm, bool(gestures)),
         examples="\n".join(_examples(bm)) + "\n")
 
 
@@ -979,6 +1039,42 @@ def report_lines(poses, spoken="") -> list[str]:
                    + "".join(f"  ({v}: {h})" for v, h in
                              p.get("hints", {}).items()))
     return out
+
+
+def drop_clashing_gestures(acts, poses, motions, log=print):
+    """--body-gestures: a directed gesture plays the rig's own arm motion
+    (director.realize: up to GESTURE_MAX seconds, then SETTLE of the idle
+    loop); a pose that moves an arm or swaps its drawing at the same time
+    would write the same parameters and parts. The pose wins -- the model
+    placed that hand on purpose, a gesture is the rig's -- and a gesture
+    whose play overlaps such a pose's move, hold or release is dropped
+    with a line. acts is changed in place and each pose's "act" index
+    follows; returns the dropped gesture actions. motions: {motion name:
+    seconds}."""
+    labels = dr.gesture_labels(motions)
+    arm = [(p["start"], p["start"] + p["dur"] + p["hold"] + p["release"])
+           for p in poses if p.get("arm_params") or p.get("parts")]
+    if not arm:
+        return []
+    keep, gone = [], []
+    for x in acts:
+        name = labels.get(str(x.get("arg")).lower()) \
+            if x.get("tag") == "gesture" else None
+        if name is not None:
+            t0 = float(x["t"])
+            t1 = t0 + min(float(motions[name]), dr.GESTURE_MAX) + dr.SETTLE
+            if any(t0 < b and t1 > a for a, b in arm):
+                gone.append(x)
+                log(f"pose: [gesture:{x['arg']}] at {t0:.2f}s dropped: a "
+                    "pose moves an arm then")
+                continue
+        keep.append(x)
+    if gone:
+        new = {id(x): i for i, x in enumerate(keep)}
+        for p in poses:
+            p["act"] = new.get(id(acts[p["act"]]), p["act"])
+        acts[:] = keep
+    return gone
 
 
 def end_time(poses) -> float:

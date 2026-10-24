@@ -402,6 +402,70 @@ def test_prompt_is_byte_stable_and_says_what_the_body_can_do(hiyori, lafei):
     assert "head.tilt 8" in now and "at rest" not in now
 
 
+def test_prompt_asks_for_brief_varied_beats_and_the_whole_body(hiyori,
+                                                                lafei):
+    """E2's body replies were long static holds on the face; the prompt
+    now asks for brief beats, short holds, hands where they reach, and
+    variety -- and keeps every constraint line."""
+    import re
+    for bm, hand in ((hiyori, "your left hand reaches up to shoulder "
+                      "height"),
+                     (lafei, "your right hand reaches up to face height")):
+        p = pz.system_prompt(bm, "X.")
+        assert hand in p
+        for line in ("Move in brief beats", "Keep holds short",
+                     "Hold 2 seconds or more only for the one moment",
+                     "Vary your moves from reply to reply",
+                     "held eyes stop blinking",
+                     # the constraints stay
+                     "What you cannot do:", "Only the variables listed "
+                     "above, inside their ranges. Valid JSON.",
+                     "No other tags or markup", "Never explain or mention"):
+            assert line in p, line
+        assert "never while you pose a hand" not in p    # no gestures
+        ex = p.split("never copy them):\n")[1]
+        # No example holds long (they are copied most of all), one glances
+        # away and back.
+        holds = [float(h) for h in re.findall(r'"hold": ([0-9.]+)', ex)]
+        assert holds and max(holds) <= 0.5
+        assert '"gaze.x": -0.6' in ex and '"gaze.x": 0' in ex
+    g = pz.system_prompt(hiyori, "X.", gestures="[gesture:NAME]  x\n")
+    assert "[gesture:NAME]  x\n[blink]" in g
+    assert "never while you pose a hand" in g
+
+
+def test_body_gestures_parse_and_give_way_to_an_arm_pose(hiyori):
+    p = pz.parser_for(hiyori, gestures=("wave", "bow"))
+    p.feed('Hi! [gesture:wave] Look [pose {"hand.L.y": "@shoulder.y"}] '
+           'here. [gesture:dance] [nod]')
+    p.close()
+    assert [t["tag"] for t in p.tags] == ["gesture", "pose"]
+    assert any("no motion 'dance'" in w for w in p.warnings)
+    assert any("[nod] is not a body-mode marker (pose, blink, pause, "
+               "gesture)" in w for w in p.warnings)
+    q = pz.parser_for(hiyori)                      # --no-body-gestures
+    q.feed("Hi! [gesture:wave] there.")
+    q.close()
+    assert not q.tags and "(pose, blink, pause)" in q.warnings[0]
+    # A gesture while a pose moves an arm gives way; one beside a head
+    # pose stays.
+    motions = {"Wave.motion3.json": 3.0, "Bow.motion3.json": 2.0}
+    acts = [{"t": 0.2, "tag": "gesture", "arg": "wave", "at": 0},
+            {"t": 1.0, "tag": "pose", "arg": {}, "at": 5},
+            {"t": 9.0, "tag": "gesture", "arg": "bow", "at": 9},
+            {"t": 9.5, "tag": "pose", "arg": {}, "at": 12}]
+    poses = [{"act": 1, "start": 1.0, "dur": 0.5, "hold": 1.0,
+              "release": 0.5, "arm_params": ["ParamArmLB"], "parts": {}},
+             {"act": 3, "start": 9.5, "dur": 0.5, "hold": 1.0,
+              "release": 0.5, "arm_params": [], "parts": {}}]
+    logs = []
+    gone = pz.drop_clashing_gestures(acts, poses, motions, logs.append)
+    assert [x["arg"] for x in gone] == ["wave"]
+    assert [x["tag"] for x in acts] == ["pose", "gesture", "pose"]
+    assert [acts[p["act"]]["at"] for p in poses] == [5, 12]
+    assert "[gesture:wave] at 0.20s dropped" in logs[0]
+
+
 def test_images_only_for_backends_that_take_them():
     png = b"\x89PNG fake"
     assert pz.user_message("hi", "deepseek", png) == {"role": "user",
@@ -523,10 +587,16 @@ def test_director_body_mode_end_to_end(tmp_path, capsys):
     sop = np.array([[fr[1].get(p, np.nan) for p in parts] for fr in frames],
                    np.float32)
     np.testing.assert_array_equal(sop, plan["part_opacity"])
-    # The body-mode prompt is what --print-system prints.
+    # The body-mode prompt is what --print-system prints: with the rig's
+    # own motions offered by default, without them pure body.
     capsys.readouterr()
-    assert dr.main(args + ["--print-system"]) == 0
+    assert dr.main(args + ["--print-system", "--no-body-gestures"]) == 0
     assert capsys.readouterr().out.strip() == pz.system_prompt(bm).strip()
+    assert dr.main(args + ["--print-system"]) == 0
+    sysp = capsys.readouterr().out
+    assert "[gesture:NAME]" in sysp and "  home: " in sysp
+    assert "never while you pose a hand" in sysp
+    assert "[gesture:NAME]" not in pz.system_prompt(bm)
 
 
 def test_live_performer_plays_body_targets(tmp_path):

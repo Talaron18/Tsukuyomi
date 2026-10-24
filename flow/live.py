@@ -650,10 +650,6 @@ class Performer:
         late = (f0 - self.next_frame) / fps if spoken and k > 1 else 0.0
         if spoken:
             self.next_frame = f0 + int(math.ceil((end + a.gap) * fps))
-        shifted = [dict(x, t=round(float(x["t"]) + t_start, 4)) for x in acts]
-        directed = dr.realize(shifted, self.rig.stats, list(self.rig.roles),
-                              self.rig.motion_seconds, self.rng,
-                              self.stream.pose(), settle=self.rig.settle)
         poses = []
         if self.body is not None and any(x["tag"] == pz.POSE for x in acts):
             bm = self.body["body"]
@@ -664,6 +660,15 @@ class Performer:
             arms = self.body.setdefault("arm_params", pz.arm_params(bm))
             for rec in poses:
                 rec["arm_params"] = sorted(set(rec["params"]) & arms)
+            # Solved first: a gesture under an arm pose gives way to it
+            # before anything is realized (--body-gestures).
+            pz.drop_clashing_gestures(acts, poses, self.rig.motion_seconds,
+                                      self.log)
+        shifted = [dict(x, t=round(float(x["t"]) + t_start, 4)) for x in acts]
+        directed = dr.realize(shifted, self.rig.stats, list(self.rig.roles),
+                              self.rig.motion_seconds, self.rng,
+                              self.stream.pose(), settle=self.rig.settle)
+        if poses:
             for k_ in pz.tokens(poses, self.rig.roles, arms):
                 k_["t"] = round(float(k_["t"]) + t_start, 4)
                 directed.append(k_)

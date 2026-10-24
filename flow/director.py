@@ -1269,6 +1269,8 @@ def plan(a, reply, out_dir, motions, log=print, tts=None, body=None):
         arms = body.setdefault("arm_params", pz.arm_params(bm))
         for rec in poses:
             rec["arm_params"] = sorted(set(rec["params"]) & arms)
+        pz.drop_clashing_gestures(acts, poses, motions, log)
+        for rec in poses:
             acts[rec["act"]]["solved"] = rec
         for line in pz.report_lines(poses, reply["spoken"]):
             log("pose: " + line)
@@ -1561,6 +1563,12 @@ def add_args(ap):
     ap.add_argument("--body", default=None, metavar="BODY.json",
                     help="--mode body: the rig's body file (default <rig "
                          "without .npz>.body.json)")
+    ap.add_argument("--body-gestures", default=True,
+                    action=argparse.BooleanOptionalAction,
+                    help="--mode body: offer the rig's own motions "
+                         "([gesture:NAME], as tag mode offers them) next to "
+                         "the poses [default on]; --no-body-gestures: pure "
+                         "body targets, as E2 was first measured")
     ap.add_argument("--body-image", action="store_true",
                     help="--mode body: send the model a picture of itself "
                          "with each line (anthropic; siliconflow and ollama "
@@ -1618,15 +1626,35 @@ def prepare_body(a, info=sys.stdout):
               f"{exc})", file=info)
     motions = {n: m["frames"] / a.fps
                for n, m in authored_motions(a.model_json, a.fps)}
+    labels, descriptions, glines = {}, {}, ""
+    if getattr(a, "body_gestures", True):
+        # The rig's own motions next to the poses, offered as tag mode
+        # offers them: in the E2 A/B lafei's tag replies won with an
+        # authored gesture (login) where her body replies, which had none,
+        # moved a hand twice in 12 poses.
+        try:
+            from ..l2dprobe.motions import motion_files
+            from .runtime import event_roles
+        except ImportError:
+            from l2dprobe.motions import motion_files
+            from flow.runtime import event_roles
+        names = [os.path.basename(p) for p in motion_files(a.model_json)]
+        _st, roles, _ = event_roles(a.model_json, a.rig, a.events, a.clips,
+                                    a.binding, a.fps, a.no_snap,
+                                    a.events_pool_only, log=lambda s: None)
+        labels, descriptions, same = offer_gestures(
+            a, roles, gesture_labels(names), info)
+        glines = gesture_lines(labels, descriptions, same)
     print(f"director: body mode, {path}: {len(pz.offered(bm))} variables, "
           f"{len(bm.variants)} arm variants"
+          + (f", {len(labels)} gestures" if labels else "")
           + (", images" if images else ""), file=info)
-    return {"labels": {}, "offered": None, "descriptions": {},
-            "system": pz.system_prompt(bm, a.persona, images),
+    return {"labels": labels, "offered": None, "descriptions": descriptions,
+            "system": pz.system_prompt(bm, a.persona, images, glines),
             "motions": motions, "stats": None, "roles": None,
             "mode": "body", "body": bm, "body_path": path, "core": core,
             "images": images, "max_tag": pz.MAX_MARKER,
-            "parser": lambda: pz.parser_for(bm)}
+            "parser": lambda: pz.parser_for(bm, gestures=labels)}
 
 
 def _quiet_stdout(info):
@@ -1663,33 +1691,12 @@ def snapshot(a, run, png, values=None, parts=None, log=print):
         return fh.read()
 
 
-def prepare(a, info=sys.stdout):
-    """What a director run needs before its first turn, from add_args'
-    arguments: {"labels", "offered", "system", "motions", "stats",
-    "roles"}. Prints what it offers and what each gesture shows to
-    `info`; flow.live calls it too. --mode body: prepare_body."""
-    if getattr(a, "mode", "tags") == "body":
-        return prepare_body(a, info)
-    try:
-        from ..l2dprobe.motions import motion_files
-    except ImportError:
-        from l2dprobe.motions import motion_files
-    try:
-        from .runtime import authored_motions, event_roles
-    except ImportError:
-        from flow.runtime import authored_motions, event_roles
-    names = [os.path.basename(p) for p in motion_files(a.model_json)]
-    labels = gesture_labels(names)
-    # The roles and adapted statistics the runtime will plan with, bound the
-    # same way (its log lines come again when plan() runs it), so the prompt
-    # offers only tags that move something on this rig.
-    st, roles, _ = event_roles(a.model_json, a.rig, a.events, a.clips,
-                               a.binding, a.fps, a.no_snap,
-                               a.events_pool_only, log=lambda s: None)
-    offered, out = offer(st, roles)
-    if out:
-        print("director: not offered on this rig: " + left_out_text(out),
-              file=info)
+def offer_gestures(a, roles, labels, info=sys.stdout):
+    """(labels, descriptions, same) of the gestures a prompt offers, from
+    the rig's motion labels: measured on what the runtime will play with
+    these roles bound (flow.gestures), then the rig's override file
+    (hidden ones left out). Prints what each one shows to `info`. Tag mode
+    and body mode with --body-gestures offer the same."""
     # What each gesture shows, measured on what the runtime will play with
     # these roles bound (flow.gestures), then the rig's override file.
     if a.gestures and not os.path.exists(a.gestures):
@@ -1717,6 +1724,37 @@ def prepare(a, info=sys.stdout):
                 else measured.get(all_labels[lab]))
         print(f"director: gesture {lab} [{src}]: "
               + (text or "(label only)"), file=info)
+    return labels, descriptions, same
+
+
+def prepare(a, info=sys.stdout):
+    """What a director run needs before its first turn, from add_args'
+    arguments: {"labels", "offered", "system", "motions", "stats",
+    "roles"}. Prints what it offers and what each gesture shows to
+    `info`; flow.live calls it too. --mode body: prepare_body."""
+    if getattr(a, "mode", "tags") == "body":
+        return prepare_body(a, info)
+    try:
+        from ..l2dprobe.motions import motion_files
+    except ImportError:
+        from l2dprobe.motions import motion_files
+    try:
+        from .runtime import authored_motions, event_roles
+    except ImportError:
+        from flow.runtime import authored_motions, event_roles
+    names = [os.path.basename(p) for p in motion_files(a.model_json)]
+    labels = gesture_labels(names)
+    # The roles and adapted statistics the runtime will plan with, bound the
+    # same way (its log lines come again when plan() runs it), so the prompt
+    # offers only tags that move something on this rig.
+    st, roles, _ = event_roles(a.model_json, a.rig, a.events, a.clips,
+                               a.binding, a.fps, a.no_snap,
+                               a.events_pool_only, log=lambda s: None)
+    offered, out = offer(st, roles)
+    if out:
+        print("director: not offered on this rig: " + left_out_text(out),
+              file=info)
+    labels, descriptions, same = offer_gestures(a, roles, labels, info)
     system = system_prompt(a.persona, labels, offered, descriptions, same)
     motions = {n: m["frames"] / a.fps
                for n, m in authored_motions(a.model_json, a.fps)}

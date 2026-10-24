@@ -39,6 +39,8 @@
 #   RENDER   1 = render (needs GL; xvfb-run is used) [1]
 #   EVENTS   event stats [ev.json, else the built-in defaults]
 #   MODELS   folders holding the .model3.json files [live2d-models:CubismWebSamples]
+#   BODY_GESTURES 0 = --no-body-gestures: body targets only, as the first
+#            E2 round (runs/e2) [1: the rig's own motions offered too]
 #   SEED     [0]
 #   OUT      [runs/e2]
 #   REPLIES  with BACKEND=file: <REPLIES>/<cond>/<i>.txt as the replies
@@ -60,6 +62,7 @@ EVENTS=${EVENTS:-ev.json}
 [[ -f "$EVENTS" ]] || EVENTS=default
 MODELS=${MODELS:-live2d-models:CubismWebSamples}
 SEED=${SEED:-0}
+BODY_GESTURES=${BODY_GESTURES:-1}
 OUT=${OUT:-runs/e2}
 REPLIES=${REPLIES:-}
 
@@ -123,6 +126,7 @@ run() {  # rig, cond, i
         *body)     args+=(--mode body) ;;
     esac
     [[ $CHECK == 1 && $cond == *body* ]] && args+=(--body-check)
+    [[ $BODY_GESTURES == 0 && $cond == *body* ]] && args+=(--no-body-gestures)
     [[ $RENDER == 1 ]] && args+=(--render)
     mkdir -p "$d"
     local t0; t0=$(date +%s.%N)
