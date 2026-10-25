@@ -415,3 +415,49 @@ def test_live_performer_puts_a_move_on_the_stream(tmp_path):
         over, _p = stream.frame()
         tilt.append(over.get("ParamBodyAngleZ", 0.0))
     assert np.ptp(tilt) > 1.0
+
+
+def test_avatar_both_starts_the_vrms_move_with_the_live2d_one(tmp_path,
+                                                             seed):
+    """--avatar both: the follower builds its moves before the sentence's
+    time is taken, as the Live2D side does, so a dance at the start of a
+    sentence starts on both bodies at once, the same dance."""
+    import argparse
+    from flow import live as lv
+    from flow import stream as fs
+    from flow import vrm as fv
+    from tests.test_live import FakeClock, SpeakingTTS
+    from tests.test_pose import _body_rig
+    model, rig_path, bm = _body_rig(tmp_path / "x")
+    rig = fs.EventRig(str(model), str(rig_path), "default", None, None, FPS,
+                      str(tmp_path), log=lambda s: None)
+    clock = FakeClock(2.0)
+    hub = lv.Hub(clock)
+    stream = fs.MotionStream(rig, seed=0, autonomic=False,
+                             log=lambda s: None)
+    a = argparse.Namespace(seed=0, lead=0.25, gap=0.12, lipsync="off",
+                           mouth_gain=1.0, cjk_rate=dr.CJK_RATE,
+                           latin_rate=dr.LATIN_RATE, mood="auto",
+                           backend="deepseek")
+    run = {"system": "", "labels": {}, "offered": None, "mode": "body",
+           "body": bm, "core": None, "images": False,
+           "max_tag": pz.MAX_MARKER,
+           "parser": lambda: pz.parser_for(bm, moves=True)}
+    p = lv.Performer(a, run, rig, stream, clock, hub,
+                     dr.TextBackend('[move {"name": "dance", "beats": 8}] '
+                                    "Let's dance!"),
+                     SpeakingTTS(clock), log=lambda s: None)
+    vrig = fv.VRMRig(seed, log=lambda s: None)
+    vstream = fs.MotionStream(vrig, seed=0, log=lambda s: None)
+    p.followers.append(fv.Follower(a, seed, vrig, vstream,
+                                   log=lambda s: None))
+    p.turn("dance!")
+    m2 = [k for k in stream.pending if k["type"] == "move"]
+    mv_ = [k for k in vstream.pending if k["type"] == "move"]
+    assert len(m2) == 1 and len(mv_) == 1
+    assert mv_[0]["t"] == pytest.approx(m2[0]["t"])
+    au = [m for m in hub.history if m["type"] == "audio"]
+    # At the first word (the clip's quiet lead-in before it).
+    assert au[0]["t"] <= m2[0]["t"] <= au[0]["t"] + 0.25
+    # The same dance: the same figures on both bodies.
+    assert mv_[0]["name"] == m2[0]["name"] == "dance"

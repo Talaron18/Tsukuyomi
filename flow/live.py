@@ -733,6 +733,10 @@ class Performer:
                                  log=self.log, seed=base)
             mv.drop_clashing_gestures(acts, mvs, self.rig.motion_seconds,
                                       self.log)
+            for fol in self.followers:
+                # The --avatar both VRM builds its own now too, so its
+                # dance starts with this one.
+                fol.build_moves(acts, base)
             lat_move = self.clock.now() - t_m
         # When: as soon as possible, never over the previous sentence.
         now = self.clock.now()

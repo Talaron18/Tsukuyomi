@@ -547,8 +547,29 @@ class Follower:
         self.a, self.bm, self.rig, self.stream, self.log = a, bm, rig, \
             stream, log
         self.rng = np.random.default_rng([int(a.seed), 7])
+        self._pre = None            # moves built ahead (build_moves)
+
+    def build_moves(self, acts, seed=0):
+        """The sentence's move markers on the VRM's own body (its reach
+        and collisions; the seed flow.live wrote on each marker: the same
+        dance as the Live2D side). flow.live calls it before the sentence's
+        time is taken, as it builds its own: built in sentence(), after
+        the poses, a dance at the start of a sentence began 0.1-0.6 s
+        after the Live2D one."""
+        try:
+            from . import moves as mv
+        except ImportError:
+            from flow import moves as mv
+        cur, _ = self.stream.body_now()
+        self._pre = mv.solve_moves(self.bm, acts, cur, {}, log=self.log,
+                                   seed=seed)
+        return self._pre
 
     def sentence(self, acts, t_start, f0, spoken, audio, end):
+        try:
+            from . import moves as mv
+        except ImportError:
+            from flow import moves as mv
         try:
             from . import director as dr
             from . import pose as pz
@@ -569,19 +590,12 @@ class Follower:
                 self.log(f"live: vrm {line}")
             for rec in poses:
                 rec["start"] = round(rec["start"] - t_start, 4)
-        mvs = []
-        if any(x.get("tag") == "move" for x in acts):
-            # The same primitives on the VRM's own body (its own reach and
-            # collisions), with the Live2D side's seed: the same dance.
-            try:
-                from . import moves as mv
-            except ImportError:
-                from flow import moves as mv
-            cur, _ = self.stream.body_now()
-            mvs = mv.solve_moves(self.bm, acts, cur, {}, log=self.log,
-                                 seed=mv.move_seed(a, f0))
-            for line in mv.report_lines(mvs, spoken):
-                self.log(f"live: vrm {line}")
+        mvs = self._pre if self._pre is not None else \
+            self.build_moves(acts, mv.move_seed(a, f0)) \
+            if any(x.get("tag") == "move" for x in acts) else []
+        self._pre = None
+        for line in mv.report_lines(mvs, spoken):
+            self.log(f"live: vrm {line}")
         shifted = [dict(x, t=round(float(x["t"]) + t_start, 4)) for x in acts
                    if x.get("tag") != "gesture"]
         directed = dr.realize(shifted, self.rig.stats, list(self.rig.roles),
