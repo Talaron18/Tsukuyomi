@@ -322,12 +322,20 @@ name next to its poses:
   head, gaze, breath keep going), absolute arms blended from it; a later
   move on the same parameters takes them over; a pose takes its parts and
   gives them back (held without LIFE on a move's joints). On a VRM a trunk
-  figure carries the arms with the chest, the free hand hanging (rigid arms
-  went 0.15 hu into the hips at torso.tilt 7).
-- **Checked** (scratchpad renders, every frame): VRM penetration <= 0.022
-  hu (PEN_TOL 0.02) for all primitives and a 16-beat dance on Seed-san;
+  figure carries a figure's hands with the chest; a free arm hangs,
+  analytically (0.3 of the chest's turn, raised off the hips only as far as
+  clears them): rigid arms went 0.10-0.15 hu into the hips at torso.tilt 6,
+  and IK targets at a hanging palm swapped swivel between keyframes. The
+  hips' sway and bob are a render offset of the whole avatar ("hips" in
+  the state, only while a move writes it).
+- **Checked** (scratchpad renders, every frame, idle on): VRM penetration
+  <= 0.024 hu (PEN_TOL 0.02) for every primitive, a pose over a clap, two
+  moves in a row, and a 16-beat dance, on Seed-san and three-vrm-girl;
   onset/end steps at the idle's level; Hiyori's dance draws one arm at a
-  time, no parameter faster than 2.5 spans a second. A 16-beat dance
-  solves in 0.6 s on Seed-san, 0.9 s on Hiyori.
+  time, no parameter faster than 2.5 spans a second. Build time per marker
+  (it adds to the sentence's first audio in live): a figure 0.02-0.15 s, a
+  16-beat dance ~1.1 s on the VRMs, ~0.9 s on Hiyori; the menu at startup
+  < 1 s on Hiyori and lafei, ~3.5 s on Natori.
+- **Not done**: beats are not synced to the speech (beat 1 is the marker).
 - `--no-body-moves`: the prompt and parser of before. Without [move]
   markers every output is the bytes it was.
