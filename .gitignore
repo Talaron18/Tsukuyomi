@@ -26,3 +26,6 @@ __pycache__/
 # large (a 158 MB speech.wav was rejected by GitHub).
 /runs/live/*/speech.wav
 /runs/live/*/video.mp4
+# Your own VRM avatars (third-party models: their licences usually forbid
+# redistribution); the samples in assets/vrm are the ones that may be shared.
+/vrm/
