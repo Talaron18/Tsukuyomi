@@ -12,6 +12,9 @@
 # with backoff; a rejected key or an empty balance (401/402/403) stops the
 # run; MAX_FAILS sessions failing in a row stop it too.
 #
+# Records made before [move] markers played (flow.dataset TRAJ_VERSION):
+# `python -m flow.dataset replay OUT` streams them again, no model called.
+#
 # Usage, from the repo root (on the server: the Live2D models under
 # MODELS, DEEPSEEK_API_KEY in the environment):
 #   bash scripts/datagen.sh                       # the pilot below
@@ -102,9 +105,10 @@ rc=${PIPESTATUS[0]}
 if [[ $EXPORT == 1 ]]; then
     python -m flow.dataexport stats "$OUT" --json "$OUT/stats.json" \
         | tee "$OUT/stats.txt"
-    python -m flow.dataexport sft "$OUT" --out "$OUT/export/sft.jsonl"
+    # --meta: the session ids scripts/train_sft.py splits on.
+    python -m flow.dataexport sft "$OUT" --out "$OUT/export/sft.jsonl" --meta
     python -m flow.dataexport sft "$OUT" --out "$OUT/export/sft_turns.jsonl" \
-        --per turn
+        --per turn --meta
     python -m flow.dataexport action "$OUT" --out "$OUT/export/action"
 fi
 exit "$rc"

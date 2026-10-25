@@ -586,3 +586,190 @@ def test_duplicate_greeting_does_not_cut_a_session(run):
     ids = [e["meta"]["id"] for e in dx.sft_examples(str(out), recs, notes,
                                                     per="turn", meta=True)]
     assert f"{sid}/t01" not in ids and len(ids) == 11
+
+
+# ------------------------------------------------------- moves and replay
+
+MOVE_REPLY = ('Yay! [move {"name": "clap", "beats": 2, "tempo": 120}] Let\'s '
+              'go, clap along. [pose {"head.tilt": 8}] Done!')
+
+
+@pytest.fixture(scope="module")
+def moved(tmp_path_factory):
+    """A run whose replies clap (seed-san and the Hiyori lite body)."""
+    out = tmp_path_factory.mktemp("gen") / "moves"
+
+    def make(role, av):
+        return CharLLM([MOVE_REPLY]) if role == "character" else UserLLM()
+    res = ds.generate(_opts(out, sessions=4, turns=1), backend_factory=make,
+                      log=lambda s: None)
+    assert res["ok"] == 4
+    return out
+
+
+def test_move_markers_play_in_both_trajectories(moved):
+    recs = ds.iter_records(str(moved))
+    assert {r["avatar"]["kind"] for r in recs} == {"vrm", "live2d-lite"}
+    for r in recs:
+        m = [x for x in r["markers"] if x["tag"] == "move"]
+        assert len(m) == 1 and m[0]["played"] is True
+        assert m[0]["arg"] == {"name": "clap", "beats": 2.0, "tempo": 120.0}
+        assert "move" not in r["unplayed"]
+        assert r["traj"]["version"] == ds.TRAJ_VERSION
+        mv_ = r["moves"][0]
+        assert mv_["name"] == "clap" and mv_["start"] == pytest.approx(
+            m[0]["t"])
+        # The clip ends inside the trajectory.
+        assert r["timing"]["seconds"] >= mv_["start"] + mv_["seconds"]
+        cols = r["traj"]["vars"]
+        f0 = int(mv_["start"] * 30)
+        f1 = int((mv_["start"] + mv_["seconds"]) * 30)
+        for which in ("", ".directed"):
+            tr = ds.load_traj(str(moved), r, which)
+            # Two claps: the hands travel toward each other and back.
+            gap = tr[f0:f1, cols.index("hand.L.x")] - \
+                tr[f0:f1, cols.index("hand.R.x")]
+            assert np.nanmax(gap) - np.nanmin(gap) > 0.15
+            # Before the move the hands are where the idle keeps them.
+            pre = tr[:max(1, f0 - 1), cols.index("hand.L.x")]
+            assert np.nanmax(pre) - np.nanmin(pre) < 0.05
+        if r["avatar"]["kind"] == "vrm":
+            assert {"hips.x", "hips.y"} <= set(cols)
+            assert not np.isnan(ds.load_traj(str(moved), r)[
+                :, cols.index("hips.x")]).any()
+        rep = ds.load_traj(str(moved), r, ".replay")
+        assert rep["v"] == ds.REPLAY_VERSION and rep["seed"] == r["seed"]
+        assert [t["tag"] for t in rep["tags"]] == ["move", "pose"]
+        assert any(k["type"] == "move" for k in rep["tokens"])
+
+
+def _no_clock(x):
+    if isinstance(x, dict):
+        return {k: _no_clock(v) for k, v in x.items()
+                if k != "solve_seconds"}
+    if isinstance(x, list):
+        return [_no_clock(v) for v in x]
+    return x
+
+
+def _arrays(out, r):
+    return {w: ds.load_traj(str(out), r, w)
+            for w in ("", ".directed", ".variant", ".chars")}
+
+
+def test_replay_reproduces_the_trajectories(moved, tmp_path):
+    """The replay record is enough: re-streamed with no model, every array
+    comes back the same and the records are the same but for traj."""
+    import shutil
+    out = tmp_path / "copy"
+    shutil.copytree(moved, out)
+    before = {r["id"]: r for r in ds.iter_records(str(out))}
+    msgs = []
+    assert ds.replay(str(out), log=msgs.append)["turns"] == 0  # up to date
+    res = ds.replay(str(out), force=True, log=msgs.append)
+    assert res["turns"] == len(before) and res["moves"] == len(before)
+    after = {r["id"]: r for r in ds.iter_records(str(out))}
+    assert after.keys() == before.keys()
+    for i, r in after.items():
+        b = before[i]
+        assert r["traj"]["file"].startswith(f"traj/v{ds.TRAJ_VERSION}/")
+        assert r["traj"]["version"] == ds.TRAJ_VERSION
+        for k in ("markers", "poses", "moves", "reach", "timing", "warnings",
+                  "unplayed", "reply_raw"):
+            assert _no_clock(r[k]) == _no_clock(b[k]), k
+        x, y = _arrays(out, b), _arrays(out, r)
+        for w in x:
+            assert np.array_equal(x[w], y[w], equal_nan=True), (i, w)
+    # The old files are kept; the exports read the new ones.
+    assert (out / "traj" / f"{b['session']}.npz").exists()
+    notes = dx.annotate(list(after.values()), keep_lite=True)
+    assert dx.action_pairs(str(out), list(after.values()), notes,
+                           str(tmp_path / "act")) == len(after)
+
+
+def test_replay_brings_version_1_records_up(moved, tmp_path):
+    """A record from before moves played (replay record version 1, move
+    marker unplayed, no traj.version): replayed, its move plays."""
+    import shutil
+    out = tmp_path / "old"
+    shutil.copytree(moved, out)
+    recs = ds.iter_records(str(out))
+    for f in os.listdir(out / "traj"):
+        if not f.endswith(".npz"):
+            continue
+        with np.load(out / "traj" / f) as z:
+            arr = {k: z[k] for k in z.files}
+        for k in [k for k in arr if k.endswith(".replay")]:
+            rep = json.loads(str(arr[k]))
+            arr[k] = np.array(json.dumps({"acts": rep["acts"],
+                                          "tokens": []}))
+        np.savez_compressed(out / "traj" / f, **arr)
+    for f in os.listdir(out / "shards"):
+        os.remove(out / "shards" / f)
+    old = []
+    for r in recs:
+        r = copy.deepcopy(r)
+        for k in ("moves", "play_warnings"):
+            r.pop(k)
+        r["traj"].pop("version")
+        for m in r["markers"]:
+            if m["tag"] == "move":
+                m["played"] = False
+        old.append(r)
+    with open(out / "shards" / "turns-00000.jsonl", "w") as fh:
+        for r in old:
+            fh.write(json.dumps(r) + "\n")
+    res = ds.replay(str(out), log=lambda s: None)
+    assert res["turns"] == len(old) and res["moves"] == len(old)
+    for r in ds.iter_records(str(out)):
+        assert r["traj"]["version"] == ds.TRAJ_VERSION
+        m = next(x for x in r["markers"] if x["tag"] == "move")
+        assert m["played"] is True and r["moves"][0]["name"] == "clap"
+        d = ds.load_traj(str(out), r, ".directed")
+        assert d.shape == (r["timing"]["frames"], len(r["traj"]["vars"]))
+        assert ds.load_traj(str(out), r, ".replay")["v"] == ds.REPLAY_VERSION
+
+
+def test_replay_cli(moved, tmp_path):
+    import shutil
+    out = tmp_path / "cli"
+    shutil.copytree(moved, out)
+    assert ds.main(["replay", str(out), "--force", "--sessions",
+                    "seed-san.cheerful.0000"]) == 0
+    recs = ds.iter_records(str(out))
+    v = {r["session"]: r["traj"]["file"] for r in recs}
+    assert v["seed-san.cheerful.0000"].startswith("traj/v2/")
+    assert not v["Hiyori.sleepy.0000"].startswith("traj/v2/")
+
+
+def test_replay_on_a_live2d_rig(tmp_path):
+    """The full EventRig path (gestures, the idle, the arm drawings): a
+    replay of every turn gives the arrays back, a dropped gesture stays
+    dropped."""
+    from tests.test_pose import _body_rig
+    model, rig, bm = _body_rig(tmp_path / "x")
+    y = bm.landmarks["shoulder.y"] + 0.3
+    reply = (f'Hi! [pose {{"hand.L.y": {y:.3f}}}] Look at this. '
+             '[gesture:home] Nice. [move {"name": "sway", "beats": 2}] Ok.')
+    opts = ds.parse_opts(["gen", "--avatars",
+                          f"x:model={model},rig={rig},body={tmp_path}/x/"
+                          "x.body.json,probe_dir=" + str(tmp_path),
+                          "--sessions", "1", "--turns", "2",
+                          "--personas", "cheerful",
+                          "--out", str(tmp_path / "run")])
+    res = ds.generate(opts, backend_factory=lambda role, av: CharLLM(
+        [reply]) if role == "character" else UserLLM(), log=lambda s: None)
+    assert res["ok"] == 1
+    out = tmp_path / "run"
+    before = {r["id"]: r for r in ds.iter_records(str(out))}
+    for r in before.values():
+        tags = {m["tag"]: m["played"] for m in r["markers"]}
+        assert tags["gesture"] == "dropped" and tags["pose"] is True
+        assert tags["move"] in (True, "unsolved")
+    assert ds.replay(str(out), force=True, log=lambda s: None)["turns"] == 2
+    for r in ds.iter_records(str(out)):
+        b = before[r["id"]]
+        assert _no_clock(r["markers"]) == _no_clock(b["markers"])
+        x, y_ = _arrays(out, b), _arrays(out, r)
+        for w in x:
+            assert np.array_equal(x[w], y_[w], equal_nan=True), w

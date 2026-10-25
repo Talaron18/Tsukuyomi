@@ -29,9 +29,12 @@ the user, and records each turn with everything a student needs:
              does), history as the director keeps it (the raw marked reply
              as the assistant turn; a refused turn is not history).
   play       not rendered: director.timeline (--tts none: the rate model)
-             or speech.speak (a real TTS: word / mora timings), pose.
-             solve_poses (with the Core's exact check on Live2D when the
-             model loads), director.realize + pose.tokens into a
+             or speech.speak (a real TTS: word / mora timings), moves.
+             solve_moves (seeded by the turn's seed and each marker's
+             place, as director.plan builds them) and pose.solve_poses
+             (with the Core's exact check on Live2D when the model loads),
+             a gesture under an arm move or pose dropped, director.realize
+             + pose.tokens + moves.tokens into a
              stream.MotionStream on the avatar's rig (stream.EventRig on
              Live2D, vrm.VRMRig on VRM), and every frame through the body's
              perceive into canonical variables. Two trajectories: "played"
@@ -59,19 +62,26 @@ included; flow.dataexport filters):
   refused, stop_reason, warnings (parser and planning)
   markers     [{tag, arg, at (char offset in spoken), t (seconds; null for
               pause), text (as written), played: true | false | "dropped"
-              (a gesture giving way to an arm pose) | "unsolved"}]
+              (a gesture giving way to an arm pose or move) | "unsolved" (a
+              pose that moved nothing, a move this body cannot do)}]
   unplayed    {tag: count} markers the parser dropped (e.g. tags of another
               mode, or markers newer than this pipeline)
   poses       pose.solve_poses records, rounded: t, start, dur, hold,
               release, targets (as written), resolved, params (as played),
               parts, variant_name, report {var: {target, got, error, unit,
               ok}}, exact / exact_ok (Live2D with the Core), ok, via
+  moves       flow.moves.solve_moves records, rounded: name, t, at, start,
+              seconds, beats, tempo, amp, segments, solves, solve_seconds
   reach       pose.reach_summary {markers, targets, ok, miss, exact_ok,
               exact_n, solve_seconds}
+  play_warnings  the planning lines among warnings (pose: / move:)
   timing      {speech_seconds, seconds, frames, fps, method: rate | the
               TTS's (edge words, voicevox moras ...), tts}
   traj        {file: "traj/<session>.npz", key: "tNN", vars: [canonical
-              variable per column], idle: true} or null (refused)
+              variable per column], idle: true, version: TRAJ_VERSION
+              (absent: 1, before moves played); a replayed one also
+              body_sha (the body it was streamed on), replayed (when)} or
+              null (refused)
   llm         {character, user}: {backend, model, usage (as the backend
               logged it), tokens {in, in_hit, out}, usage_estimated,
               seconds, first_text_seconds, attempts}
@@ -83,9 +93,14 @@ included; flow.dataexport filters):
     k.variant     int8 [frames] arm variant index (Live2D drawings; 0 VRM)
     k.chars       float16 [len(spoken), 2] each spoken character's start,
                   end in seconds (silent punctuation: start == end)
-    k.replay      JSON string: {acts (timed), tokens (directed tokens as
-                  streamed)} -- with the seed, enough to replay the stream
-                  after pose / stream change
+    k.replay      JSON string, version 2: {v, acts (timed, as the parser
+                  and timing gave them: before any solve or drop), tags
+                  (the parser's, pauses included), end (speech seconds),
+                  seed, mouth (the voice's mouth token or null), method,
+                  tts, tokens (directed tokens as streamed)} -- enough to
+                  stream the turn again after a pose / moves / stream
+                  change (`replay`). Version 1 (no "v"): {acts after the
+                  gesture drops, tokens}.
     vars          JSON string: the variable list
   <out>/avatars.json   tsukuyomi.avatars/1: per avatar kind, body, body_sha,
                   pose_now, traj_vars, variants, prompts {persona: sha};
@@ -103,11 +118,19 @@ Values are rounded (ROUND decimals) and trajectories float16: 3 turns of
 ~5 s at 30 fps on Seed-san were 17 KB of npz (both trajectories), the turn
 records ~6 KB each (the history grows with the turn).
 
+replay (`python -m flow.dataset replay OUT [--force] [--sessions a,b]`):
+the records whose traj.version is older than TRAJ_VERSION (all with
+--force) streamed again from their replay records, no model called; the
+arrays to traj/v<TRAJ_VERSION>/<session>.npz (the old file kept), the
+updated records (markers, poses, moves, reach, timing, warnings, traj) to
+a new shard. A version 2 replay gives back the arrays it was made with.
+
 Usage:
     python -m flow.dataset gen --avatars Hiyori,seed-san,lafei \\
         --personas cheerful,sleepy,tsundere --sessions 20 --turns 6 \\
         --out data/datagen/pilot
     python -m flow.dataset estimate ...       # the cost before starting
+    python -m flow.dataset replay data/datagen/pilot
     scripts/datagen.sh                         # the unattended runner
 """
 
@@ -133,6 +156,7 @@ import numpy as np
 try:
     from . import body as fb
     from . import director as dr
+    from . import moves as mv
     from . import pose as pz
     from . import speech as sp
     from . import stream as fs
@@ -141,6 +165,7 @@ except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from flow import body as fb
     from flow import director as dr
+    from flow import moves as mv
     from flow import pose as pz
     from flow import speech as sp
     from flow import stream as fs
@@ -151,6 +176,15 @@ AVATARS_FORMAT = "tsukuyomi.avatars/1"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG = os.path.join(ROOT, "flow", "datagen.personas.json")
 ROUND = 4
+# The trajectories' version (a record's traj.version; 1 when absent): 2 =
+# [move] markers played (flow.moves). `replay` brings older ones up to it.
+TRAJ_VERSION = 2
+# The .replay record's layout: 1 = {acts (after the gesture drops), tokens};
+# 2 adds what a replay needs on its own (module docstring).
+REPLAY_VERSION = 2
+# Trajectory columns that are 0, not absent, when nothing writes them: a
+# VRM's whole-body offset (flow.moves writes it only while a move plays).
+ZERO = {"hips.x": 0.0, "hips.y": 0.0}
 USER_MAX = 300          # characters of a simulated user line at most
 SHARD_SIZE = 5000       # turn records per shard
 # Prices in US$ per million tokens: DeepSeek's deepseek-chat list prices
@@ -430,10 +464,15 @@ class Avatar:
                 if self.core is None:
                     self.core = run.get("core")
             else:
+                # The director's body-mode prompt without the rig: no
+                # gestures, the motion primitives this body can do.
                 bm = self.bm
-                run = {"system": pz.system_prompt(bm, ptext, False, ""),
+                mlines, mnames = dr.move_menu(a, bm)
+                run = {"system": pz.system_prompt(bm, ptext, False, "",
+                                                  mlines),
                        "labels": {}, "body": bm,
-                       "parser": lambda bm=bm: pz.parser_for(bm)}
+                       "parser": lambda bm=bm, m=bool(mnames):
+                           pz.parser_for(bm, moves=m)}
             self.runs[pid] = run
         self.pose_now = pz.pose_now(self.bm)
         self.traj_vars = traj_vars(self.bm, opts.traj_vars)
@@ -487,6 +526,9 @@ def traj_vars(bm, which="offered") -> list[str]:
         # are parameters, not canonical features: taken as played.
         out += [p for p in (f"viseme.{v}" for v in "aiueo")
                 if p in bm.params]
+        # The sway and bob of the whole avatar (flow.moves.HIPS), 0 when no
+        # move plays.
+        out += list(mv.HIPS)
     return out
 
 
@@ -496,7 +538,7 @@ def _quiet(_s):
     pass
 
 
-def _frames(av, acts, poses, seed, n, idle, mouth=None):
+def _frames(av, acts, poses, mvs, seed, n, idle, mouth=None):
     """Run the avatar's stream n frames with this turn's directed tokens:
     ([n, vars] canonical, [n] variant index, directed tokens)."""
     bm, fps = av.bm, float(av.opts.fps)
@@ -505,15 +547,19 @@ def _frames(av, acts, poses, seed, n, idle, mouth=None):
     out = np.full((n, len(cols)), np.nan, np.float32)
     var = np.zeros(n, np.int8)
     if av.kind == "live2d-lite":
-        toks = pz.tokens(poses, {}, av.arms)
-        lay = pz.layer_for(toks, fps, bm.default_values(),
-                           bm.blob.get("rest_parts"))
+        toks = mv.tokens(mvs) + pz.tokens(poses, {}, av.arms)
         rest = bm.default_values()
         rest_parts = dict(bm.blob.get("rest_parts", {}))
+        lay = pz.layer_for(toks, fps, rest, rest_parts)
+        mlay = mv.layer_for(toks, fps, rest, rest_parts)
         for f in range(n):
             over, parts = dict(rest), dict(rest_parts)
+            still = ()
+            if mlay is not None and mlay.busy():
+                over, parts = mlay.apply(f, over, parts)
+                still = mlay.holding
             if lay is not None:
-                over, parts = lay.apply(f, over, parts)
+                over, parts = lay.apply(f, over, parts, still)
             st = bm.perceive(over, parts=parts)
             out[f] = [st.get(c, np.nan) for c in cols]
             var[f] = vidx.get(st.get("arm.variant"), 0)
@@ -530,6 +576,8 @@ def _frames(av, acts, poses, seed, n, idle, mouth=None):
                           settle=getattr(rig, "settle", None))
     if poses:
         directed += pz.tokens(poses, rig.roles, av.arms)
+    if mvs:
+        directed += mv.tokens(mvs)
     stream.direct(copy.deepcopy(directed))
     if mouth is not None:
         stream.add_mouth(0, mouth, len(mouth["open"]))
@@ -537,22 +585,20 @@ def _frames(av, acts, poses, seed, n, idle, mouth=None):
         over, parts = stream.frame()
         st = bm.perceive(over, parts=parts) if av.kind == "live2d" \
             else bm.perceive(over)
-        out[f] = [st[c] if c in st else over.get(c, np.nan) for c in cols]
+        out[f] = [st[c] if c in st else over.get(c, ZERO.get(c, np.nan))
+                  for c in cols]
         var[f] = vidx.get(st.get("arm.variant"), 0)
     return out, var, directed
 
 
-def play(av, reply, seed):
-    """A reply on the avatar, not rendered: (record fields, arrays). Must
-    run under av.lock."""
+def timed(av, reply):
+    """A reply's timing on the avatar: {acts (every non-pause marker with
+    its time t, rounded as the replay record keeps it), spans (each spoken
+    character's start, end), end (speech seconds), mouth (the voice's
+    mouth token or None), method, tts}."""
     opts, a = av.opts, av.a
     spoken, tags = reply["spoken"], reply["tags"]
     fps = float(opts.fps)
-    warnings = []
-
-    def log(s):
-        if "WARNING" in s or "dropped" in s or "failed" in s:
-            warnings.append(s)
     tts_info, mouth, method = None, None, "rate"
     if av.tts is not None and spoken:
         moods = sp.sentence_moods(spoken, tags)
@@ -575,16 +621,53 @@ def play(av, reply, seed):
     else:
         acts, spans, end = dr.timeline(spoken, tags, a.cjk_rate,
                                        a.latin_rate)
+    # Rounded before anything is solved: a replay from the stored acts
+    # must see the same times (ceil(t * fps) flips on the 5th decimal).
+    return {"acts": [_r(dict(x)) for x in acts], "spans": spans,
+            "end": round(float(end), ROUND), "mouth": mouth, "method": method,
+            "tts": tts_info}
+
+
+def play(av, reply, seed):
+    """A reply on the avatar, not rendered: (record fields, arrays). Must
+    run under av.lock."""
+    return play_timed(av, reply["tags"], timed(av, reply), seed)
+
+
+def play_timed(av, tags, tm, seed):
+    """play() from a timed reply (timed(), or a replay record): moves built
+    on the body (flow.moves, seeded by the turn's seed and where each
+    marker is), poses solved, the gestures they clash with dropped, as
+    director.plan does; both trajectories streamed."""
+    opts = av.opts
+    fps = float(opts.fps)
+    warnings = []
+
+    def log(s):
+        if "WARNING" in s or "dropped" in s or "failed" in s:
+            warnings.append(s)
+    pre = copy.deepcopy(tm["acts"])
+    acts = [dict(x) for x in tm["acts"]]
+    end, spans, mouth = tm["end"], tm["spans"], tm.get("mouth")
     orig = list(acts)
-    poses, gone = [], []
+    mvs, moved, gone = [], {}, []
+    if any(x.get("tag") == mv.MOVE for x in acts):
+        # Built first, before any act is dropped (a move's seed hashes its
+        # index in acts), as director.plan builds them.
+        mvs = mv.solve_moves(av.bm, acts, log=log, seed=seed)
+        moved = {id(acts[m["act"]]) for m in mvs}
+        gone += mv.drop_clashing_gestures(acts, mvs, av.motions, log)
+    poses = []
     if any(x.get("tag") == pz.POSE for x in acts):
         poses = pz.solve_poses(av.bm, acts, core=av.core, log=log)
         for rec in poses:
             rec["arm_params"] = sorted(set(rec["params"]) & av.arms)
-        gone = pz.drop_clashing_gestures(acts, poses, av.motions, log)
+        gone += pz.drop_clashing_gestures(acts, poses, av.motions, log)
     seconds = dr.length(acts, end, av.motions, opts.tail)
     if poses:
         seconds = max(seconds, pz.end_time(poses) + opts.tail)
+    if mvs:
+        seconds = max(seconds, mv.end_time(mvs) + opts.tail)
     n = int(round(seconds, 2) * fps) + 1
     gone_ids = {id(x) for x in gone}
     solved = {id(acts[p["act"]]): p for p in poses}
@@ -610,36 +693,48 @@ def play(av, reply, seed):
             rec = solved.get(id(x))
             played = True if rec and (rec["params"] or rec["parts"]) \
                 else "unsolved"
+        elif x["tag"] == mv.MOVE:
+            # Not built: a primitive this body cannot do (logged).
+            played = True if id(x) in moved else "unsolved"
         else:
             played = x["tag"] in ("blink", "gesture")
         markers.append({"tag": x["tag"], "arg": x["arg"], "at": x["at"],
                         "t": x["t"], "text": pz.tag_text(x),
                         "played": played})
-    played_traj, var, directed = _frames(av, acts, poses, seed, n, True,
-                                         mouth)
+    played_traj, var, directed = _frames(av, acts, poses, mvs, seed, n,
+                                         True, mouth)
     if av.kind == "live2d-lite":
         directed_traj = played_traj
     else:
-        directed_traj, _v, _d = _frames(av, acts, poses, seed, n, False,
-                                        mouth)
+        directed_traj, _v, _d = _frames(av, acts, poses, mvs, seed, n,
+                                        False, mouth)
     chars = np.asarray(spans, np.float32).reshape(-1, 2)
     keep = ("t", "start", "dur", "hold", "release", "targets", "resolved",
             "params", "parts", "variant_name", "report", "exact", "exact_ok",
             "ok", "via", "hints", "at")
+    mkeep = ("name", "t", "at", "start", "seconds", "beats", "tempo", "amp",
+             "segments", "solves", "solve_seconds")
     fields = {
         "markers": _r(markers),
         "poses": [_r({k: p[k] for k in keep if k in p}) for p in poses],
+        "moves": [_r({k: m[k] for k in mkeep if k in m}) for m in mvs],
         "reach": pz.reach_summary(poses),
         "timing": {"speech_seconds": round(float(end), 3),
                    "seconds": round(float(seconds), 3), "frames": n,
-                   "fps": fps, "method": method, "tts": tts_info},
+                   "fps": fps, "method": tm.get("method", "rate"),
+                   "tts": tm.get("tts")},
         "play_warnings": warnings,
     }
+    replay = {"v": REPLAY_VERSION, "acts": pre,
+              "tags": [{k: t.get(k) for k in ("tag", "arg", "at")}
+                       for t in tags],
+              "end": float(end), "seed": int(seed), "mouth": mouth,
+              "method": tm.get("method", "rate"), "tts": tm.get("tts"),
+              "tokens": directed}
     arrays = {"": played_traj.astype(np.float16),
               ".directed": directed_traj.astype(np.float16),
               ".variant": var, ".chars": chars.astype(np.float16),
-              ".replay": json.dumps(_r({"acts": acts, "tokens": directed}),
-                                    ensure_ascii=False)}
+              ".replay": json.dumps(_r(replay), ensure_ascii=False)}
     return fields, arrays
 
 
@@ -873,15 +968,17 @@ def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
         rec["unplayed"] = unplayed
         key = f"t{turn:02d}"
         if reply["refused"]:
-            rec.update(markers=[], poses=[], reach=pz.reach_summary([]),
-                       timing=None, traj=None)
+            rec.update(markers=[], poses=[], moves=[],
+                       reach=pz.reach_summary([]), timing=None, traj=None,
+                       play_warnings=[])
         else:
             with av.lock:
                 fields, arr = play(av, reply, sess["seed"] + turn)
-            rec["warnings"] += fields.pop("play_warnings")
+            rec["warnings"] += fields["play_warnings"]
             rec.update(fields)
             rec["traj"] = {"file": f"traj/{sess['id']}.npz", "key": key,
-                           "vars": av.traj_vars, "idle": True}
+                           "vars": av.traj_vars, "idle": True,
+                           "version": TRAJ_VERSION}
             for suf, v in arr.items():
                 arrays[key + suf] = v
             history.append({"user": line, "user_content": content,
@@ -977,6 +1074,23 @@ class Store:
                             "cost_usd": round(tot["cost_usd"], 7)}, run_id)
             self.done.add(sid)
 
+    def write_records(self, traj_file, records, arrays):
+        """Arrays (traj_file under out) then records, as write_session does,
+        with no manifest line: flow.dataset replay."""
+        with self.lock:
+            path = os.path.join(self.out, traj_file)
+            tmp = path + ".tmp.npz"
+            np.savez_compressed(tmp, **{k: (np.array(v) if isinstance(
+                v, str) else v) for k, v in arrays.items()})
+            os.replace(tmp, path)
+            with open(self._shard_path(), "a", encoding="utf-8") as fh:
+                for r in records:
+                    fh.write(json.dumps(r, ensure_ascii=False,
+                                        separators=(",", ":")) + "\n")
+                fh.flush()
+                os.fsync(fh.fileno())
+            self.lines += len(records)
+
     def fail_session(self, sid, error, tot, run_id, status="failed"):
         """A session not written (failed past its retries, or stopped
         mid-way: status "interrupted"), with what it spent; rerun on
@@ -1069,6 +1183,152 @@ def load_traj(out, rec, which=""):
     if which == ".replay":
         return json.loads(str(v))
     return v.astype(np.float32) if v.dtype == np.float16 else v
+
+
+# -------------------------------------------------------------- replay
+
+def run_opts(out):
+    """The options of the latest run into out (runs.jsonl), over gen's
+    defaults: what the avatars were prepared with."""
+    opts = parse_opts(["gen"])
+    path = os.path.join(out, "runs.jsonl")
+    last = {}
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    e = json.loads(line)
+                except ValueError:
+                    continue
+                if e.get("opts"):
+                    last = e["opts"]
+    for k, v in last.items():
+        if hasattr(opts, k):
+            setattr(opts, k, v)
+    return opts
+
+
+def replay_timed(rec, rep):
+    """(tags, timed) for play_timed from a record and its .replay. Version
+    2 holds them as played. Version 1 (records before REPLAY_VERSION 2)
+    kept the acts after the gesture drops and no tags or mouth: the tags
+    come from the markers, a dropped gesture's act from its marker (the
+    drops are decided again), the speech end from timing; a real TTS's
+    mouth is gone (None: the stream's mouth stays at rest)."""
+    chars = None
+    tags = rep.get("tags")
+    if rep.get("v", 1) >= 2:
+        return tags, {"acts": rep["acts"], "end": float(rep["end"]),
+                      "mouth": rep.get("mouth"), "method": rep.get("method"),
+                      "tts": rep.get("tts"), "spans": chars}
+    keep = ("t", "tag", "arg", "at")
+    acts = [{k: x[k] for k in keep if k in x} for x in rep["acts"]]
+    for m in rec.get("markers") or ():
+        if m.get("played") == "dropped" and m.get("t") is not None:
+            acts.append({"t": m["t"], "tag": m["tag"], "arg": m["arg"],
+                         "at": m["at"]})
+    acts.sort(key=lambda x: (float(x["t"]), int(x.get("at") or 0)))
+    tags = [{"tag": m["tag"], "arg": m["arg"], "at": m["at"]}
+            for m in rec.get("markers") or ()]
+    tm = rec.get("timing") or {}
+    return tags, {"acts": acts, "end": float(tm.get("speech_seconds") or 0),
+                  "mouth": None, "method": tm.get("method", "rate"),
+                  "tts": tm.get("tts"), "spans": chars}
+
+
+def replay(out, force=False, sessions=None, log=print) -> dict:
+    """Re-stream every record whose trajectory is older than TRAJ_VERSION
+    (all with force) from its .replay record: the moves built and the poses
+    solved again with the current code and body, both trajectories
+    streamed again; no model is called. Per session the new arrays go to
+    traj/v<TRAJ_VERSION>/<session>.npz (the old file is kept) and the
+    updated records to a new shard (readers keep the last record of an
+    id), traj.version set. Resumable: a session written is not redone."""
+    reg_path = os.path.join(out, "avatars.json")
+    with open(reg_path, encoding="utf-8") as fh:
+        reg = json.load(fh)
+    recs = iter_records(out)
+    by_s = {}
+    for r in recs:
+        if r.get("traj") and (force or int(r["traj"].get("version", 1))
+                              < TRAJ_VERSION):
+            by_s.setdefault(r["session"], []).append(r)
+    if sessions:
+        by_s = {k: v for k, v in by_s.items() if k in set(sessions)}
+    if not by_s:
+        log(f"dataset: replay: nothing older than trajectory version "
+            f"{TRAJ_VERSION} under {out}")
+        return {"sessions": 0, "turns": 0}
+    opts = run_opts(out)
+    avatars = {}
+    store = Store(out)
+    store.shard += 1            # a shard of its own: these lines win
+    store.lines = 0
+    vdir = f"traj/v{TRAJ_VERSION}"
+    os.makedirs(os.path.join(out, vdir), exist_ok=True)
+    n_turns, moved = 0, 0
+    t0 = time.monotonic()
+    for sid in sorted(by_s):
+        rs = sorted(by_s[sid], key=lambda r: r["turn"])
+        name = rs[0]["avatar"]["name"]
+        if name not in avatars:
+            entry = reg["avatars"].get(name)
+            if entry is None:
+                raise SystemExit(f"replay: {name} is not in {reg_path}")
+            spec = dict(entry["spec"])
+            avatars[name] = Avatar(spec, opts, {"replay": None}, log)
+        av = avatars[name]
+        arrays = {}
+        new = []
+        for r in rs:
+            rep = load_traj(out, r, ".replay")
+            if rep is None:
+                log(f"dataset: replay: {r['id']} has no replay record; kept")
+                continue
+            if r["avatar"].get("body_sha") != av.body_sha:
+                log(f"dataset: replay: {r['id']}: the body file changed "
+                    "since it was generated; replayed on the current one")
+            tags, tm = replay_timed(r, rep)
+            tm["spans"] = load_traj(out, r, ".chars")
+            if tm["spans"] is None:
+                tm["spans"] = np.zeros((0, 2), np.float32)
+            with av.lock:
+                fields, arr = play_timed(av, tags, tm, int(r["seed"]))
+            r = copy.deepcopy(r)
+            old = r.get("play_warnings")
+            if old is None:
+                # Version 1 kept them mixed in: the play's lines name
+                # their layer.
+                said = [w for w in r.get("warnings") or ()
+                        if not w.startswith(("pose:", "move:"))]
+            else:
+                said = [w for w in r.get("warnings") or () if w not in old]
+            timing = dict(fields.pop("timing"))
+            timing["speech_seconds"] = (r.get("timing") or {}).get(
+                "speech_seconds", timing["speech_seconds"])
+            r.update(fields)
+            r["timing"] = timing
+            r["warnings"] = said + fields["play_warnings"]
+            key = r["traj"]["key"]
+            r["traj"] = {"file": f"{vdir}/{sid}.npz", "key": key,
+                         "vars": av.traj_vars, "idle": True,
+                         "version": TRAJ_VERSION, "body_sha": av.body_sha,
+                         "replayed": time.strftime("%Y-%m-%dT%H:%M:%S")}
+            for suf, v in arr.items():
+                arrays[key + suf] = v
+            new.append(r)
+            moved += sum(m["tag"] == mv.MOVE and m["played"] is True
+                         for m in r["markers"])
+        if not new:
+            continue
+        arrays["vars"] = json.dumps(av.traj_vars)
+        store.write_records(f"{vdir}/{sid}.npz", new, arrays)
+        n_turns += len(new)
+    log(f"dataset: replay: {n_turns} turns in {len(by_s)} sessions "
+        f"re-streamed ({moved} moves played) in "
+        f"{time.monotonic() - t0:.1f}s -> {vdir}/, shard "
+        f"{os.path.basename(store._shard_path())}")
+    return {"sessions": len(by_s), "turns": n_turns, "moves": moved}
 
 
 # -------------------------------------------------------------- budget
@@ -1461,6 +1721,21 @@ def parse_opts(argv):
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["replay"]:
+        ap = argparse.ArgumentParser(
+            prog="flow.dataset replay",
+            description="re-stream old records' trajectories from their "
+                        "replay records (no model calls)")
+        ap.add_argument("out", help="a flow.dataset --out")
+        ap.add_argument("--force", action="store_true",
+                        help="every record, not only those older than "
+                             f"trajectory version {TRAJ_VERSION}")
+        ap.add_argument("--sessions", default=None,
+                        help="comma-separated session ids only")
+        a = ap.parse_args(argv[1:])
+        replay(a.out, a.force, [x for x in (a.sessions or "").split(",")
+                                if x] or None)
+        return 0
     opts = parse_opts(argv)
     out = generate(opts, argv=argv)
     return int(out.get("exit", 0))
