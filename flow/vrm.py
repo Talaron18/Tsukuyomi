@@ -60,9 +60,17 @@ except ImportError:
 # Live2D standard ids relate to the canonical variables (flow.body's
 # DECLARED / SIGN, Hiyori's measured file): ParamAngleZ + rolls clockwise
 # as seen, head.tilt + counter-clockwise, so head_z -> -head.tilt.
+# head_y 1 = 15 deg of pitch, not ParamAngleY's nominal 30: Live2D draws
+# its pitch shallower than its yaw. Measured on the rigs' body files (the
+# mouth's vertical shift at ParamAngleY +-30 over its sideways shift at
+# ParamAngleX 30): Hiyori 0.70 / 0.39 (up / down), Natori 1.19 / 0.98,
+# lafei 0.46 / 0.48, xuefeng 0.45 / 0.48, median 0.48; on a VRM head the
+# same ratio is a pitch of 14 deg (Seed-san 15 deg: 0.51, three-vrm-girl
+# 0.50). At 30 the fitted idle's head_y (p2 -1.0, its downward tail the
+# long one) bent the head 18 deg down at its 2nd percentile.
 ROLE_MAP = {
     "head_x": ("head.yaw", 1.0, 30.0),
-    "head_y": ("head.pitch", 1.0, 30.0),
+    "head_y": ("head.pitch", 1.0, 15.0),
     "head_z": ("head.tilt", -1.0, 30.0),
     "body_x": ("torso.yaw", 1.0, 10.0),
     "body_y": ("torso.pitch", 1.0, 10.0),
@@ -74,6 +82,32 @@ ROLE_MAP = {
     "brow_lf": ("brow.L.form", 1.0, 1.0),
     "brow_rf": ("brow.R.form", 1.0, 1.0),
 }
+
+
+# --avatar both: the reply's pose markers are written in the Live2D body's
+# units (its prompt), where a canonical angle is the Cubism parameter's
+# value (head.pitch -20 = ParamAngleY -20). On the VRM that angle is
+# ROLE_MAP's: a Live2D marker scaled by role unit / Cubism range.
+L2D_SCALE = {var: unit / deg for _r, (var, _sg, unit) in ROLE_MAP.items()
+             for n, _u, _sid, deg in fb.DECLARED
+             if n == var and deg and abs(unit / deg - 1.0) > 1e-9}
+
+
+def from_live2d(acts):
+    """acts (parsed on the Live2D body) with their pose targets in VRM
+    units (L2D_SCALE); landmark references are left as written."""
+    out = []
+    for x in acts:
+        tg = (x.get("arg") or {}).get("targets") if x.get("tag") == "pose" \
+            else None
+        if tg and any(k in L2D_SCALE and isinstance(v, (int, float))
+                      for k, v in tg.items()):
+            tg = {k: (v * L2D_SCALE[k] if k in L2D_SCALE and
+                      isinstance(v, (int, float)) else v)
+                  for k, v in tg.items()}
+            x = dict(x, arg=dict(x["arg"], targets=tg))
+        out.append(x)
+    return out
 
 
 class _NoGestures:
@@ -196,7 +230,13 @@ def body_for(vrm_path=None, body_path=None, log=print):
     except ImportError:
         from flow import vrmbody as vb
     if body_path:
-        return load_body(body_path), body_path
+        bm = load_body(body_path)
+        if bm.vrm.get("rev", 1) < vb.BODY_REV:
+            log(f"vrm: {body_path} is body file revision "
+                f"{bm.vrm.get('rev', 1)} (no collision model: hands may pass "
+                "through the body); rebuild it: python -m flow.vrmbody "
+                f"--vrm PATH --out {body_path}")
+        return bm, body_path
     if not vrm_path:
         raise SystemExit("--avatar vrm needs --vrm PATH or --vrm-body FILE")
     stem = os.path.splitext(os.path.basename(vrm_path))[0]
@@ -206,7 +246,18 @@ def body_for(vrm_path=None, body_path=None, log=print):
             bm = fb.load(cand)
             if getattr(bm, "kind", None) == "vrm" and \
                     bm.vrm["file"] == os.path.basename(vrm_path):
-                return bm, cand
+                if bm.vrm.get("rev", 1) >= vb.BODY_REV:
+                    return bm, cand
+                # Built by an older flow.vrmbody (no collision model, the
+                # look-at's output scale unknown): built again from the .vrm
+                # it names, in place.
+                log(f"vrm: {cand} is body file revision "
+                    f"{bm.vrm.get('rev', 1)}, rebuilding (revision "
+                    f"{vb.BODY_REV})")
+                blob = vb.build(vrm_path, log=log)
+                with open(cand, "w", encoding="utf-8") as fh:
+                    json.dump(blob, fh, ensure_ascii=False, indent=1)
+                return vb.VRMBody(blob), cand
     # A dropped-in avatar: its body file is built now and kept under
     # rigs/, as flow.vrmbody --out would write it.
     out = os.path.join(root, "rigs", stem + ".body.json")
@@ -459,9 +510,15 @@ class Follower:
     """--avatar both: the VRM plays every sentence the Live2D rig plays,
     from the same parsed actions at the same server time. Its own idle,
     realize (its own roles and rng) and, in body mode, its own solve of the
-    same pose markers -- landmark references resolve on its own body, and
-    variables it lacks are dropped by flow.pose (reported). Its mouth
-    follows the same audio with vowel shapes."""
+    same pose markers -- landmark references resolve on its own body,
+    angles in Live2D units are converted (from_live2d), and variables it
+    lacks are dropped by flow.pose (reported). Composite targets ("hands":
+    "@together") never reach it: the prompt and the parser are the Live2D
+    body's, which has none (its prompt stays the bytes it was; it cannot
+    draw a hand behind its back). Two hands it sends to one place meet
+    side by side on the VRM (flow.vrmbody's collision model) instead of
+    passing through each other. Its mouth follows the same audio with
+    vowel shapes."""
 
     def __init__(self, a, bm, rig, stream, log=print):
         self.a, self.bm, self.rig, self.stream, self.log = a, bm, rig, \
@@ -478,6 +535,7 @@ class Follower:
             from flow import pose as pz
             from flow import speech as sp
         a, fps = self.a, self.rig.fps
+        acts = from_live2d(acts)
         poses = []
         if any(x.get("tag") == pz.POSE for x in acts):
             cur, _ = self.stream.body_now()

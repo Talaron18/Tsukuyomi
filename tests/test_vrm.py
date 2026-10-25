@@ -296,8 +296,8 @@ def test_arm_angles_invert_arm_rotation():
     rng = np.random.default_rng(0)
     for s in "LR":
         for _ in range(50):
-            e, p, w = rng.uniform(5, 165), rng.uniform(-30, 130), \
-                rng.uniform(-70, 70)
+            e, p, w = rng.uniform(5, 165), rng.uniform(-90, 130), \
+                rng.uniform(-100, 90)
             got = vb.arm_angles(s, vb.arm_rotation(s, e, p, w))
             assert got == pytest.approx((e, p, w), abs=1e-6)
     # The meaning of the angles: elevation 90 in plane 0 is straight out
@@ -314,14 +314,20 @@ def test_ik_round_trips_reachable_hands_within_the_limits(seed_body):
     bm = seed_body
     rng = np.random.default_rng(1)
     rest = bm.default_values()
-    n = 0
-    for _ in range(80):
+    n = tried = 0
+    while tried < 80:
         s = "LR"[n % 2]
         n += 1
         v = dict(rest)
         for k in vb.ARM[s]:
             lo, hi = bm.params[k]["min"], bm.params[k]["max"]
             v[k] = rng.uniform(lo + 0.1 * (hi - lo), hi - 0.1 * (hi - lo))
+        # Reachable: within the shoulder's coupled limits and out of the
+        # body (a hand placed inside the chest is moved out, not reached).
+        if bm.arm_viol(s, *(v[k] for k in vb.ARM[s][:3])) > 0 or \
+                max(bm.penetration(v).values()) > vb.PEN_TOL:
+            continue
+        tried += 1
         target = bm.palms(v)[s]
         res = bm.solve({f"hand.{s}.{q}": float(target[i])
                         for i, q in enumerate("xyz")})

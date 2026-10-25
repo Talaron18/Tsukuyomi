@@ -381,7 +381,13 @@ class PoseParser(dr.TagParser):
 
 
 def parser_for(bm, max_marker=MAX_MARKER, gestures=()):
-    return PoseParser(available(bm), bm.landmarks, max_marker, gestures)
+    # A VRM body also takes composite targets ("hands": "@together");
+    # a Live2D body has none (the same parser as before them).
+    names = tuple(getattr(bm, "composite_landmarks", ()))
+    keys = list(getattr(bm, "composite_keys", ())) if names else []
+    return PoseParser(available(bm) + keys,
+                      list(bm.landmarks) + list(names) if names
+                      else bm.landmarks, max_marker, gestures)
 
 
 def tag_text(t) -> str:
@@ -607,6 +613,9 @@ def describe_body(bm) -> str:
     cannot.append("no walking, no legs, no fingers; nothing outside the "
                   "ranges above (a target outside is reached as far as it "
                   "goes)")
+    notes = getattr(bm, "prompt_notes", None)
+    if notes is not None:
+        L += notes()
     L.append("What you cannot do:")
     L += [f"  - {c}" for c in cannot]
     return "\n".join(L)
@@ -873,16 +882,27 @@ def solve_poses(bm, acts, current=None, parts=None, core=None, log=print,
         start = t
         for q in out:
             q_end = q["start"] + q["dur"] + q["hold"]
-            if t < q_end:
+            if t < q_end and (not q.get("via") or q["start"] <= t):
                 vals.update(q["params"])
                 prt.update(q["parts"])
             if set(q["vars"]) & set(resolved):
                 wait = q["start"] + q["dur"] + (q["hold"] if q["hold_set"]
                                                  else 0.0)
                 start = max(start, wait if t < wait else start)
+        # A detour back out (a via leg, below) not begun when this pose on
+        # the same variables starts is dropped: this pose leaves from where
+        # that one held, by its own way.
+        out = [q for q in out if not (q.get("via") == "out" and
+                                      set(q["vars"]) & set(resolved) and
+                                      q["start"] >= start)]
         cur_k = bm.match_variant(vals, prt)
         t0 = time.monotonic()
-        res = bm.solve(resolved, current=vals, parts=prt)
+        # Composite targets (a VRM body's "hands": "@together") go to the
+        # solver as written too: it turns the hands from them.
+        comp = {c: raw[c] for c in getattr(bm, "composite_keys", ())
+                if c in raw}
+        res = bm.solve({**resolved, **comp} if comp else resolved,
+                       current=vals, parts=prt)
         sec = time.monotonic() - t0
         k = res.get("variant")
         if k is None:
@@ -936,6 +956,16 @@ def solve_poses(bm, acts, current=None, parts=None, core=None, log=print,
             report[var] = {"target": round(y, 5), "got": round(float(got), 5),
                            "error": round(err, 5), "unit": u,
                            "ok": abs(err) <= fb.TOL[u]}
+        # The solver's own verdicts (a VRM body): hands placed together by
+        # a composite are where they meet; a hand only reaching through
+        # the body is a miss.
+        for var in res.get("met", ()):
+            if var in report:
+                report[var]["ok"] = True
+        for var, why in res.get("why", {}).items():
+            if var in report and why and var not in res.get("met", ()) \
+                    and not res["report"].get(var, {}).get("ok", True):
+                report[var]["ok"] = False
         rec = {"act": idx, "t": round(t, 4), "at": a.get("at"),
                "start": round(start, 4), "dur": round(dur, 4),
                "hold": round(hold, 4), "hold_set": hold_set,
@@ -954,6 +984,29 @@ def solve_poses(bm, acts, current=None, parts=None, core=None, log=print,
         if not rec["ok"]:
             rec["hints"] = hints_text(bm, res, report)
         rec["_shown"] = shown
+        via = res.get("via")
+        if via:
+            # The straight way there (and back) goes through the body (a
+            # VRM body: flow.vrmbody._via): pass through `via` on the way
+            # in and again before the release, each leg half the move.
+            half = round(max(dur / 2, DUR_RANGE[0]), 4)
+
+            def leg(start_, which):
+                return {"act": idx, "t": rec["t"], "at": rec["at"],
+                        "start": round(start_, 4), "dur": half, "hold": 0.0,
+                        "hold_set": True,
+                        "release": round(max(half, RELEASE_MIN), 4),
+                        "targets": {}, "resolved": {}, "vars": rec["vars"],
+                        "params": dict(via), "parts": {}, "parts_from": {},
+                        "step": [], "variant": k, "variant_name": v["name"],
+                        "report": {}, "ok": True, "solve_seconds": 0.0,
+                        "via": which}
+            out.append(leg(start, "in"))
+            rec["start"] = round(start + half, 4)
+            rec["dur"] = half
+            out.append(rec)
+            out.append(leg(rec["start"] + rec["dur"] + rec["hold"], "out"))
+            continue
         out.append(rec)
     if core is not None:
         add_exact(bm, core, out, log)
@@ -1000,6 +1053,8 @@ def hints_text(bm, res, report) -> dict:
         if h["mirror"] and h["mirror"][1]:
             m, lim = h["mirror"]
             msg.append(f"{m} reaches {lim[0]:.2f} to {lim[1]:.2f}")
+        if h.get("why"):
+            msg.insert(0, h["why"])
         out[t] = "; ".join(msg)
     return out
 
@@ -1007,6 +1062,7 @@ def hints_text(bm, res, report) -> dict:
 def reach_summary(poses) -> dict:
     """{markers, targets, ok, miss, exact_ok, exact_n, solve_seconds}."""
     n = ok = eok = en = 0
+    poses = [p for p in poses if not p.get("via")]
     for p in poses:
         for var, e in p["report"].items():
             n += 1
@@ -1023,6 +1079,8 @@ def report_lines(poses, spoken="") -> list[str]:
     """One line per pose for the logs: targets, got, ok/MISS, Core check."""
     out = []
     for p in poses:
+        if p.get("via"):
+            continue
         bits = []
         for var, e in p["report"].items():
             u = e["unit"]
@@ -1289,7 +1347,7 @@ CHECK_PROMPT = (
 
 def check_message(poses, spoken, image_note=False) -> str:
     lines = []
-    for n, p in enumerate(poses, 1):
+    for n, p in enumerate([q for q in poses if not q.get("via")], 1):
         at = p.get("at")
         words = (spoken[at:at + 24].strip() if spoken and at is not None
                  else "")

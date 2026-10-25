@@ -232,7 +232,10 @@ def vrm_info(g: GLTF) -> dict:
     for the README), expressions {name: {"binds": [(mesh name, morph
     index, weight)], "preset": bool, "override": {blink, lookAt, mouth}}},
     look_at {type "bone" | "expression", h (deg of input at full), v_up,
-    v_down}, springs (count of spring chains)}."""
+    v_down, and the output at full: h_out / h_in (outer / inner eye
+    corner), v_up_out, v_down_out -- degrees of eye rotation for "bone",
+    expression weights for "expression"}, springs (count of spring
+    chains)}."""
     ext = g.json.get("extensions") or {}
     meshes = g.json.get("meshes", [])
     nodes = g.json.get("nodes", [])
@@ -257,13 +260,21 @@ def vrm_info(g: GLTF) -> dict:
                                                       []))}
         la = v.get("lookAt", {})
 
-        def rng(key):
+        def rng(key, field="inputMaxValue"):
             r = la.get(key) or {}
-            return float(r.get("inputMaxValue", 90.0))
+            # The spec's defaults: input 90 deg; output 10 deg of eye
+            # rotation for a bone look-at, weight 1 for an expression one.
+            dflt = 90.0 if field == "inputMaxValue" else (
+                10.0 if la.get("type", "bone") == "bone" else 1.0)
+            return float(r.get(field, dflt))
         look = {"type": la.get("type", "bone"),
                 "h": rng("rangeMapHorizontalOuter"),
                 "v_up": rng("rangeMapVerticalUp"),
                 "v_down": rng("rangeMapVerticalDown"),
+                "h_out": rng("rangeMapHorizontalOuter", "outputScale"),
+                "h_in": rng("rangeMapHorizontalInner", "outputScale"),
+                "v_up_out": rng("rangeMapVerticalUp", "outputScale"),
+                "v_down_out": rng("rangeMapVerticalDown", "outputScale"),
                 "offset": la.get("offsetFromHeadBone", [0, 0, 0])}
         m = v.get("meta", {})
         lic = {"name": "VRM Public License 1.0" if "vrm.dev/licenses/1.0"
@@ -303,13 +314,24 @@ def vrm_info(g: GLTF) -> dict:
                                grp.get("materialValues", []))}
         fp = v.get("firstPerson") or {}
 
-        def rng0(key):
-            return float((fp.get(key) or {}).get("xRange", 90.0))
-        look = {"type": str(fp.get("lookAtTypeName", "Bone")).lower()
-                .replace("blendshape", "expression"),
+        kind = str(fp.get("lookAtTypeName", "Bone")).lower() \
+            .replace("blendshape", "expression")
+
+        def rng0(key, field="xRange"):
+            # VRM 0's curve maps xRange degrees of input to yRange of
+            # output (degrees for a bone look-at, a weight for blend
+            # shapes); UniVRM's defaults where a file leaves them out.
+            dflt = 90.0 if field == "xRange" else (
+                10.0 if kind == "bone" else 1.0)
+            return float((fp.get(key) or {}).get(field, dflt))
+        look = {"type": kind,
                 "h": rng0("lookAtHorizontalOuter"),
                 "v_up": rng0("lookAtVerticalUp"),
                 "v_down": rng0("lookAtVerticalDown"),
+                "h_out": rng0("lookAtHorizontalOuter", "yRange"),
+                "h_in": rng0("lookAtHorizontalInner", "yRange"),
+                "v_up_out": rng0("lookAtVerticalUp", "yRange"),
+                "v_down_out": rng0("lookAtVerticalDown", "yRange"),
                 "offset": [(fp.get("firstPersonBoneOffset") or {}).get(k, 0)
                            for k in "xyz"]}
         m = v.get("meta", {})
