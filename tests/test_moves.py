@@ -372,3 +372,46 @@ def test_vrm_follower_plays_the_live2d_sides_moves_on_its_own_body(seed):
     for _ in range(int(2.5 * FPS)):
         over, _p = stream.frame()
     assert stream.moves.holding
+
+
+def test_live_performer_puts_a_move_on_the_stream(tmp_path):
+    import argparse
+    from flow import live as lv
+    from flow import stream as fs
+    from tests.test_live import FakeClock, SpeakingTTS
+    from tests.test_pose import _body_rig
+    model, rig_path, bm = _body_rig(tmp_path / "x")
+    rig = fs.EventRig(str(model), str(rig_path), "default", None, None, FPS,
+                      str(tmp_path), log=lambda s: None)
+    clock = FakeClock(2.0)
+    hub = lv.Hub(clock)
+    stream = fs.MotionStream(rig, seed=0, autonomic=False,
+                             log=lambda s: None)
+    a = argparse.Namespace(seed=0, lead=0.25, gap=0.12, lipsync="off",
+                           mouth_gain=1.0, cjk_rate=dr.CJK_RATE,
+                           latin_rate=dr.LATIN_RATE, mood="auto",
+                           backend="deepseek")
+    run = {"system": "", "labels": {}, "offered": None, "mode": "body",
+           "body": bm, "core": None, "images": False,
+           "max_tag": pz.MAX_MARKER,
+           "parser": lambda: pz.parser_for(bm, moves=True)}
+    reply = ('Let\'s dance! [move {"name": "dance", "beats": 8}] Come on. '
+             '[move {"name": "dance", "beats": 8}] Again!')
+    logs = []
+    p = lv.Performer(a, run, rig, stream, clock, hub, dr.TextBackend(reply),
+                     SpeakingTTS(clock), log=logs.append)
+    p.turn("dance for me")
+    mt = [k for k in stream.pending if k["type"] == "move"]
+    assert len(mt) == 2
+    au = [m for m in hub.history if m["type"] == "audio"]
+    assert mt[0]["t"] >= au[0]["t"] - 1e-6
+    # Two sentences, two different dances (each marker its own seed).
+    assert mt[0]["add"] != mt[1]["add"]
+    rep = [m for m in hub.history if m["type"] == "reply"][0]
+    assert any("moves" in s for s in rep["sentences"])
+    assert any("dance 8 beats" in s for s in logs)
+    tilt = []
+    for _ in range(int((mt[0]["t"] + 3.0) * FPS)):
+        over, _p = stream.frame()
+        tilt.append(over.get("ParamBodyAngleZ", 0.0))
+    assert np.ptp(tilt) > 1.0

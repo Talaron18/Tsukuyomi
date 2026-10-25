@@ -713,6 +713,27 @@ class Performer:
             cal = getattr(a, "mouth_cal", None) if lip == "auto" else None
             mouth = sp.mouth_track(audio, sr, fps, nf, lip, a.mouth_gain,
                                    cal=cal, moras=moras)
+        mvs = []
+        if self.body is not None and any(x["tag"] == "move" for x in acts):
+            # Motion primitives (flow.moves), built from where the body is
+            # heading, before the sentence's time is taken (a 16-beat dance
+            # is 0.6-1 s of solves; after it, the audio would start late).
+            # Each marker's variation is seeded by the run's seed, the turn
+            # and the sentence, written on the marker: the --avatar both
+            # follower draws the same, and the realize generator is not
+            # touched.
+            t_m = self.clock.now()
+            base = mv.move_seed(a, 1000 * n + k)
+            for i, x in enumerate(acts):
+                if x["tag"] == "move":
+                    x["arg"] = dict(x["arg"], seed=mv.hash_seed(
+                        base, x.get("at"), i))
+            cur, cur_parts = self.stream.body_now()
+            mvs = mv.solve_moves(self.body["body"], acts, cur, cur_parts,
+                                 log=self.log, seed=base)
+            mv.drop_clashing_gestures(acts, mvs, self.rig.motion_seconds,
+                                      self.log)
+            lat_move = self.clock.now() - t_m
         # When: as soon as possible, never over the previous sentence.
         now = self.clock.now()
         lead_f = int(math.ceil((now + a.lead) * fps))
@@ -725,19 +746,6 @@ class Performer:
         late = (f0 - self.next_frame) / fps if spoken and k > 1 else 0.0
         if spoken:
             self.next_frame = f0 + int(math.ceil((end + a.gap) * fps))
-        mvs = []
-        if self.body is not None and any(x["tag"] == "move" for x in acts):
-            # Motion primitives (flow.moves), built from where the body is
-            # heading; a dance's variation seeded by the run's seed and
-            # the sentence's first frame (the --avatar both follower draws
-            # the same), never from the realize generator.
-            t_m = self.clock.now()
-            cur, cur_parts = self.stream.body_now()
-            mvs = mv.solve_moves(self.body["body"], acts, cur, cur_parts,
-                                 log=self.log, seed=mv.move_seed(a, f0))
-            mv.drop_clashing_gestures(acts, mvs, self.rig.motion_seconds,
-                                      self.log)
-            lat_move = self.clock.now() - t_m
         poses = []
         if self.body is not None and any(x["tag"] == pz.POSE for x in acts):
             bm = self.body["body"]

@@ -1216,9 +1216,10 @@ def solve_moves(bm, acts, current=None, parts=None, log=print, seed=0):
 
 
 def move_seed(a, f0):
-    """flow.live's seed for a sentence's moves: the run's --seed and the
-    sentence's first frame, so every turn dances anew and --avatar both's
-    two bodies draw the same."""
+    """flow.live's seed for a sentence's moves: the run's --seed and a
+    number for the sentence (turn and sentence index), so every turn
+    dances anew; flow.live writes it on the marker, so --avatar both's two
+    bodies draw the same."""
     return (int(getattr(a, "seed", 0)) * 7919 + int(f0)) & 0x7FFFFFFF
 
 
