@@ -381,6 +381,12 @@ class Handler(BaseHTTPRequestHandler):
                           encoding="utf-8") as fh:
                     page = fh.read()
                 return self._send(200, page, "text/html; charset=utf-8")
+            if path == "/favicon.ico":
+                # The browser asks on its own; a 404 here was the page's
+                # one console error.
+                self.send_response(204)
+                self.end_headers()
+                return None
             if path.startswith("/web/"):
                 return self._static(path[5:])
             if path == "/avatar.vrm" and getattr(self.app, "vrm", None):

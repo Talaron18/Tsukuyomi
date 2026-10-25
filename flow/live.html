@@ -211,7 +211,9 @@ document.getElementById("form").addEventListener("submit", async e => {
 
 (async () => {
   for (let i = 0; i < 5; i++) await ping();
-  setInterval(ping, 2000);
+  // One ping at a time (see flow/web/vrm.html): a fixed timer piles up
+  // requests behind a slow link.
+  (async function pingLoop() { await ping(); setTimeout(pingLoop, 2000); })();
   events();
   video();
   requestAnimationFrame(draw);

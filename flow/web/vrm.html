@@ -249,16 +249,25 @@ document.getElementById("form").addEventListener("submit", async e => {
   } catch (err) { log("send failed: " + err); }
 });
 
+// One ping at a time: a timer firing every 2 s piled up requests behind a
+// slow tunnel (262 ms ping) until the browser's six connections to the
+// server were all pending and nothing, /say included, got through.
+async function pingLoop() { await ping(); setTimeout(pingLoop, 2000); }
+
 (async () => {
   cfg = await (await fetch("/avatar.json", {cache: "no-store"})).json();
+  // The avatar (11 MB for the sample) first, before the long-lived streams
+  // take connections: over a slow link the download otherwise shared the
+  // link with them and the page sat black at 0 fps.
+  log("loading avatar...");
+  try { av = await loadAvatar("/avatar.vrm", vcv, cfg.camera, { bg: cfg.bg }); window.TSK_AV = av; log("avatar loaded"); }
+  catch (e) { log("VRM: " + e); console.error(e); }
   if (cfg.avatar === "both") { document.getElementById("l2dStage").hidden = false; video(); }
   for (let i = 0; i < 5; i++) await ping();
-  setInterval(ping, 2000);
+  pingLoop();
   events();
   stateStream();
   requestAnimationFrame(drawLoop);
-  try { av = await loadAvatar("/avatar.vrm", vcv, cfg.camera, { bg: cfg.bg }); window.TSK_AV = av; }
-  catch (e) { log("VRM: " + e); }
 })();
 </script>
 </body>
