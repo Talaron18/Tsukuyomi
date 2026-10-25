@@ -130,6 +130,11 @@ HANG = 0.25
 # space. Half a beat moved a fist from its peak to the hips in 8 frames.
 MIX = 1.0
 BULGE = 0.35            # hu forward at the middle of a mix
+# Live2D arm solves: targets weighed 0.3 against the prior (continuity
+# from the previous keyframe; Hiyori's dance: largest step between
+# keyframes 6.3 -> 2.8 on ParamHandRB, span 20), and at most this many
+# spans a second (a wave at 120 bpm needs 1.6).
+L2D_WEIGHT, L2D_RATE = 0.3, 2.5
 # A Live2D arm figure is offered when its hands travel at least this share
 # of the figure's own travel within one drawing, and a clap's hands come
 # this close (hu).
@@ -201,12 +206,12 @@ def _twirl_c(c):
 
 def p_sway(b, a, side, c):
     s = swing(b, 2.0)
-    add = {"torso.tilt": 7.0 * a * s, "torso.yaw": 2.0 * a * s,
-           "head.tilt": -3.5 * a * s, "head.yaw": -1.5 * a * s}
+    add = {"torso.tilt": 9.0 * a * s, "torso.yaw": 2.0 * a * s,
+           "head.tilt": -4.0 * a * s, "head.yaw": -1.5 * a * s}
     if c.vrm:
         # The hips go the other way from the lean (a hip sway), and dip a
         # little on every step.
-        add["hips.x"] = 0.05 * a * s
+        add["hips.x"] = 0.08 * a * s
         add["hips.y"] = -0.02 * a * pulse(b)
     return add, {}
 
@@ -269,13 +274,14 @@ def p_cheer(b, a, side, c):
     add = {"head.pitch": 5.0 * a * d, "torso.pitch": 1.5 * a * d,
            "brow.L.lift": 0.4 * a * d, "brow.R.lift": 0.4 * a * d}
     hands = {}
-    # From beside the head to above it: a pump of ~0.75 hu at amp 0.7.
+    # From beside the head to above it: a pump of ~0.6 hu at amp 0.7.
     # From the shoulder (1.4 hu) the fist crossed it in 8 frames at 110 bpm,
     # 0.47 hu a frame -- a blur, not a pump.
-    low, top = c.head_y - 0.15, c.head_y + 0.2 + 0.6 * a
+    # Out to the side and up, a V: a fist by the ear read as a hand on the
+    # head (Seed-san's first render).
+    low, top = c.head_y - 0.1, c.head_y + 0.35 + 0.5 * a
     for s in _side_list(side):
-        sg = c.sgn(s)
-        hands[f"hand.{s}.x"] = c.sh_x[s] * 1.15 + sg * 0.1 * d
+        hands[f"hand.{s}.x"] = c.sh_x[s] * (1.9 - 0.4 * d)
         hands[f"hand.{s}.y"] = low + (top - low) * d
         if c.vrm:
             hands[f"hand.{s}.z"] = float(c.depth.get("chest", 0.3)) + 0.1
@@ -384,12 +390,32 @@ def _arm_set(bm):
 
 
 def _reach_box(bm, k, s):
-    lim_x = bm.limits(f"hand.{s}.x", k)
-    lim_y = bm.limits(f"hand.{s}.y", k)
-    if lim_x is None or lim_y is None:
-        return None
-    return (float(lim_x[0]), float(lim_x[1]), float(lim_y[0]),
-            float(lim_y[1]))
+    """(x lo, x hi, y lo, y hi) of hand s in Live2D variant k moved by its
+    arm alone (_arm_set): a figure plays its hands with the arm, the
+    trunk figures having the body angles (Hiyori's raised drawing reaches
+    y -0.32 to -0.02 with the body leaning and the shoulder up; with the
+    arm alone -0.19 to -0.15). Cached on the body."""
+    cache = bm.__dict__.setdefault("_move_reach", {})
+    if (k, s) in cache:
+        return cache[(k, s)]
+    v = bm.variants[k]
+    out = None
+    if all(v["present"][bm.fidx[f"hand.{s}.{q}"]] for q in "xy"):
+        only = _arm_set(bm)
+        ends = []
+        for q in "xy":
+            got = []
+            for far in (-50.0, 50.0):
+                r = bm._solve_variant({f"hand.{s}.{q}": far}, {}, k, {}, only)
+                got.append(None if r is None else
+                           r["report"][f"hand.{s}.{q}"]["got"])
+            if None in got:
+                break
+            ends += [float(min(got)), float(max(got))]
+        if len(ends) == 4:
+            out = tuple(ends)
+    cache[(k, s)] = out
+    return out
 
 
 def _clip_hands(hands, boxes, shift=None):
@@ -476,7 +502,7 @@ def _probe(bm, ctx, name, side, k):
     for b in np.arange(0.0, period, period / 3) + 0.5 * (name == "clap"):
         _a, hands = fn(float(b), 1.0, side, ctx)
         tg = _clip_hands(hands, boxes, shift)
-        r = bm.solve(tg, current=prev, variant=k)
+        r = bm.solve(tg, current=prev, variant=k, only=_arm_set(bm))
         if r.get("variant") is None:
             return False, 0.0, "no drawing has these hands", None
         prev = {**bm.default_values(), **r["params"]}
@@ -488,7 +514,7 @@ def _probe(bm, ctx, name, side, k):
     tg_ = float(np.ptp(got, axis=0).sum())
     if name == "clap":
         r = bm.solve(_clip_hands(fn(0.0, 1.0, side, ctx)[1], boxes, shift),
-                     current=prev, variant=k)
+                     current=prev, variant=k, only=_arm_set(bm))
         gap = abs(r["report"]["hand.L.x"]["got"] - r["report"]["hand.R.x"]
                   ["got"])
         dy = abs(r["report"]["hand.L.y"]["got"] - r["report"]["hand.R.y"]
@@ -741,7 +767,11 @@ def _segments(name, beats, side, cp, rng):
         if t_ == "shimmy" and n > 2 and len(tr) > 1:
             t_ = [x for x in tr if x != "shimmy"][int(rng.integers(
                 len(tr) - 1))]
-        ar = [x for x in arms + [None] if x != last_a]
+        # Arms most of the time: a segment of trunk alone reads as a pause
+        # in a dance (Seed-san's first: 2 of 6 without arms).
+        ar = [x for x in arms if x != last_a]
+        if last_a and last_a != "start" and rng.random() < 0.2:
+            ar = [None]
         if last_a == "start" and arms:
             ar = [x for x in arms if x in ("clap", "twirl")] or arms
         a_ = ar[int(rng.integers(len(ar)))] if ar else None
@@ -1013,8 +1043,13 @@ def build(bm, arg, current=None, parts=None, log=print, seed=0,
             if ctx.vrm:
                 r = bm.solve(t2, current=prior, via=False)
             else:
+                # The first keyframe from the box's middle too (a prior at
+                # the rest drawing's angles is no start in the raised one);
+                # the rest stay on its branch.
                 r = bm.solve(_clip_hands(t2, boxes), current=prior,
-                             variant=k_var, only=allowed)
+                             variant=k_var, only=allowed,
+                             restart=not cache,
+                             weights={t_: L2D_WEIGHT for t_ in t2})
             solves += 1
             sol = {p: float(x) for p, x in r["params"].items()
                    if p in allowed}
@@ -1076,6 +1111,17 @@ def build(bm, arg, current=None, parts=None, log=print, seed=0,
                 M = pchip_slopes(Y)
                 arr = np.array([pchip_at(Y, M, i / stride)[0]
                                 for i in range(n)])
+            if not ctx.vrm and p in bm.params:
+                # A Live2D arm has two parameters for one hand position
+                # (Hiyori's ParamArmLB and ParamHandLB both move hand.L.x),
+                # and its piecewise-linear model has kinks: between two
+                # keyframes a solve can change branch. No parameter moves
+                # faster than L2D_RATE spans a second.
+                e = bm.params[p]
+                lim = L2D_RATE * (e["max"] - e["min"]) * dt
+                for i in range(1, n):
+                    arr[i] = arr[i - 1] + float(np.clip(arr[i] - arr[i - 1],
+                                                        -lim, lim))
             abs_p[p] = arr
         if ctx.vrm:
             # The wrist: the clap's palms-facing turn mixed out with the

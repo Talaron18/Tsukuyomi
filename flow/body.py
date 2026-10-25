@@ -1922,7 +1922,8 @@ class BodyModel:
 
     def solve(self, targets: dict, current: dict | None = None,
               variant: int | None = None, parts: dict | None = None,
-              weights: dict | None = None, only=None) -> dict:
+              weights: dict | None = None, only=None,
+              restart=True) -> dict:
         """Parameter values that bring the canonical variables in `targets`
         to their values. Unnamed variables are free; their parameters stay
         near `current` (default: rest) by the prior. Each arm variant is
@@ -1930,6 +1931,9 @@ class BodyModel:
 
         `only`: the parameters that may move (default: every solvable one
         that moves a target); flow.moves solves a hand with its arm alone.
+        restart False: no second start from the middle of the box (a
+        sequence of keyframes stays on the branch its prior is on; with it
+        Hiyori's ParamHandRB flipped -1 -> 1 between two keyframes).
 
         Returns {params, parts, variant, cost, report: {var: {target, got,
         error, unit, ok}}, missing: [vars no variant has]}.
@@ -1945,7 +1949,8 @@ class BodyModel:
             raise KeyError(f"unknown variables {unknown}; see --canon")
         best = None
         for k in tried:
-            r = self._solve_variant(targets, current, k, weights, only)
+            r = self._solve_variant(targets, current, k, weights, only,
+                                    restart)
             if r is None:
                 continue
             r["cost"] += self.SWITCH_COST * self._changed(cur_var, k)
@@ -1960,7 +1965,8 @@ class BodyModel:
         best["variant_name"] = v["name"]
         return best
 
-    def _solve_variant(self, targets, current, k, weights, only=None):
+    def _solve_variant(self, targets, current, k, weights, only=None,
+                       restart=True):
         v = self.variants[k]
         tk = [t for t in targets if v["present"][self.fidx[t]]]
         missing = [t for t in targets if t not in tk]
@@ -2010,9 +2016,11 @@ class BodyModel:
             x = _lm(resid, x, lo, hi, span)
             # Piecewise-linear models have kinks; one restart from the
             # middle of the box catches a start stuck at a bound.
-            x2 = _lm(resid, np.clip((lo + hi) / 2, lo, hi), lo, hi, span)
-            if cost(x2) < cost(x):
-                x = x2
+            if restart:
+                x2 = _lm(resid, np.clip((lo + hi) / 2, lo, hi), lo, hi,
+                         span)
+                if cost(x2) < cost(x):
+                    x = x2
         vals = dict(base)
         vals.update(zip(free, x))
         F = self.forward(vals, k)
