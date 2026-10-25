@@ -285,3 +285,49 @@ assets/vrm/README.md). Body files `rigs/seed-san.body.json`,
   the VRM side by side from the same sentences (prompt from the Live2D
   body; the VRM resolves landmarks on its own body). No `--body-image` for
   VRM (the server cannot draw it).
+
+## Motion primitives (2026-10)
+
+Precise asks played well in body mode; open ones ("dance for me", "let's
+celebrate") came out as a few held poses in a row, nothing on the beat.
+`flow/moves.py` adds parameterised continuous motions the model calls by
+name next to its poses:
+
+    Let's dance! [move {"name": "dance", "beats": 8, "tempo": 120}] Come on!
+
+- **Primitives**: sway (upper body side to side, head countering; a VRM's
+  hips sway too), bounce (down on every beat: knees via the VRM's hips,
+  shoulders, a little nod), head_bob, shimmy (shoulders, twice a beat),
+  look_around, clap (hands meet on the beat; a VRM's through the
+  `@together` composite, palms facing), cheer (fist pump, side L/R/both),
+  wave (a raised hand side to side; both: both hands up, swaying), twirl
+  (hands rolling around each other), and dance (2-4 beat segments of a
+  trunk figure plus an arm figure, seeded, no figure twice in a row,
+  mixed over a beat in target space). Aliases: nod_along (head_bob at
+  half tempo), fist_pump, arm_wave, shoulder_shake, twirl_hands,
+  celebrate. Params: beats 1-32 (8), tempo 60-180 bpm (110), amp 0.1-1
+  (0.7), side.
+- **Per body**: curves in canonical variables, offsets on the declared
+  variables, hand targets solved on keyframes (8 a beat, 16 for a shimmy;
+  repeating keyframes once; every other one solved) with the body's own
+  solver: VRM collision-aware IK (no detour search: 87% of the time),
+  Live2D forward model in one arm drawing with the arm alone. Capability
+  per body decides the prompt's menu: Seed-san and three-vrm-girl all;
+  Hiyori no cheer (her raised drawing lifts no fist with the arm alone);
+  lafei no clap, cheer or wave. A side a body lacks is degraded with a log
+  line; a primitive it lacks is skipped.
+- **Play**: MoveLayer under the PoseLayer, PCHIP between keyframes (no
+  overshoot at a clap's contact), min-jerk ease in and out (one beat,
+  0.9 s for a clip that moves an arm), additive over the idle (the idle's
+  head, gaze, breath keep going), absolute arms blended from it; a later
+  move on the same parameters takes them over; a pose takes its parts and
+  gives them back (held without LIFE on a move's joints). On a VRM a trunk
+  figure carries the arms with the chest, the free hand hanging (rigid arms
+  went 0.15 hu into the hips at torso.tilt 7).
+- **Checked** (scratchpad renders, every frame): VRM penetration <= 0.022
+  hu (PEN_TOL 0.02) for all primitives and a 16-beat dance on Seed-san;
+  onset/end steps at the idle's level; Hiyori's dance draws one arm at a
+  time, no parameter faster than 2.5 spans a second. A 16-beat dance
+  solves in 0.6 s on Seed-san, 0.9 s on Hiyori.
+- `--no-body-moves`: the prompt and parser of before. Without [move]
+  markers every output is the bytes it was.
