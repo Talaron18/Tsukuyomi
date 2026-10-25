@@ -26,5 +26,6 @@ is in the test docstrings.
 `test_vrm.py` (E3, VRM avatars) builds tiny VRM 0 / 1.0 files in the test
 and uses the shipped samples in assets/vrm; its Chromium checks (three-vrm
 against Python's kinematics, an offline render) need Playwright with
-Chromium (`pip install playwright && playwright install chromium`, or
-PLAYWRIGHT_BROWSERS_PATH pointing at installed browsers) and skip without.
+Chromium (`pip install playwright && playwright install chromium`; browsers found
+wherever Playwright looks, /opt/pw-browsers used when it exists and
+PLAYWRIGHT_BROWSERS_PATH is unset) and skip without.

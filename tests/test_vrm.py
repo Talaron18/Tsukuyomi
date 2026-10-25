@@ -568,9 +568,16 @@ def _chromium():
     why = vr.have_chromium()
     if why:
         pytest.skip(why)
-    path = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "")
-    if not path or not os.path.isdir(path):
-        pytest.skip("no Playwright browsers (playwright install chromium)")
+    # The browsers may be anywhere (~/.cache/ms-playwright after
+    # `playwright install chromium`, or PLAYWRIGHT_BROWSERS_PATH): ask.
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            exe = p.chromium.executable_path
+    except Exception as exc:  # noqa: BLE001
+        pytest.skip(f"Playwright cannot start: {exc}")
+    if not exe or not os.path.exists(exe):
+        pytest.skip("no Playwright Chromium (playwright install chromium)")
     return vr
 
 
