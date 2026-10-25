@@ -1004,6 +1004,10 @@ def solve_poses(bm, acts, current=None, parts=None, core=None, log=print,
             out.append(leg(start, "in"))
             rec["start"] = round(start + half, 4)
             rec["dur"] = half
+            # Held still: the hold's settle drifts every angle toward the
+            # rest along the straight line (0.2 of it put the hands 0.32-
+            # 0.43 hu into the hips by the end of a hold behind the back).
+            rec["settle"] = 0.0
             out.append(rec)
             out.append(leg(rec["start"] + rec["dur"] + rec["hold"], "out"))
             continue
@@ -1188,7 +1192,8 @@ def tokens(poses, roles, arms=()) -> list[dict]:
                     "step": p["step"], "duration": p["dur"],
                     "hold": p["hold"], "release": p["release"],
                     "groups": sorted(groups), "variant": p["variant_name"],
-                    "src": "director"})
+                    "src": "director",
+                    **({"settle": p["settle"]} if "settle" in p else {})})
     return out
 
 
@@ -1240,8 +1245,10 @@ class PoseLayer:
 
     def _eval(self, s, tf, under):
         # State: (t0, duration, from, to, hold end, release, step, the
-        # idle's value at t0); stream.body_now reads "to" as s[3].
-        t0, d, frm, to, he, rel, step, u0 = s
+        # idle's value at t0, the token's own settle or None);
+        # stream.body_now reads "to" as s[3].
+        t0, d, frm, to, he, rel, step, u0, settle = s
+        settle = self.settle if settle is None else settle
         if step:
             if tf < t0 + d:
                 return (to if (tf - t0) / d >= 0.5 else frm), False
@@ -1256,9 +1263,9 @@ class PoseLayer:
             return frm + (to - frm) * w + life * w, False
         held = to + life
         hold = he - (t0 + d)
-        if self.settle and hold > 0:
+        if settle and hold > 0:
             tau = min(max((tf - t0 - d) / hold, 0.0), 1.0)
-            held += self.settle * float(min_jerk(tau)) * (under - held)
+            held += settle * float(min_jerk(tau)) * (under - held)
         if tf < he:
             return held, False
         if tf < he + rel:
@@ -1302,7 +1309,8 @@ class PoseLayer:
                     frm = (self._eval(self.state[key], tf, u)[0]
                            if key in self.state else u)
                     self.state[key] = (t0, d, frm, float(v), he, rel,
-                                       kind == "q" or i in step, u)
+                                       kind == "q" or i in step, u,
+                                       tok.get("settle"))
                     if kind == "q":
                         self.touched.add(i)
         for key in sorted(self.state):

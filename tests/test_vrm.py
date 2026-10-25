@@ -605,12 +605,20 @@ def test_three_vrm_draws_what_python_computes(avatar):
         pg = vr.Page(base, 128)
         try:
             pg.eval("() => TSK.eyeDir()")
+            knuckles = ["leftMiddleProximal", "rightMiddleProximal"]
             for v in poses:
                 pg.frame(bm.state(v), 0.0, 0)
-                got = pg.eval("(n) => TSK.positions(n)", names)
-                _W, P = bm.fk(v)
+                got = pg.eval("(n) => TSK.positions(n)", names + knuckles)
+                W, P = bm.fk(v)
                 for n in names:
                     assert np.array(got[n]) == pytest.approx(P[n], abs=1e-4)
+                # The hand's own rotation (the wrist: VRM 0's x / z
+                # negation included) puts the knuckles where Python does
+                # (the palm is halfway from the wrist to them).
+                for s, n in zip("LR", knuckles):
+                    h = f"{vb.SIDE[s]}Hand"
+                    want = P[h] + W[h] @ (2 * (bm.palm_rest[s] - bm.rest[h]))
+                    assert np.array(got[n]) == pytest.approx(want, abs=1e-4)
             assert got["leftHand"][0] > bm.origin[0]
             pg.frame(bm.state({"gaze.x": 1.0}), 0.0, 0)
             assert pg.eval("() => TSK.eyeDir()")[0] > 0.05
@@ -871,3 +879,48 @@ def test_a_stale_body_file_is_rebuilt(tmp_path):
     finally:
         if os.path.exists(out):
             os.remove(out)
+
+
+@pytest.mark.parametrize("which", ["seed", "girl"])
+def test_played_poses_stay_out_of_the_body(which, seed_body, girl_body):
+    """Every frame the stream plays -- move, hold, release -- not only the
+    solved pose: the hold's settle (drifting each angle toward the rest)
+    put the hands 0.32-0.43 hu into the hips by the end of a hold behind
+    the back until a pose with a detour holds still."""
+    bm = seed_body if which == "seed" else girl_body
+    rig = fv.VRMRig(bm, fps=FPS, log=lambda s: None)
+    for tg in ({"hands": "@behind_back"}, {"hand.R": "@back"},
+               {"hands": "@together"}):
+        st = fs.MotionStream(rig, seed=1, log=lambda s: None)
+        poses = pz.solve_poses(bm, [{"t": 0.5, "tag": "pose", "arg": {
+            "targets": tg, "hold": 2.0}, "at": 0}], log=lambda s: None)
+        st.direct(pz.tokens(poses, rig.roles, pz.arm_params(bm)))
+        worst = max(max(bm.penetration(st.frame()[0]).values())
+                    for _ in range(int(7 * FPS)))
+        assert worst <= 2 * vb.PEN_TOL, (tg, worst)
+
+
+def test_follower_plays_live2d_markers_in_vrm_units(seed_body):
+    """--avatar both end to end: Hiyori's prompt's nod (head.pitch -12,
+    ParamAngleY units) is a 6 deg nod on the VRM, and a Live2D gaze marker
+    turns the VRM's eyes the same way (look-at pitch - up, + down)."""
+    import argparse
+    bm = seed_body
+    rig = fv.VRMRig(bm, fps=FPS, log=lambda s: None)
+    st = fs.MotionStream(rig, seed=1, idle=False, log=lambda s: None)
+    a = argparse.Namespace(seed=1, lipsync="off", mouth_gain=1.0)
+    fol = fv.Follower(a, bm, rig, st, log=lambda s: None)
+    acts = [{"t": 0.2, "tag": "pose", "arg": {"targets": {
+        "head.pitch": -12, "gaze.y": 0.5}, "dur": 0.25, "hold": 1.0},
+        "at": 0},
+        {"t": 2.5, "tag": "pose", "arg": {"targets": {"gaze.y": -0.5},
+                                          "dur": 0.25, "hold": 1.0},
+         "at": 5}]
+    fol.sentence(acts, 0.0, 0, "Hmm, yes.", None, 3.0)
+    frames = [st.frame()[0] for _ in range(int(4 * FPS))]
+    held = frames[int(0.8 * FPS)]
+    assert held["head.pitch"] == pytest.approx(-6.0, abs=0.6)
+    assert bm.state(held)["look"][1] < 0          # gaze up: - pitch
+    later = frames[int(3.1 * FPS)]
+    assert later["gaze.y"] < -0.3
+    assert bm.state(later)["look"][1] > 0          # gaze down: + pitch

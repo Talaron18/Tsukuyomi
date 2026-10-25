@@ -229,7 +229,9 @@ assets/vrm/README.md). Body files `rigs/seed-san.body.json`,
   together are solved for the body each and their targets parted, half
   each, until they touch. When the straight joint-angle path (what the
   pose layer plays) crosses the body, the solver gives a via pose that
-  flow.pose plays on the way in and before the release. Old solver vs now
+  flow.pose plays on the way in and before the release, and that pose
+  holds still (no settle: drifting each angle toward the rest put the
+  hands 0.32-0.43 hu into the hips by the end of a hold behind the back). Old solver vs now
   (deepest penetration, hu; Seed-san / three-vrm-girl): hands together
   0.08 / 0.07 into the chest and 0.085 / 0.09 into each other -> 0.018 /
   0.007; crossed forearms 0.20 / 0.18 through each other -> 0.02; hands
