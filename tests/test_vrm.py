@@ -940,3 +940,33 @@ def test_voice_config_found_beside_a_vrm_body():
     assert dr.voice_config_path(ns(rig="rigs/Hiyori.npz", vrm="a.vrm")) \
         == "rigs/Hiyori.voice.json"
     assert dr.voice_config_path(ns(rig=None, voice_config="v.json")) == "v.json"
+
+
+@pytest.mark.parametrize("avatar", [SEED, GIRL0])
+def test_a_moves_hips_offset_moves_the_drawn_avatar(avatar):
+    """flow.moves' sway and bounce shift the whole avatar ("hips" in the
+    state): the raw skeleton follows, toward the character's own left for
+    hips.x + on VRM 1 and VRM 0 alike, down for hips.y -; without it the
+    avatar stands where it did."""
+    vr = _chromium()
+    bm = vb.VRMBody(vb.build(avatar, log=lambda s: None))
+    names = ["hips", "head", "leftHand"]
+    with vr.serve(avatar, vr.page_config(bm)) as base:
+        pg = vr.Page(base, 128)
+        try:
+            got = {}
+            for key, v in (("rest", {}), ("x", {"hips.x": 0.1}),
+                           ("y", {"hips.y": -0.06}), ("back", {})):
+                pg.frame(bm.state(v), 0.0, 0)
+                got[key] = pg.eval("(n) => TSK.positions(n)", names)
+            for n in names:
+                r = np.array(got["rest"]["raw:" + n])
+                dx = np.array(got["x"]["raw:" + n]) - r
+                dy = np.array(got["y"]["raw:" + n]) - r
+                assert dx == pytest.approx([0.1 * bm.hu, 0, 0], abs=1e-4)
+                assert dy == pytest.approx([0, -0.06 * bm.hu, 0], abs=1e-4)
+                assert np.array(got["back"]["raw:" + n]) == pytest.approx(
+                    r, abs=1e-6)
+            assert not pg.errors
+        finally:
+            pg.close()
