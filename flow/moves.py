@@ -121,11 +121,9 @@ RESOLVE_JUMP = 5.0
 # Hips sway and bob are a VRM render offset of the whole avatar (hu); the
 # frame dict carries them only while a move writes them.
 HIPS = ("hips.x", "hips.y")
-# A hand no figure holds, under a trunk figure on a VRM, is carried this
-# share of the way the chest would carry it (the rest hangs): at 0.5 the
-# targets sat in the hips' surface and each solve searched its way out
-# (51 ms a keyframe, 2.8 s for a 16-beat dance).
-HANG = 0.25
+# A hanging arm under a trunk figure on a VRM turns this share of the
+# chest's turn (_hang): the rest of it hangs.
+HANG = 0.3
 # A dance's figures are mixed over this many beats at each join, in target
 # space. Half a beat moved a fist from its peak to the hips in 8 frames.
 MIX = 1.0
@@ -206,7 +204,10 @@ def _twirl_c(c):
 
 def p_sway(b, a, side, c):
     s = swing(b, 2.0)
-    add = {"torso.tilt": 9.0 * a * s, "torso.yaw": 2.0 * a * s,
+    # A VRM leans less: at 9 deg (amp 0.7: 6.3) three-vrm-girl's hanging
+    # arm had to lift 31 deg off her hip to clear it.
+    add = {"torso.tilt": (7.0 if c.vrm else 9.0) * a * s,
+           "torso.yaw": 2.0 * a * s,
            "head.tilt": -4.0 * a * s, "head.yaw": -1.5 * a * s}
     if c.vrm:
         # The hips go the other way from the lean (a hip sway), and dip a
@@ -815,16 +816,79 @@ def _rest_hands(bm, k, ctx):
     return out
 
 
-def _follow(bm, base, trunk, hands, wfig):
-    """Hand targets carried with the chest as the trunk offsets turn it
-    (a VRM): a figure's hands move with the upper body; a hand no figure
-    holds hangs, HANG of the way the chest would carry it."""
+def _partial(R, k):
+    """k of rotation R (axis-angle scaled)."""
+    c = float(np.clip((np.trace(R) - 1) / 2, -1, 1))
+    ang = math.acos(c)
+    if ang < 1e-9:
+        return np.eye(3)
+    axis = np.array([R[2, 1] - R[1, 2], R[0, 2] - R[2, 0],
+                     R[1, 0] - R[0, 1]]) / (2 * math.sin(ang))
+    x, y, z = axis
+    K_ = np.array([[0, -z, y], [z, 0, -x], [-y, x, 0]])
+    t = ang * k
+    return np.eye(3) + math.sin(t) * K_ + (1 - math.cos(t)) * K_ @ K_
+
+
+def _hang(bm, base, trunk):
+    """({arm parameter: value}, {side: palm, hu}) of a VRM's arms hanging
+    under the trunk offsets: each upper arm turned only HANG of the way
+    the chest turns (the elbow and wrist as they were), then raised out
+    from the body until clear of it (bisection on the elevation, so the
+    result moves smoothly with the trunk). Analytic: an IK target at a
+    hanging palm let the solver swap its swivel between keyframes
+    (three-vrm-girl's sway: the forearm turned 48 deg in 31 ms), and arms
+    carried rigidly sank 0.10-0.15 hu into the hips at torso.tilt 6."""
+    try:
+        from . import vrmbody as vb
+    except ImportError:
+        from flow import vrmbody as vb
+    top = next((b for b in ("upperChest", "chest", "spine") if b in bm.bones),
+               None)
+    W0, _P0 = bm.fk(base)
+    v = {**base, **trunk}
+    W1, _P1 = bm.fk(v)
+    Rk = _partial(W1[top] @ W0[top].T, HANG)
+    out = {}
+    for s in "LR":
+        ua = f"{vb.SIDE[s]}UpperArm"
+        par = bm.bones[ua]["parent"]
+        L = W1[par].T @ (Rk @ W0[ua])
+        a_u = bm.align[s][0]
+        e, p, t = vb.arm_angles(s, L @ a_u.T, float(base[f"upper_arm.{s}.plane"]))
+        out.update({f"upper_arm.{s}.elev": e, f"upper_arm.{s}.plane": p,
+                    f"upper_arm.{s}.twist": t})
+    if getattr(bm, "coll", None):
+        for s in "LR":
+            ke = f"upper_arm.{s}.elev"
+
+            def pen(e_):
+                return bm.penetration({**v, **out, ke: e_})[f"body.{s}"]
+            lo_ = out[ke]
+            if pen(lo_) > vb.PEN_TOL / 2:
+                hi_ = lo_ + 40.0
+                for _ in range(8):
+                    mid = 0.5 * (lo_ + hi_)
+                    if pen(mid) > vb.PEN_TOL / 2:
+                        lo_ = mid
+                    else:
+                        hi_ = mid
+                out[ke] = hi_
+    return out, bm.palms({**v, **out})
+
+
+def _follow(bm, base, trunk, hands, wfig, rest):
+    """(hand targets, hanging arm parameters) under the trunk offsets (a
+    VRM): a figure's hands are carried with the chest; a hand no figure
+    holds hangs (_hang), and in a mix between the two the target runs
+    from the hanging palm to the carried figure."""
     if not trunk:
-        return hands
+        return hands, None
     top = next((b for b in ("upperChest", "chest", "spine") if b in bm.bones),
                None)
     if top is None:
-        return hands
+        return hands, None
+    hang_p, palms = _hang(bm, base, trunk)
     W0, P0 = bm.fk(base)
     W1, P1 = bm.fk({**base, **trunk})
     R = W1[top] @ W0[top].T
@@ -833,15 +897,17 @@ def _follow(bm, base, trunk, hands, wfig):
         ks = [f"hand.{s}.{q}" for q in "xyz"]
         if not all(k in hands for k in ks):
             continue
+        wf = min(max(wfig.get(s, 0.0), 0.0), 1.0)
         p = np.array([hands[k] for k in ks], float)
-        w = bm.to_world(p)
-        w2 = P1[top] + R @ (w - P0[top])
-        p2 = bm.to_body(w2)
-        k_ = 1.0 - (1.0 - HANG) * (1.0 - min(max(wfig.get(s, 0.0), 0.0), 1.0))
-        q = p + k_ * (p2 - p)
+        r = np.array([rest.get(k, hands[k]) for k in ks], float)
+        q = np.array(palms[s], float)
+        if wf > 1e-3:
+            fig = (p - (1 - wf) * r) / wf
+            w2 = P1[top] + R @ (bm.to_world(fig) - P0[top])
+            q = wf * bm.to_body(w2) + (1 - wf) * q
         for k, v in zip(ks, q):
             out[k] = float(v)
-    return out
+    return out, hang_p
 
 
 def _resolve_hands(bm, hands):
@@ -1019,9 +1085,33 @@ def build(bm, arg, current=None, parts=None, log=print, seed=0,
                    "shoulder.L.up", "shoulder.R.up")
         trunk_rows = [{p: float(add_p[p][i]) for p in TRUNK_P if p in add_p}
                       for i in range(n)] if ctx.vrm else [{}] * n
+        hang_rows = [None] * n
+        # Every other keyframe is solved, the ones between interpolated in
+        # the parameters (a quarter beat at most between solves: half the
+        # cost, an 8-beat dance 0.55 s on Seed-san instead of 1.1).
+        stride = 2 if K >= 8 and (n - 1) % 2 == 0 else 1
+        idx = list(range(0, n, stride))
         if ctx.vrm and any(trunk_rows):
-            hand_rows = [_follow(bm, base, tr, tg, wf) for tr, tg, wf
-                         in zip(trunk_rows, hand_rows, wfig)]
+            hang_cache = {}
+            for i in idx:
+                tk = tuple(sorted((k2, round(v2, 3)) for k2, v2 in
+                                  trunk_rows[i].items()))
+                wk = (tuple(sorted(wfig[i].items())),
+                      tuple(sorted((k2, round(v2, 4)) for k2, v2 in
+                                   hand_rows[i].items())))
+                if (tk, wk) not in hang_cache:
+                    hang_cache[(tk, wk)] = _follow(
+                        bm, base, trunk_rows[i], hand_rows[i], wfig[i],
+                        rest_h)
+                tg, hp = hang_cache[(tk, wk)]
+                hand_rows[i] = tg
+                # No figure holds either hand: the hanging arms as they
+                # are, no IK.
+                if hp is not None and max(wfig[i].values()) < 1e-3:
+                    hang_rows[i] = hp
+        wrist0 = {p: base.get(p, 0.0) for s_ in "LR" for p in (
+            f"hand.{s_}.roll", f"hand.{s_}.flex", f"hand.{s_}.dev")} \
+            if ctx.vrm else {}
 
         def key(tg, oc, tr=None):
             return (tuple(sorted((k2, round(v2, 4)) for k2, v2 in tg.items())),
@@ -1060,11 +1150,6 @@ def build(bm, arg, current=None, parts=None, log=print, seed=0,
                    if p in allowed}
             cache[kk] = sol
             return sol
-        # Every other keyframe is solved, the ones between interpolated in
-        # the parameters (a quarter beat at most between solves: half the
-        # cost, an 8-beat dance 0.55 s on Seed-san instead of 1.1).
-        stride = 2 if K >= 8 and (n - 1) % 2 == 0 else 1
-        idx = list(range(0, n, stride))
         rows = []
         prior = dict(base)
         # A periodic clip's cycle: solve its first keyframes again from the
@@ -1076,6 +1161,12 @@ def build(bm, arg, current=None, parts=None, log=print, seed=0,
         j = 0
         while j < len(idx):
             i = idx[j]
+            if hang_rows[i] is not None:
+                sol = {**hang_rows[i], **wrist0}
+                rows.append(sol)
+                prior = {**prior, **sol}
+                j += 1
+                continue
             sol = solve(hand_rows[i], prior, oc_of(i), trunk_rows[i])
             if cyc and i == cyc and rows:
                 kk = key(hand_rows[0], oc_of(0), trunk_rows[0])
