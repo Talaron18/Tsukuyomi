@@ -590,10 +590,13 @@ def test_director_body_mode_end_to_end(tmp_path, capsys):
     # The body-mode prompt is what --print-system prints: with the rig's
     # own motions offered by default, without them pure body.
     capsys.readouterr()
-    assert dr.main(args + ["--print-system", "--no-body-gestures"]) == 0
+    assert dr.main(args + ["--print-system", "--no-body-gestures",
+                           "--no-body-moves"]) == 0
     assert capsys.readouterr().out.strip() == pz.system_prompt(bm).strip()
     assert dr.main(args + ["--print-system"]) == 0
     sysp = capsys.readouterr().out
+    # Motion primitives are offered by default (flow.moves).
+    assert "[move {" in sysp and "[move {" not in pz.system_prompt(bm)
     assert "[gesture:NAME]" in sysp and "  home: " in sysp
     assert "never while you pose a hand" in sysp
     assert "[gesture:NAME]" not in pz.system_prompt(bm)

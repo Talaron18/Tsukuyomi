@@ -308,14 +308,19 @@ def prepare(a, bm, body_path, info=sys.stdout):
         from flow import pose as pz
     rig = VRMRig(bm, a.events, a.fps, a.idle_profile, log=lambda s: None)
     if getattr(a, "mode", "tags") == "body":
+        mlines, mnames = dr.move_menu(a, bm)
         print(f"director: body mode, VRM {bm.vrm['file']}: "
-              f"{len(pz.offered(bm))} variables, no gestures", file=info)
+              f"{len(pz.offered(bm))} variables, no gestures"
+              + (f", motions {' '.join(mnames)}" if mnames else ""),
+              file=info)
         return {"labels": {}, "offered": None, "descriptions": {},
-                "system": pz.system_prompt(bm, a.persona, False, ""),
+                "system": pz.system_prompt(bm, a.persona, False, "",
+                                           mlines),
                 "motions": {}, "stats": rig.stats, "roles": rig.roles,
                 "mode": "body", "body": bm, "body_path": body_path,
                 "core": None, "images": False, "max_tag": pz.MAX_MARKER,
-                "parser": lambda: pz.parser_for(bm), "vrm_rig": rig}
+                "parser": lambda: pz.parser_for(bm, moves=bool(mnames)),
+                "vrm_rig": rig}
     offered, out = dr.offer(rig.stats, rig.roles)
     if out:
         print("director: not offered on this avatar: "
@@ -396,6 +401,20 @@ def plan(a, reply, out_dir, run, log=print, tts=None):
             f"targets reached (solve {rs['solve_seconds']}s)")
         extra.update(mode="body", reach=rs)
         seconds = max(seconds, pz.end_time(poses) + a.tail)
+    mvs = []
+    if any(x.get("tag") == "move" for x in acts):
+        try:
+            from . import moves as mv
+        except ImportError:
+            from flow import moves as mv
+        mvs = mv.solve_moves(bm, acts, log=log, seed=a.seed)
+        for rec in mvs:
+            acts[rec["act"]]["solved"] = rec
+        for line in mv.report_lines(mvs, reply["spoken"]):
+            log("move: " + line)
+        if mvs:
+            extra.update(mode="body", moves=len(mvs))
+            seconds = max(seconds, mv.end_time(mvs) + a.tail)
     rng = np.random.default_rng([int(a.seed), 1])
     stream = fs.MotionStream(rig, seed=a.seed, idle=not a.no_idle,
                              log=log)
@@ -403,6 +422,8 @@ def plan(a, reply, out_dir, run, log=print, tts=None):
                           stream.pose(), settle=None)
     if poses:
         directed += pz.tokens(poses, rig.roles, pz.arm_params(bm))
+    if mvs:
+        directed += mv.tokens(mvs)
     stream.direct(directed)
     n = int(round(seconds, 2) * fps) + 1
     if mouth is not None:
@@ -548,6 +569,19 @@ class Follower:
                 self.log(f"live: vrm {line}")
             for rec in poses:
                 rec["start"] = round(rec["start"] - t_start, 4)
+        mvs = []
+        if any(x.get("tag") == "move" for x in acts):
+            # The same primitives on the VRM's own body (its own reach and
+            # collisions), with the Live2D side's seed: the same dance.
+            try:
+                from . import moves as mv
+            except ImportError:
+                from flow import moves as mv
+            cur, _ = self.stream.body_now()
+            mvs = mv.solve_moves(self.bm, acts, cur, {}, log=self.log,
+                                 seed=mv.move_seed(a, f0))
+            for line in mv.report_lines(mvs, spoken):
+                self.log(f"live: vrm {line}")
         shifted = [dict(x, t=round(float(x["t"]) + t_start, 4)) for x in acts
                    if x.get("tag") != "gesture"]
         directed = dr.realize(shifted, self.rig.stats, list(self.rig.roles),
@@ -555,6 +589,10 @@ class Follower:
         for k in pz.tokens(poses, self.rig.roles, pz.arm_params(self.bm)):
             k["t"] = round(float(k["t"]) + t_start, 4)
             directed.append(k)
+        if mvs:
+            for k in mv.tokens(mvs):
+                k["t"] = round(float(k["t"]) + t_start, 4)
+                directed.append(k)
         if directed:
             self.stream.direct(directed)
         if audio is not None and (a.lipsync or "auto") != "off":

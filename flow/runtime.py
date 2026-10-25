@@ -1083,6 +1083,15 @@ def main(argv=None) -> int:
                     directed = directed + pz.tokens(
                         solved, roles, {p for x in solved
                                         for p in x.get("arm_params", ())})
+                # Motion primitives (flow.moves) the director built.
+                mvs = [x["solved"] for x in acts
+                       if x.get("tag") == "move" and x.get("solved")]
+                if mvs:
+                    try:
+                        from . import moves as mv
+                    except ImportError:
+                        from flow import moves as mv
+                    directed = directed + mv.tokens(mvs)
                 n_idle = len(tokens)
                 tokens = dr.merge(tokens, directed)
                 print(f"director: {len(acts)} actions -> {len(directed)} "
@@ -1260,6 +1269,16 @@ def main(argv=None) -> int:
 
     mouth = {}
     pose_layer = None
+    move_layer = None
+    if events_on and any(k["type"] == "move" for k in tokens):
+        try:
+            from . import moves as mv
+        except ImportError:
+            from flow import moves as mv
+        move_layer = mv.layer_for(tokens, a.fps,
+                                  dict(zip(pids, dflt.tolist())), base_parts)
+        print(f"moves: {sum(k['type'] == 'move' for k in tokens)} motion "
+              "primitives over the idle (flow.moves)")
     if events_on and any(k["type"] == "pose" for k in tokens):
         try:
             from . import pose as pz
@@ -1441,8 +1460,18 @@ def main(argv=None) -> int:
                 for col in gesture_cols:
                     if pids[expressive[col]] not in player.keyed[f]:
                         applied_mask[f, col] = False
+            still = ()
+            if move_layer is not None:
+                over, parts = move_layer.apply(f, over, parts)
+                still = move_layer.holding
+                for p in move_layer.written:
+                    col = expr_col.get(p)
+                    if col is not None:
+                        i = expressive[col]
+                        applied[f, col] = (over[p] - lo[i]) / span_x[col] * 2 - 1
+                        applied_mask[f, col] = True
             if pose_layer is not None:
-                over, parts = pose_layer.apply(f, over, parts)
+                over, parts = pose_layer.apply(f, over, parts, still)
                 for p in pose_layer.written:
                     if p in mouth and voice_owns(p):
                         # The voice drives the mouth's opening and vowels

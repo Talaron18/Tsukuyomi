@@ -101,12 +101,14 @@ import numpy as np
 
 try:
     from . import director as dr
+    from . import moves as mv
     from . import pose as pz
     from . import speech as sp
     from . import stream as fs
 except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from flow import director as dr
+    from flow import moves as mv
     from flow import pose as pz
     from flow import speech as sp
     from flow import stream as fs
@@ -723,6 +725,19 @@ class Performer:
         late = (f0 - self.next_frame) / fps if spoken and k > 1 else 0.0
         if spoken:
             self.next_frame = f0 + int(math.ceil((end + a.gap) * fps))
+        mvs = []
+        if self.body is not None and any(x["tag"] == "move" for x in acts):
+            # Motion primitives (flow.moves), built from where the body is
+            # heading; a dance's variation seeded by the run's seed and
+            # the sentence's first frame (the --avatar both follower draws
+            # the same), never from the realize generator.
+            t_m = self.clock.now()
+            cur, cur_parts = self.stream.body_now()
+            mvs = mv.solve_moves(self.body["body"], acts, cur, cur_parts,
+                                 log=self.log, seed=mv.move_seed(a, f0))
+            mv.drop_clashing_gestures(acts, mvs, self.rig.motion_seconds,
+                                      self.log)
+            lat_move = self.clock.now() - t_m
         poses = []
         if self.body is not None and any(x["tag"] == pz.POSE for x in acts):
             bm = self.body["body"]
@@ -755,6 +770,17 @@ class Performer:
                 self.emit(f"live: turn {n}.{k} an earlier gesture gives way "
                           "to an arm pose")
             lat_solve = self.clock.now() - t_s
+        if mvs:
+            for k_ in mv.tokens(mvs):
+                k_["t"] = round(float(k_["t"]) + t_start, 4)
+                directed.append(k_)
+            for rec in mvs:
+                rec["start"] = round(rec["start"] + t_start, 4)
+            if self.stream.drop_gestures(mv.windows(mvs)):
+                self.emit(f"live: turn {n}.{k} an earlier gesture gives way "
+                          "to a motion")
+            for line in mv.report_lines(mvs, spoken):
+                self.emit(f"live: turn {n}.{k} {line}")
         gone = self.stream.direct(directed) if directed else 0
         if mouth is not None:
             self.stream.add_mouth(f0, mouth, len(mouth["open"]))
@@ -792,6 +818,8 @@ class Performer:
                   + (f"; {tags_s}" if tags_s else "")
                   + (f"; {gone} idle tokens displaced" if gone else "")
                   + f": {spoken}")
+        if mvs:
+            lat["moves"] = round(lat_move, 3)
         if poses:
             # The exact check after the poses are on the stream: the Core's
             # geometry is a report, not something the motion waits for.

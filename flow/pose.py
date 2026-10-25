@@ -221,10 +221,13 @@ class PoseParser(dr.TagParser):
     use. A marker split across chunks parses as it would whole."""
 
     def __init__(self, variables=None, landmarks=(), max_marker=MAX_MARKER,
-                 gestures=()):
+                 gestures=(), moves=None):
         # gestures: the labels [gesture:NAME] may name (--body-gestures);
         # none, and a gesture marker is dropped like any other tag.
+        # moves: the motion primitives [move {...}] may name (flow.moves,
+        # --body-moves); None, and a move marker is dropped as before.
         super().__init__(gestures, None)
+        self.moves = None if moves is None else list(moves)
         self.variables = None if variables is None else set(variables)
         self.landmarks = set(landmarks or ())
         self.max_marker = max_marker
@@ -309,12 +312,33 @@ class PoseParser(dr.TagParser):
         if m or s.startswith("{"):
             return self._pose(m.group(1) if m else s, inner)
         name = re.split(r"[\s:]", s, maxsplit=1)[0].lower() if s else ""
+        if self.moves is not None:
+            mm = re.match(r"(?is)move\b\s*(.*)$", s)
+            if mm:
+                return self._move(mm.group(1), inner)
+            if name in self.moves:
+                # A bare primitive name ("[dance]", "[clap {...}]").
+                return self._move(s, inner)
         ok = ("blink", "pause") + (("gesture",) if self.gestures else ())
         if name not in ok:
             self.warnings.append(f"[{inner}] is not a body-mode marker "
                                  f"({', '.join((POSE,) + ok)}); dropped")
             return None
         return self._tag(inner)
+
+    def _move(self, body, inner):
+        try:
+            from . import moves as mv
+        except ImportError:
+            from flow import moves as mv
+        short = inner if len(inner) <= 80 else inner[:77] + "..."
+        arg, warn = mv.parse_spec(body, self.moves, short)
+        self.warnings += warn
+        if arg is None:
+            return None
+        tag = {"tag": mv.MOVE, "arg": arg, "at": len(self.spoken)}
+        self.tags.append(tag)
+        return tag
 
     def _pose(self, body, inner):
         short = inner if len(inner) <= 80 else inner[:77] + "..."
@@ -380,14 +404,22 @@ class PoseParser(dr.TagParser):
         return tag
 
 
-def parser_for(bm, max_marker=MAX_MARKER, gestures=()):
+def parser_for(bm, max_marker=MAX_MARKER, gestures=(), moves=False):
     # A VRM body also takes composite targets ("hands": "@together");
-    # a Live2D body has none (the same parser as before them).
+    # a Live2D body has none (the same parser as before them). moves: take
+    # [move {...}] markers for the primitives this body can do.
     names = tuple(getattr(bm, "composite_landmarks", ()))
     keys = list(getattr(bm, "composite_keys", ())) if names else []
+    mvs = None
+    if moves:
+        try:
+            from . import moves as mv
+        except ImportError:
+            from flow import moves as mv
+        mvs = mv.offered(bm)
     return PoseParser(available(bm) + keys,
                       list(bm.landmarks) + list(names) if names
-                      else bm.landmarks, max_marker, gestures)
+                      else bm.landmarks, max_marker, gestures, mvs)
 
 
 def tag_text(t) -> str:
@@ -398,6 +430,8 @@ def tag_text(t) -> str:
         d = dict(arg.get("targets", {}))
         d.update({k: arg[k] for k in ("dur", "hold") if k in arg})
         return f"[pose {json.dumps(d, ensure_ascii=False)}]"
+    if t.get("tag") == "move" and isinstance(arg, dict):
+        return f"[move {json.dumps(arg, ensure_ascii=False)}]"
     return f"[{t['tag']}{':' + str(arg) if arg else ''}]"
 
 
@@ -643,7 +677,7 @@ moves a little with it. Markers on the same variables play one after \
 another, so a nod is two quick markers: \
 [pose {{"head.pitch": -12, "dur": 0.25, "hold": 0}}]\
 [pose {{"head.pitch": 0, "dur": 0.3, "hold": 0}}]
-{gestures}[blink]  a deliberate blink
+{moves}{gestures}[blink]  a deliberate blink
 [pause:0.5]  stay silent for that many seconds (0.2 to 3)
 Each user message ends with "(your body now: ...)", where your body is at \
 that moment in the same variables{image}.
@@ -655,7 +689,7 @@ of markers, brows up on a surprise, a tilt on a question. The markers of \
 one nod or one glance-and-back count as one beat.
 - Keep holds short: leave "hold" out, or 0 for a quick beat. Hold 2 seconds \
 or more only for the one moment in a reply you mean to stress.
-{whole}- Vary your moves from reply to reply; do not open every reply the \
+{whole}{move_rule}- Vary your moves from reply to reply; do not open every reply the \
 same way or repeat the same pose.
 - Do not hold your eyes half shut with eye.L.open / eye.R.open: held eyes \
 stop blinking. A blink is [blink].
@@ -741,11 +775,21 @@ def _examples(bm) -> list[str]:
     return ex
 
 
-def system_prompt(bm, persona=None, images=False, gestures="") -> str:
+def system_prompt(bm, persona=None, images=False, gestures="",
+                  moves="") -> str:
     """Byte-stable for a body file, persona, image setting and gesture
     lines: the current pose goes in the user message (pose_now), never
     here. gestures: the [gesture:NAME] entry (director.gesture_lines) when
-    body mode offers the rig's own motions (--body-gestures)."""
+    body mode offers the rig's own motions (--body-gestures). moves: the
+    [move] entry (flow.moves.prompt_lines) when it offers motion
+    primitives (--body-moves); "" is the prompt of before them."""
+    ex = _examples(bm)
+    if moves:
+        try:
+            from . import moves as mv
+        except ImportError:
+            from flow import moves as mv
+        ex.append(mv.PROMPT_EXAMPLE)
     persona = (persona or "a friendly, expressive character.").strip()
     # A VRM body says what it is (flow.vrmbody); a Live2D one is the
     # default, its prompt the same bytes as before E3.
@@ -756,7 +800,8 @@ def system_prompt(bm, persona=None, images=False, gestures="") -> str:
                "viewer sees you (your left is on the picture's right)"
                if images else ""),
         gestures=gestures or "", whole=_whole_body(bm, bool(gestures)),
-        examples="\n".join(_examples(bm)) + "\n")
+        moves=moves or "", move_rule=(mv.PROMPT_RULE if moves else ""),
+        examples="\n".join(ex) + "\n")
 
 
 def pose_now(bm, values=None, parts=None) -> str:
@@ -1243,10 +1288,11 @@ class PoseLayer:
     def busy(self):
         return bool(self.queue or self.state or self.touched)
 
-    def _eval(self, s, tf, under):
+    def _eval(self, s, tf, under, life=True):
         # State: (t0, duration, from, to, hold end, release, step, the
         # idle's value at t0, the token's own settle or None);
-        # stream.body_now reads "to" as s[3].
+        # stream.body_now reads "to" as s[3]. life False: none of the
+        # motion underneath shows (a joint a move plays, flow.moves).
         t0, d, frm, to, he, rel, step, u0, settle = s
         settle = self.settle if settle is None else settle
         if step:
@@ -1257,7 +1303,7 @@ class PoseLayer:
             if tf < he + rel:
                 return (under if (tf - he) / rel >= 0.5 else to), False
             return under, True
-        life = self.life * (under - u0)
+        life = self.life * (under - u0) if life else 0.0
         if tf < t0 + d:
             w = float(min_jerk(max((tf - t0) / d, 0.0)))
             return frm + (to - frm) * w + life * w, False
@@ -1273,7 +1319,9 @@ class PoseLayer:
             return held + (under - held) * float(min_jerk(u)), False
         return under, True
 
-    def apply(self, f, over, parts):
+    def apply(self, f, over, parts, still=()):
+        """still: parameters whose held targets keep no life (those a
+        flow.moves clip plays absolutely under the pose)."""
         self.written = set()
         if not self.busy():
             return over, parts
@@ -1306,7 +1354,8 @@ class PoseLayer:
                 for i, v in items.items():
                     key = (kind, i)
                     u = under(key)
-                    frm = (self._eval(self.state[key], tf, u)[0]
+                    frm = (self._eval(self.state[key], tf, u,
+                                      i not in still)[0]
                            if key in self.state else u)
                     self.state[key] = (t0, d, frm, float(v), he, rel,
                                        kind == "q" or i in step, u,
@@ -1315,7 +1364,8 @@ class PoseLayer:
                         self.touched.add(i)
         for key in sorted(self.state):
             kind, i = key
-            val, done = self._eval(self.state[key], tf, under(key))
+            val, done = self._eval(self.state[key], tf, under(key),
+                                   i not in still)
             if done:
                 del self.state[key]
             if kind == "p":
@@ -1409,6 +1459,7 @@ def summarize(root) -> list[dict]:
             r["actions"] += len(acts)
             for x in acts:
                 key = x["tag"] if x["tag"] in (POSE, "pause", "gesture") \
+                    else f"move:{x['arg'].get('name')}" if x["tag"] == "move" \
                     else f"{x['tag']}:{x['arg']}" if x.get("arg") else x["tag"]
                 r["kinds"][key] = r["kinds"].get(key, 0) + 1
             r["warn"] += len(a.get("warnings", []))

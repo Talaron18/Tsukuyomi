@@ -1922,11 +1922,14 @@ class BodyModel:
 
     def solve(self, targets: dict, current: dict | None = None,
               variant: int | None = None, parts: dict | None = None,
-              weights: dict | None = None) -> dict:
+              weights: dict | None = None, only=None) -> dict:
         """Parameter values that bring the canonical variables in `targets`
         to their values. Unnamed variables are free; their parameters stay
         near `current` (default: rest) by the prior. Each arm variant is
         solved and the cheapest kept unless `variant` fixes one.
+
+        `only`: the parameters that may move (default: every solvable one
+        that moves a target); flow.moves solves a hand with its arm alone.
 
         Returns {params, parts, variant, cost, report: {var: {target, got,
         error, unit, ok}}, missing: [vars no variant has]}.
@@ -1942,7 +1945,7 @@ class BodyModel:
             raise KeyError(f"unknown variables {unknown}; see --canon")
         best = None
         for k in tried:
-            r = self._solve_variant(targets, current, k, weights)
+            r = self._solve_variant(targets, current, k, weights, only)
             if r is None:
                 continue
             r["cost"] += self.SWITCH_COST * self._changed(cur_var, k)
@@ -1957,7 +1960,7 @@ class BodyModel:
         best["variant_name"] = v["name"]
         return best
 
-    def _solve_variant(self, targets, current, k, weights):
+    def _solve_variant(self, targets, current, k, weights, only=None):
         v = self.variants[k]
         tk = [t for t in targets if v["present"][self.fidx[t]]]
         missing = [t for t in targets if t not in tk]
@@ -1976,6 +1979,8 @@ class BodyModel:
                 if np.abs(v["sweeps"][p][1][:, ti]).max() > 1e-9
                 and (self.params[p].get("band") not in ("autonomic", "mouth")
                      or self.params[p].get("declares") in targets)]
+        if only is not None:
+            free = [p for p in free if p in only]
         base = {p: e["default"] for p, e in self.params.items()}
         base.update({p: x for p, x in current.items() if p in base})
         base.update(v["switches"])

@@ -682,6 +682,11 @@ def windows(directed):
         elif k["type"] == "gesture":
             win.setdefault("arms", []).append(
                 (float(k["t"]), float(k["t"]) + float(k["duration"])))
+        elif k["type"] == "move" and "arms" in k.get("groups", ()):
+            # flow.moves: an arm figure (clap, cheer...) takes the arms for
+            # its whole play, ease in and out included.
+            win.setdefault("arms", []).append(
+                (float(k["t"]), float(k["t"]) + float(k["duration"])))
         elif k["type"] == "pose" and "arms" in k.get("groups", ()):
             # flow.pose: an idle gesture starting while a pose holds the
             # arms would fight it for the arm drawing.
@@ -1281,6 +1286,25 @@ def plan(a, reply, out_dir, motions, log=print, tts=None, body=None):
         except ImportError:
             from flow import pose as pz
         bm = body["body"]
+        end_m = 0.0
+        if any(x.get("tag") == "move" for x in acts):
+            # Motion primitives (flow.moves): built on the body, an idle
+            # gesture under an arm figure dropped, each carried on its
+            # action as "solved" for the runtime.
+            try:
+                from . import moves as mv
+            except ImportError:
+                from flow import moves as mv
+            mvs = mv.solve_moves(bm, acts, log=log,
+                                 seed=getattr(a, "seed", 0))
+            mv.drop_clashing_gestures(acts, mvs, motions, log)
+            for rec in mvs:
+                acts[rec["act"]]["solved"] = rec
+            for line in mv.report_lines(mvs, reply["spoken"]):
+                log("move: " + line)
+            if mvs:
+                extra.update(mode="body", moves=len(mvs))
+            end_m = mv.end_time(mvs) + a.tail
         poses = pz.solve_poses(bm, acts, core=body.get("core"), log=log)
         arms = body.setdefault("arm_params", pz.arm_params(bm))
         for rec in poses:
@@ -1296,7 +1320,7 @@ def plan(a, reply, out_dir, motions, log=print, tts=None, body=None):
             + (f", {rs['exact_ok']}/{rs['exact_n']} on the Core"
                if rs["exact_n"] else "") + f" (solve {rs['solve_seconds']}s)")
         extra.update(mode="body", reach=rs)
-        return max(seconds, pz.end_time(poses) + a.tail)
+        return max(seconds, pz.end_time(poses) + a.tail, end_m)
     if reply["refused"]:
         with open(os.path.join(out_dir, "refusal.txt"), "w",
                   encoding="utf-8") as fh:
@@ -1602,6 +1626,13 @@ def add_args(ap):
                          "([gesture:NAME], as tag mode offers them) next to "
                          "the poses [default on]; --no-body-gestures: pure "
                          "body targets, as E2 was first measured")
+    ap.add_argument("--body-moves", default=True,
+                    action=argparse.BooleanOptionalAction,
+                    help="--mode body: offer motion primitives ([move "
+                         "{\"name\": \"dance\"}]: sway, bounce, clap, cheer, "
+                         "... as this body can do them; flow.moves) [default "
+                         "on]; --no-body-moves: the prompt and parser of "
+                         "before them")
     ap.add_argument("--body-image", action="store_true",
                     help="--mode body: send the model a picture of itself "
                          "with each line (anthropic; siliconflow and ollama "
@@ -1621,6 +1652,18 @@ def body_path(a):
     """--body, else <rig without .npz>.body.json."""
     return getattr(a, "body", None) or (os.path.splitext(a.rig)[0]
                                         + ".body.json")
+
+
+def move_menu(a, bm):
+    """(prompt lines, names) of the motion primitives offered on this body
+    (flow.moves) with --body-moves; ("", []) without."""
+    if not getattr(a, "body_moves", True):
+        return "", []
+    try:
+        from . import moves as mv
+    except ImportError:
+        from flow import moves as mv
+    return mv.prompt_lines(bm), mv.offered(bm)
 
 
 def prepare_body(a, info=sys.stdout):
@@ -1678,16 +1721,20 @@ def prepare_body(a, info=sys.stdout):
         labels, descriptions, same = offer_gestures(
             a, roles, gesture_labels(names), info)
         glines = gesture_lines(labels, descriptions, same)
+    mlines, mnames = move_menu(a, bm)
     print(f"director: body mode, {path}: {len(pz.offered(bm))} variables, "
           f"{len(bm.variants)} arm variants"
           + (f", {len(labels)} gestures" if labels else "")
+          + (f", motions {' '.join(mnames)}" if mnames else "")
           + (", images" if images else ""), file=info)
     return {"labels": labels, "offered": None, "descriptions": descriptions,
-            "system": pz.system_prompt(bm, a.persona, images, glines),
+            "system": pz.system_prompt(bm, a.persona, images, glines,
+                                       mlines),
             "motions": motions, "stats": None, "roles": None,
             "mode": "body", "body": bm, "body_path": path, "core": core,
             "images": images, "max_tag": pz.MAX_MARKER,
-            "parser": lambda: pz.parser_for(bm, gestures=labels)}
+            "parser": lambda: pz.parser_for(bm, gestures=labels,
+                                            moves=bool(mnames))}
 
 
 def _quiet_stdout(info):

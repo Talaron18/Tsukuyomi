@@ -290,6 +290,14 @@ class MotionStream:
         self.poses = pz.PoseLayer(rig.fps, dict(zip(rig.pids,
                                                     rig.dflt.tolist())),
                                   rig.base_parts)
+        # Motion primitives (flow.moves), under the poses.
+        try:
+            from . import moves as mv
+        except ImportError:
+            from flow import moves as mv
+        self.moves = mv.MoveLayer(rig.fps, dict(zip(rig.pids,
+                                                   rig.dflt.tolist())),
+                                  rig.base_parts)
         self.last = (dict(rig.base_params), dict(rig.base_parts or {}))
         self.switches = rig.switches()
         self.auto = (rt.Autonomic(rig.fps, np.random.default_rng([seed, 3]),
@@ -427,6 +435,8 @@ class MotionStream:
                 self.auto.request(float(k["t"]))
             elif typ == "pose":
                 self.poses.commit(k)
+            elif typ == "move":
+                self.moves.commit(k)
 
     # ------------------------------------------------------------- frames
 
@@ -478,8 +488,12 @@ class MotionStream:
         for p, v in gp.items():
             if p not in rig.expr_ids:
                 over[p] = v
+        still = ()
+        if self.moves.busy():
+            over, parts = self.moves.apply(f, over, parts)
+            still = self.moves.holding
         if self.poses.busy():
-            over, parts = self.poses.apply(f, over, parts)
+            over, parts = self.poses.apply(f, over, parts, still)
             for p in self.poses.written:
                 if not rt.voice_owns(p):
                     continue
