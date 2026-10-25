@@ -16,7 +16,9 @@ does in headless Chromium.
             the calm profile was fitted in: a role's normalised [-1, 1] is
             the Cubism standard parameter's range, so head_x 1 = ParamAngleX
             30 = head.yaw 30 deg (ROLE_MAP; Live2D's ranges by convention,
-            flow.body.DECLARED, not the VRM's joint limits, which are wider).
+            flow.body.DECLARED, not the VRM's joint limits, which are wider)
+            -- but head_y 1 = 15 deg of pitch (Live2D draws pitch shallower;
+            ROLE_MAP's comment has the measurement).
             Brow roles without a VRM shape (slide, angle) are not bound.
   arms      no gestures (VRM avatars ship no authored motions here): the
             arms rest relaxed (flow.vrmbody's rest pose, out of the T-pose)

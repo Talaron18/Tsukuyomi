@@ -27,8 +27,11 @@ comes from the skeleton directly and the solver is analytic.
             pitch, tilt split over neck+head and spine+chest+upperChest;
             per arm the upper arm's elevation (0 hanging, 90 sideways or
             forward, 170 overhead), plane of elevation (0 out to the side,
-            90 forward, 130 across the body, -30 behind), axial twist (+
-            outward) and the elbow's bend; shoulders.up / shoulder.L.up;
+            90 forward, 130 across the body, -90 straight back), axial
+            twist (+ outward, measured from the swing out of hanging) and
+            the elbow's bend; the hand's roll, flexion and deviation (the
+            wrist, turned only by composite targets); shoulders.up /
+            shoulder.L.up;
             gaze, eyelids, eye smile, brows, mouth form and open, blush
             where the avatar has a shape for it; the breath and the five
             visemes for the autonomic layer and the voice. Each declared
@@ -39,22 +42,54 @@ comes from the skeleton directly and the solver is analytic.
             pose is a local rotation per bone; the stream sends exactly
             those quaternions (state()), so Python's forward kinematics and
             the browser's agree by construction (tests/test_vrm checks it
-            in Chromium). The hand is rigid with the forearm (no wrist, no
-            fingers); hand.L / hand.R are the palm centres.
+            in Chromium). The hand turns at the wrist (WRIST, on the hand
+            bone), no fingers; hand.L / hand.R are the palm centres.
   solver    VRMBody.solve(targets, current): declared variables and joint
             angles are set directly (clamped to the limits); a hand target
             is analytic two-bone IK with a pole: the elbow bend from the
             shoulder-palm distance (exact, by bisection on the actual bone
             vectors), then the rotation of the whole arm onto the target,
-            searched over the swivel about the shoulder-palm axis for the
-            elbow nearest out-down-back (POLE) within the joint limits and
+            searched over the swivel about the shoulder-palm axis: within
+            the joint limits first, out of the body and the other arm next
+            (collision), then the elbow nearest out-down-back (POLE) and
             near the current pose. A target given only in x and y gets a
             depth: where the palm is now, pushed in front of the torso or
-            the face when it is in front of them (no hand inside the body),
-            and pulled within reach. Out-of-reach targets stretch toward
-            the target; the report says what the forward kinematics reach.
-            perceive(values) is the reverse (forward kinematics), the self
-            check.
+            the face when it is in front of them, and pulled within reach.
+            Out-of-reach targets stretch toward the target; the report says
+            what the forward kinematics reach. perceive(values) is the
+            reverse (forward kinematics), the self check.
+  collision the trunk, neck and head as one signed distance, lofted
+            through SLAB_H slabs of the skinned rest mesh (a rounded box
+            each, hair left out), narrowed where the resting arms sank in;
+            the arms as capsules (upper arm past the shoulder, forearm,
+            two across the palm), radii from their own vertices. A hand
+            target inside the body moves onto its surface; one no swivel
+            reaches clear of the body (or, one hand moving, of the other
+            arm) moves to the nearest clear target; either is reported
+            (solve()'s "why", a MISS in flow.pose with the reason). Two
+            hands moving together are solved each for the body, and while
+            they overlap their targets part (sideways when the left hand
+            is on the left), half each, until they touch. When the straight
+            path in joint angles (what the pose layer plays) goes through
+            the body, solve() gives a pose to pass through ("via"; flow.pose
+            plays it on the way in and before the release). Measured on the
+            samples: the old solver put hands together 0.08-0.09 hu into
+            each other and the chest, crossed forearms 0.18-0.20 through
+            each other, behind the back 0.30-0.32 into the hips; now <=
+            PEN_TOL (0.02 hu, ~5 mm) in the pose and on its path.
+  composites  "hands": "@together" (palm to palm before the chest),
+            "@clasped" (before the waist), "@behind_back"; "hand.L" /
+            "hand.R": "@<landmark>" (the palm on the body's front there),
+            "@hip", "@back" -- hand positions plus a hand orientation the
+            wrist turns to (composite(), composite_orient()); flow.pose's
+            parser takes them for a body with composite_keys, the prompt
+            lists them (prompt_notes). A Live2D body has none.
+  gaze      gaze 1 is the look-at range map's input maximum: the eyes at
+            the avatar's own extremes (Seed-san 10 deg, three-vrm-girl 8-12),
+            as Live2D's EyeBall 1 is the drawn eye's edge; capped at
+            EYE_MAX_DEG for a bone look-at whose output range is wider. The
+            camera sits at the eyes' height, so gaze 0 with the head at rest
+            looks into it.
 
 Joint limits (LIMITS) are human active ranges cut to what a talking avatar
 does and its skin survives: neck rotation 80 deg, flexion 50 / extension 60,
@@ -62,9 +97,12 @@ lateral flexion 45 (AAOS norms, Greene & Heckman 1994) -> head yaw +-50,
 pitch +-35 (Live2D's ParamAngleY is +-30), tilt +-30; thoracolumbar rotation
 30, lateral 25 (same source) for a standing body with the hips still ->
 torso yaw +-25, pitch +-15, tilt +-12; shoulder flexion / abduction 180,
-horizontal adduction 135, horizontal abduction 45, rotation 70 internal / 90
-external -> elevation 0..170, plane -30..130, twist +-70; elbow flexion 150
--> bend 0..145.
+horizontal adduction 135, horizontal abduction 45, extension 60 ->
+elevation 0..170, plane -90..130 with the extension (the arm behind the
+frontal plane) held to 60 deg hanging, 45 level, 30 overhead (EXT_*);
+rotation 70 internal (at 90 abduction; a hand behind the back takes ~90
+with the arm down) / 90 external -> twist -100..90; elbow flexion 150 ->
+bend 0..145; wrist as WRIST's comment.
 
 Format (tsukuyomi.body/2, kind "vrm"): the keys pose.py reads (frame,
 landmarks [head, chest, hips, shoulder.L/R, hand.L/R as [x, y]; shoulder.y
@@ -74,7 +112,9 @@ presence per feature; no sweeps stored, VRMBody computes them]) plus
 "depth" {landmark: z hu}, "limits_source", "reach" {hand.L/R: {x, y, z}
 ranges}, and "vrm" {file, version, faces, license, bones {name: {rest
 [x, y, z] metres in the 1.0 frame, parent}}, palm {L, R}, torso_box,
-head_box, face_map, visemes, blink, look_at, breath, camera, springs}.
+head_box, face_map, visemes, blink, look_at (with the output scales),
+breath, camera, springs, rev (BODY_REV), eyes [x, y, z] hu, collision
+{slabs, arms, rest_fit}}.
 
 Usage:
     python -m flow.vrmbody --vrm assets/vrm/VRM1_Constraint_Twist_Sample.vrm \\
@@ -837,7 +877,7 @@ JOINT_MEANING = {
     "upper_arm.elev": "0 hanging, 90 out level with the shoulder, 170 "
                       "overhead",
     "upper_arm.plane": "0 out to your side, 90 forward, 130 across your "
-                       "body, -30 behind",
+                       "body, -90 straight back",
     "upper_arm.twist": "+ turns the upper arm outward",
     "forearm.bend": "0 straight, 145 fully bent",
     "hand.roll": "+ turns the palm up",

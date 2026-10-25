@@ -205,13 +205,46 @@ assets/vrm/README.md). Body files `rigs/seed-san.body.json`,
   elbow bend; shoulders) and face weights in the Live2D standard ranges.
   Joint limits: AAOS active ranges cut to a talking avatar (head yaw +-50,
   pitch +-35, tilt +-30; torso +-25/15/12; elevation 0..170, plane
-  -30..130, twist +-70, elbow 0..145).
+  -90..130 with the extension held to 60 hanging / 45 level / 30 overhead,
+  twist -100..90 measured from the swing out of hanging (swing-twist: an
+  Euler twist's zero turned with the plane, and behind the back needed
+  -110 of it), elbow 0..145; a wrist on the hand bone, roll -20..160 from
+  the palm-down T-pose, flexion -70..80, deviation -30..20).
 - **Solver**: declared variables and joints set directly (clamped);
   a hand target is two-bone IK with a pole (elbow bend by bisection on the
   real bone vectors, swivel searched for the elbow nearest out-down-back
   within the limits and the current pose); a target given in x, y only
   keeps the palm's depth, pushed in front of the torso / face and within
-  reach. ~3 ms per solve. The reverse is forward kinematics (`perceive`).
+  reach. ~3 ms per solve (two hands meeting ~30 ms, a detour ~0.2 s). The
+  reverse is forward kinematics (`perceive`).
+- **Collisions** (body file revision 2): the trunk, neck and head as one
+  signed distance lofted through 0.2 hu slabs of the skinned rest mesh
+  (hair left out), narrowed where the resting arms sank in (a loose
+  shirt's sides are skinned to the chest); arms as capsules (upper arm past
+  the shoulder, forearm, two across the palm), radii from their vertices.
+  The swivel search orders limits, then penetration, then the pole. A
+  target inside the body moves onto it; one reachable only through the
+  body (or, one hand moving, the other arm) moves to the nearest clear
+  target; both are MISS with the reason in the report. Two hands moving
+  together are solved for the body each and their targets parted, half
+  each, until they touch. When the straight joint-angle path (what the
+  pose layer plays) crosses the body, the solver gives a via pose that
+  flow.pose plays on the way in and before the release. Old solver vs now
+  (deepest penetration, hu; Seed-san / three-vrm-girl): hands together
+  0.08 / 0.07 into the chest and 0.085 / 0.09 into each other -> 0.018 /
+  0.007; crossed forearms 0.20 / 0.18 through each other -> 0.02; hands
+  behind the back (z given) 0.32 / 0.30 into the hips -> 0.01, and 0.41 /
+  0.35 on the straight path -> 0.01 by the detour; hand on the other
+  shoulder 0.11 -> 0.02. Tolerance 0.02 hu (5 mm).
+- **Composite targets** (VRM only): `"hands": "@together"` (palm to palm
+  before the chest, fingers up), `"@clasped"` (before the waist),
+  `"@behind_back"`; `"hand.R": "@chest"` (or any landmark: the palm flat
+  on the body there), `"@hip"`, `"@back"`. Hand positions plus a hand
+  orientation the wrist turns to; the VRM prompt lists them. The Live2D
+  prompt and parser have none (byte-identical): in `--avatar both` the
+  reply is Hiyori's, so "hands together" arrives as two plain x, y targets
+  and the VRM's hands meet side by side (reported), never through each
+  other; head.pitch markers are converted from ParamAngleY units.
 - **Kinematics = three-vrm's normalized rig**: the stream sends each
   bone's local quaternion; Python FK and three-vrm in Chromium agree to
   0.01 mm on both samples (tests/test_vrm.py). VRM 0: x and z of each
@@ -224,11 +257,20 @@ assets/vrm/README.md). Body files `rigs/seed-san.body.json`,
   mouth). Limits: VRoid brows are one shape for both sides (each side gives
   half); presets move the whole face. Blinks on blinkLeft/Right, visemes
   a/i/u/e/o on aa/ih/ou/ee/oh, gaze on vrm.lookAt (gaze 1 = the look-at
-  range's input maximum). Blush only from a custom expression or a morph
+  range's input maximum: the eyes at the avatar's own extremes, Seed-san
+  10 deg, three-vrm-girl 8-12, as Live2D's EyeBall 1 is the drawn eye's
+  edge; capped at 15 deg for a bone look-at whose range map says more).
+  The camera sits at the eyes' height looking down at the framing: gaze 0
+  with the head at rest looks into it (it sat 0.7 hu lower: the rest gaze
+  passed 3.7 / 3.2 deg over the viewer). Blush only from a custom expression or a morph
   named for it -- Seed-san has none, so cheek.blush is absent (reported).
 - **Idle and events**: VRMRig gives MotionStream an EventRig's surface; the
   roles land on canonical variables in the Cubism standard units the calm
-  profile is in (head_x 1 = 30 deg yaw, body 10 deg, gaze/brows 1). Arms
+  profile is in (head_x 1 = 30 deg yaw, head_y 1 = 15 deg pitch -- Live2D
+  draws its pitch at ~0.48 of its yaw, the mouth's shift at ParamAngleY
+  +-30 over its shift at ParamAngleX 30 on Hiyori, Natori, lafei,
+  xuefeng; at 30 the fitted idle bent the head 18 deg down at its 2nd
+  percentile -- body 10 deg, gaze/brows 1). Arms
   rest relaxed (elevation 8, plane 20, elbow 14); breath = shoulders up +
   upper chest back, calibrated to BREATH_TARGET_HU like the Live2D rigs.
   No gestures for VRM: body poses only. Spring bones (hair) and node
