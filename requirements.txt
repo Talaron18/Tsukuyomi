@@ -1,0 +1,16 @@
+# Stage 1 pipeline: director, live loop, Live2D/VRM rendering, TTS, data
+# engine. Python 3.11+ (3.13 tested). Versions are those in use; the code
+# is not known to need these exact ones.
+numpy>=2.0
+pillow>=10.0
+PyYAML>=6.0
+live2d-py>=0.8.1        # Live2D render (flow.runtime); the Cubism Core it ships is also read by l2dprobe
+PyOpenGL>=3.1
+glfw>=2.7               # offscreen GL context for the Live2D renders
+playwright>=1.50        # VRM renders (flow.vrmrender): then `playwright install chromium`
+edge-tts>=7.0           # --tts edge
+anthropic>=0.60         # --backend anthropic only
+pytest>=8.0
+# Also needed, not from pip: ffmpeg on PATH (mp4 + audio), and the
+# VOICEVOX engine for --tts voicevox. DeepSeek / SiliconFlow / Ollama
+# backends use the standard library only.

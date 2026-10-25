@@ -408,6 +408,9 @@ random data; the 4-bit, Unsloth and llama.cpp steps have not run at all.
 
 ### Install
 
+`requirements.txt` is the Stage 1 pipeline; `requirements-train.txt`
+this section's pip packages (torch with CUDA first, see its header).
+
 Tested on CPU here (these exact versions; released 2026-09/10):
 
     pip install "transformers==5.20.2" "peft==0.21.2" "accelerate==1.15.0" \

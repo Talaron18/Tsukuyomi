@@ -1,0 +1,16 @@
+# Stage 2 on a CUDA GPU (docs/embodiment.md, "Stage 2 on one 3090 Ti").
+# Install PyTorch with CUDA FIRST, from the official index, so pip does
+# not pull a CPU build:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu128
+# then: pip install -r requirements-train.txt
+# CPU-tested versions (CUDA side never run here):
+transformers==5.20.2
+peft==0.21.2
+accelerate==1.15.0
+tokenizers==0.23.3
+sentencepiece
+safetensors
+bitsandbytes>=0.47      # 4-bit NF4 + paged 8-bit AdamW; tested range unknown
+# Optional and faster, but it pins its own torch/transformers: put it in a
+# separate venv if you try it (the trainer falls back to PEFT without it).
+#   pip install unsloth
