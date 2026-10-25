@@ -398,8 +398,10 @@ def build(path: str, log=print) -> dict:
         return (np.asarray(p, float) - chin) / hu
     torso_ids = {hb[b] for b in ("spine", "chest", "upperChest") if b in hb}
     tv = body(X[np.isin(D, list(torso_ids)) & ~hair])
-    if len(tv) < 10:
-        tv = body(X[np.isin(D, [hb["spine"]])])
+    if len(tv) == 0:
+        # No vertex on the torso bones: everything between hips and chin.
+        allb = body(X[~hair])
+        tv = allb[(allb[:, 1] < 0) & (allb[:, 1] > body(pos["hips"])[1])]
     sh = {s: body(pos[f"{SIDE[s]}UpperArm"]) for s in "LR"}
     sh_y = float(np.mean([sh[s][1] for s in "LR"]))
     hips = body(pos["hips"])

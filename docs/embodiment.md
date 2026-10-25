@@ -182,3 +182,62 @@ at 0.25 Hz). Changed for the second round (runs/e2b):
   head/gaze/brow/body moves run on under poses; default hold 1.5 -> 1 s;
 - the prompt guidance above, and gestures offered by default.
 
+
+## E3 as built (2026-10)
+
+`flow/gltf.py`, `flow/vrmbody.py`, `flow/vrm.py`, `flow/vrmrender.py`,
+`flow/web/` (vrm.js, vrm.html, render.html, vendor/: three 0.180.0 and
+@pixiv/three-vrm 3.5.5, MIT, sha256 in vendor/README.md). Sample avatars in
+`assets/vrm/` (Seed-san, VRM 1.0, VRM Public License 1.0; three-vrm-girl,
+VRM 0, VRoid Hub licence; both allow redistribution and modification, see
+assets/vrm/README.md). Body files `rigs/seed-san.body.json`,
+`rigs/three-vrm-girl.body.json`.
+
+- **Body file** (`python -m flow.vrmbody --vrm PATH --out FILE`):
+  tsukuyomi.body/2 with `"kind": "vrm"`, loaded by `flow.body.load` into a
+  `VRMBody` with BodyModel's interface, so flow.pose's prompt, solve loop,
+  reach report and play run unchanged. Frame as Live2D: origin the chin
+  (lowest head-bone vertex in front), 1 hu = chin to top of skull (hair
+  left out): 0.246 m on Seed-san; +x the character's left (VRM 0, facing
+  -Z, is turned round), z toward the viewer. Parameters are the body's own
+  joint angles (head/torso yaw-pitch-tilt split over neck+head and
+  spine+chest+upperChest; per arm elevation, plane of elevation, twist,
+  elbow bend; shoulders) and face weights in the Live2D standard ranges.
+  Joint limits: AAOS active ranges cut to a talking avatar (head yaw +-50,
+  pitch +-35, tilt +-30; torso +-25/15/12; elevation 0..170, plane
+  -30..130, twist +-70, elbow 0..145).
+- **Solver**: declared variables and joints set directly (clamped);
+  a hand target is two-bone IK with a pole (elbow bend by bisection on the
+  real bone vectors, swivel searched for the elbow nearest out-down-back
+  within the limits and the current pose); a target given in x, y only
+  keeps the palm's depth, pushed in front of the torso / face and within
+  reach. ~3 ms per solve. The reverse is forward kinematics (`perceive`).
+- **Kinematics = three-vrm's normalized rig**: the stream sends each
+  bone's local quaternion; Python FK and three-vrm in Chromium agree to
+  0.01 mm on both samples (tests/test_vrm.py). VRM 0: x and z of each
+  quaternion negated in the page; three-vrm's look-at pitch is + down.
+- **Face map** (per avatar, from what it has): VRoid's per-feature morphs
+  where present (Fcl_EYE_Joy_L/R for eye smile, Fcl_BRW_Surprised / Angry
+  / Fun for brow lift +/- and form +/-, Fcl_MTH_Fun / Sorrow for mouth
+  form), else the emotion presets at reduced gain (happy 0.5 eye smile,
+  surprised / angry / relaxed for the brows, happy / sad 0.4 for the
+  mouth). Limits: VRoid brows are one shape for both sides (each side gives
+  half); presets move the whole face. Blinks on blinkLeft/Right, visemes
+  a/i/u/e/o on aa/ih/ou/ee/oh, gaze on vrm.lookAt (gaze 1 = the look-at
+  range's input maximum). Blush only from a custom expression or a morph
+  named for it -- Seed-san has none, so cheek.blush is absent (reported).
+- **Idle and events**: VRMRig gives MotionStream an EventRig's surface; the
+  roles land on canonical variables in the Cubism standard units the calm
+  profile is in (head_x 1 = 30 deg yaw, body 10 deg, gaze/brows 1). Arms
+  rest relaxed (elevation 8, plane 20, elbow 14); breath = shoulders up +
+  upper chest back, calibrated to BREATH_TARGET_HU like the Live2D rigs.
+  No gestures for VRM: body poses only. Spring bones (hair) and node
+  constraints run in three-vrm's update.
+- **Pipeline**: `flow.director --avatar vrm --vrm PATH` plans into
+  states.json (+ speech.wav, subs, tokens; `--render` -> render/preview.mp4
+  and demo.mp4 via headless Chromium). `flow.live --avatar vrm` streams
+  states on /states (SSE, server clock); the page interpolates them with
+  the audio on the same playout delay. `--avatar both`: the Live2D rig and
+  the VRM side by side from the same sentences (prompt from the Live2D
+  body; the VRM resolves landmarks on its own body). No `--body-image` for
+  VRM (the server cannot draw it).

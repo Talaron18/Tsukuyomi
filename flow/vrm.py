@@ -482,8 +482,12 @@ class Follower:
         if any(x.get("tag") == pz.POSE for x in acts):
             cur, _ = self.stream.body_now()
             poses = pz.solve_poses(self.bm, acts, cur, {}, log=self.log)
+            for rec in poses:
+                rec["start"] = round(rec["start"] + t_start, 4)
             for line in pz.report_lines(poses, spoken):
                 self.log(f"live: vrm {line}")
+            for rec in poses:
+                rec["start"] = round(rec["start"] - t_start, 4)
         shifted = [dict(x, t=round(float(x["t"]) + t_start, 4)) for x in acts
                    if x.get("tag") != "gesture"]
         directed = dr.realize(shifted, self.rig.stats, list(self.rig.roles),
