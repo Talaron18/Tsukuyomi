@@ -1394,13 +1394,26 @@ def add_args(ap):
                     help="prepare, print the estimate, stop")
 
 
+def split_avatars(text) -> list[str]:
+    """--avatars: commas part the avatars and also the key=value pairs of
+    one ("x:model=P,rig=P,y"): a piece with "=" and no ":" before it
+    belongs to the avatar before."""
+    out = []
+    for x in (p for p in text.split(",") if p):
+        if out and "=" in x and ":" not in x.split("=", 1)[0] and ":" in out[-1]:
+            out[-1] += "," + x
+        else:
+            out.append(x)
+    return out
+
+
 def parse_opts(argv):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name in ("gen", "estimate"):
         add_args(sub.add_parser(name))
     a = ap.parse_args(argv)
-    a.avatars = [x for x in a.avatars.split(",") if x]
+    a.avatars = split_avatars(a.avatars)
     a.personas = [x for x in a.personas.split(",") if x] if a.personas \
         else None
     if a.cmd == "estimate":
