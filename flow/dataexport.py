@@ -11,7 +11,8 @@ Quality filters, stats and exporters for flow.dataset's turn records.
              generated without its model: its prompt has no gestures and its
              trajectory no idle; kept only with --keep-lite). Soft ones are
              counted only: no_pose, unplayed (markers parsed away, e.g. a
-             newer marker kind), usage_estimated.
+             newer marker kind), planned (play_warnings: a gesture dropped
+             under a pose or move, a move the body lacks), usage_estimated.
   dedupe     user lines normalised (case, punctuation, spaces) and compared
              by character-trigram Jaccard (>= --dup-jaccard) within an
              avatar x persona; the first one is kept.
@@ -68,7 +69,7 @@ except ImportError:
 
 HARD = ("refused", "empty", "cutoff", "parse", "no_body", "miss", "dup",
         "lite")
-SOFT = ("no_pose", "unplayed", "usage_estimated")
+SOFT = ("no_pose", "unplayed", "planned", "usage_estimated")
 MAX_MISS = 0.34
 DUP_JACCARD = 0.85
 
@@ -133,8 +134,12 @@ def flag(r, max_miss=MAX_MISS) -> list[str]:
     if r.get("stop_reason") in ("max_tokens", "length"):
         f.append("cutoff")
     unplayed = r.get("unplayed") or {}
+    # Planning lines (a gesture giving way to a pose or move, a body that
+    # lacks a move) are the pipeline's choices, not the model's syntax:
+    # counted, not dropped, or every dance turn would leave the SFT data.
+    planned = set(r.get("play_warnings") or ())
     parse = [w for w in r.get("warnings") or ()
-             if not (re.match(r"\s*\[(\w+)", w) and "dropped" in w
+             if w not in planned and not (re.match(r"\s*\[(\w+)", w) and "dropped" in w
                      and "not a body-mode marker" in w)]
     if parse:
         f.append("parse")
@@ -150,6 +155,8 @@ def flag(r, max_miss=MAX_MISS) -> list[str]:
         f.append("no_pose")
     if unplayed:
         f.append("unplayed")
+    if planned:
+        f.append("planned")
     llm = r.get("llm") or {}
     if any((llm.get(k) or {}).get("usage_estimated") for k in
            ("character", "user")):

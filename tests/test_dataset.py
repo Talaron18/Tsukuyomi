@@ -773,3 +773,14 @@ def test_replay_on_a_live2d_rig(tmp_path):
         x, y_ = _arrays(out, b), _arrays(out, r)
         for w in x:
             assert np.array_equal(x[w], y_[w], equal_nan=True), w
+
+
+def test_planning_warnings_are_soft():
+    from flow import dataexport as dx
+    w = "gesture wave dropped: arms taken by move clap"
+    r = {"spoken": "hi", "markers": [{"tag": "move"}], "warnings": [w],
+         "play_warnings": [w]}
+    f = dx.flag(r)
+    assert "parse" not in f and "planned" in f
+    r["warnings"].append("[pose {]: bad JSON (x); dropped")
+    assert "parse" in dx.flag(r)
