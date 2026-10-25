@@ -1182,7 +1182,23 @@ def voice_config_path(a):
     if getattr(a, "voice_config", None):
         return a.voice_config
     rig = getattr(a, "rig", None)
-    return os.path.splitext(rig)[0] + ".voice.json" if rig else None
+    if rig:
+        return os.path.splitext(rig)[0] + ".voice.json"
+    # --avatar vrm has no --rig: rigs/<name>.voice.json beside the body file
+    # (rigs/<name>.body.json, or the one built for --vrm vrm/<name>.vrm).
+    # Without this the server's oguri_cap/toukai_teio configs were never
+    # read and every reply spoke in the default voice.
+    vb = getattr(a, "vrm_body", None)
+    if vb:
+        base = os.path.basename(vb)
+        stem = base[:-len(".body.json")] if base.endswith(".body.json") \
+            else os.path.splitext(base)[0]
+        return os.path.join(os.path.dirname(vb), stem + ".voice.json")
+    vrm = getattr(a, "vrm", None)
+    if vrm:
+        stem = os.path.splitext(os.path.basename(vrm))[0]
+        return os.path.join("rigs", stem + ".voice.json")
+    return None
 
 
 def make_tts(a, log=print):

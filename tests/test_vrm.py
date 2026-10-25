@@ -924,3 +924,19 @@ def test_follower_plays_live2d_markers_in_vrm_units(seed_body):
     later = frames[int(3.1 * FPS)]
     assert later["gaze.y"] < -0.3
     assert bm.state(later)["look"][1] > 0          # gaze down: + pitch
+
+
+def test_voice_config_found_beside_a_vrm_body():
+    """--avatar vrm has no --rig: the voice config is rigs/<name>.voice.json
+    (the server's oguri_cap/toukai_teio configs were never read)."""
+    import types
+    from flow import director as dr
+    ns = types.SimpleNamespace
+    assert dr.voice_config_path(ns(rig=None, vrm="vrm/oguri_cap.vrm")) \
+        == os.path.join("rigs", "oguri_cap.voice.json")
+    assert dr.voice_config_path(ns(rig=None, vrm=None,
+                                   vrm_body="x/teio.body.json")) \
+        == os.path.join("x", "teio.voice.json")
+    assert dr.voice_config_path(ns(rig="rigs/Hiyori.npz", vrm="a.vrm")) \
+        == "rigs/Hiyori.voice.json"
+    assert dr.voice_config_path(ns(rig=None, voice_config="v.json")) == "v.json"
