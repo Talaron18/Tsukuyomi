@@ -1,0 +1,47 @@
+vrmbody: VRM 0, chin y 1.261 m, top of head 1.545 m: 1 hu = 0.2843 m
+vrmbody: rigs/toukai_teio.body.json
+VRM 0 avatar toukai_teio.vrm: 1 hu = 0.2843 m; x toward the character's left, y up, z toward the viewer; origin chin
+license: {"name": "Other", "url": "https://hub.vroid.com/license?allowed_to_use_user=everyone&characterization_allowed_user=everyone&corporate_commercial_use=disallow&credit=necessary&modification=disallow&personal_commercial_use=disallow&redistribution=disallow&sexual_expression=disallow&version=1&violent_expression=disallow", "redistribution": false, "modification": null, "credit": null, "authors": ["Original model provided by Cygames."], "copyright": null, "title": "Tokai Teio"}
+landmarks (hu): chin [0.0, 0.0], head [0.0, 0.5], shoulder.L [0.3428, -0.2279], shoulder.R [-0.3428, -0.2279], shoulder.y -0.2279, chest [0.0, -0.5874], hips [0.0, -1.1939], hand.L [0.4639, -1.601], hand.R [-0.4639, -1.601]
+depth (hu): chin 0.0, head 0.3231, face 0.3231, chest 0.2954, shoulder -0.1194
+bones: hips, spine, chest, neck, head, leftShoulder, leftUpperArm, leftLowerArm, leftHand, rightShoulder, rightUpperArm, rightLowerArm, rightHand
+look-at bone, +-90 deg at gaze 1; spring chains 4
+face map: eye.L.smile +expr:happyx0.5; brow.L.lift +expr:Surprisedx0.5 -expr:angryx0.4; brow.L.form +expr:relaxedx0.5 -expr:angryx0.5; eye.R.smile +expr:happyx0.5; brow.R.lift +expr:Surprisedx0.5 -expr:angryx0.4; brow.R.form +expr:relaxedx0.5 -expr:angryx0.5; mouth.form +expr:happyx0.4 -expr:sadx0.4
+blink: {"L": "blinkLeft", "R": "blinkRight"}; visemes: {"a": "aa", "i": "ih", "u": "ou", "e": "ee", "o": "oh"}
+parameters (rest, range):
+  head.yaw                0  [-50, 50] deg (solvable)
+  head.pitch              0  [-35, 35] deg (solvable)
+  head.tilt               0  [-30, 30] deg (solvable)
+  torso.yaw               0  [-25, 25] deg (solvable)
+  torso.pitch             0  [-15, 15] deg (solvable)
+  torso.tilt              0  [-12, 12] deg (solvable)
+  shoulders.up            0  [-1, 1] unit (solvable)
+  shoulder.L.up           0  [-1, 1] unit (solvable)
+  shoulder.R.up           0  [-1, 1] unit (solvable)
+  upper_arm.L.elev        8  [0, 170] deg (solvable)
+  upper_arm.L.plane      20  [-30, 130] deg (solvable)
+  upper_arm.L.twist       0  [-70, 70] deg (solvable)
+  forearm.L.bend         14  [0, 145] deg (solvable)
+  upper_arm.R.elev        8  [0, 170] deg (solvable)
+  upper_arm.R.plane      20  [-30, 130] deg (solvable)
+  upper_arm.R.twist       0  [-70, 70] deg (solvable)
+  forearm.R.bend         14  [0, 145] deg (solvable)
+  gaze.x                  0  [-1, 1] unit (solvable)
+  gaze.y                  0  [-1, 1] unit (solvable)
+  eye.L.open              1  [0, 1] unit (solvable)
+  eye.R.open              1  [0, 1] unit (solvable)
+  eye.L.smile             0  [0, 1] unit (solvable)
+  eye.R.smile             0  [0, 1] unit (solvable)
+  brow.L.lift             0  [-1, 1] unit (solvable)
+  brow.R.lift             0  [-1, 1] unit (solvable)
+  brow.L.form             0  [-1, 1] unit (solvable)
+  brow.R.form             0  [-1, 1] unit (solvable)
+  mouth.form              0  [-1, 1] unit (solvable)
+  mouth.open              0  [0, 1] unit (solvable)
+  breath                  0  [0, 1] unit (held)
+  viseme.a                0  [0, 1] unit (held)
+  viseme.i                0  [0, 1] unit (held)
+  viseme.u                0  [0, 1] unit (held)
+  viseme.e                0  [0, 1] unit (held)
+  viseme.o                0  [0, 1] unit (held)
+reach (hu, each component alone): {"hand.L": {"x": [-0.838, 1.757], "y": [-1.642, 1.166], "z": [-0.817, 1.294]}, "hand.R": {"x": [-1.757, 0.838], "y": [-1.642, 1.166], "z": [-0.817, 1.294]}}
