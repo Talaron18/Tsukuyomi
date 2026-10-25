@@ -599,7 +599,8 @@ def test_three_vrm_draws_what_python_computes(avatar):
     poses = [{}, bm.solve({"hand.R.y": 0.6, "hand.R.x": -0.9})["params"],
              {"head.yaw": 20, "torso.yaw": 15, "torso.tilt": 8,
               "upper_arm.L.elev": 90, "upper_arm.L.plane": 90,
-              "forearm.L.bend": 30, "upper_arm.L.twist": 40}]
+              "forearm.L.bend": 30, "upper_arm.L.twist": 40},
+             bm.solve({"hands": "@behind_back"})["params"]]
     with vr.serve(avatar, vr.page_config(bm)) as base:
         pg = vr.Page(base, 128)
         try:
@@ -615,6 +616,18 @@ def test_three_vrm_draws_what_python_computes(avatar):
             assert pg.eval("() => TSK.eyeDir()")[0] > 0.05
             pg.frame(bm.state({"gaze.y": 1.0}), 0.0, 0)
             assert pg.eval("() => TSK.eyeDir()")[1] > 0.05
+            pg.frame(bm.state({"gaze.y": -1.0}), 0.0, 0)
+            assert pg.eval("() => TSK.eyeDir()")[1] < -0.05
+            # At rest the eyes (three-vrm's own eye bones, between them)
+            # look straight into the page's camera.
+            pg.frame(bm.state({}), 0.0, 0)
+            d = np.array(pg.eval("() => TSK.eyeDir()"))
+            eyes = pg.eval("(n) => TSK.positions(n)", ["leftEye", "rightEye"])
+            e = 0.5 * (np.array(eyes["raw:leftEye"])
+                       + np.array(eyes["raw:rightEye"]))
+            tc = np.array(bm.vrm["camera"]["position"]) - e
+            off = math.degrees(math.acos(d @ tc / np.linalg.norm(tc)))
+            assert off < 1.5
             assert not pg.errors
         finally:
             pg.close()
@@ -631,3 +644,230 @@ def test_offline_render_writes_a_clip(seed_body, tmp_path):
     n = vr.render(states, bm, out, fps=FPS, size=128, vrm=SEED,
                   log=lambda s: None, warmup=0.1)
     assert n == 3 and os.path.getsize(out) > 1000
+
+
+# ---------------------------------------------- gaze, camera and the idle
+
+@pytest.fixture(scope="module")
+def girl_body():
+    return vb.VRMBody(vb.build(GIRL0, log=lambda s: None))
+
+
+@pytest.mark.parametrize("which", ["seed", "girl"])
+def test_rest_gaze_meets_the_camera(which, seed_body, girl_body):
+    """The camera is at the eyes' height, so the eyes at rest (straight
+    ahead, head at rest) look into it -- 3.7 / 3.2 deg over it before."""
+    bm = seed_body if which == "seed" else girl_body
+    cam = bm.vrm["camera"]
+    eye = bm.to_world(bm.vrm["eyes"])
+    to_cam = np.array(cam["position"]) - eye
+    off = math.degrees(math.acos(to_cam[2] / np.linalg.norm(to_cam)))
+    assert off < 1.5
+    assert cam["position"][1] > cam["target"][1]      # looking down a bit
+
+
+def test_gaze_signs_and_eye_range(seed_body):
+    bm = seed_body
+    assert bm.state({})["look"] == [0.0, 0.0]
+    assert bm.state({"gaze.x": 1.0})["look"][0] > 0     # toward +x
+    assert bm.state({"gaze.y": 1.0})["look"][1] < 0     # up = - pitch
+    assert bm.state({"gaze.y": -1.0})["look"][1] > 0
+    # Seed-san's own range: 90 deg of input = 10 deg of eye at gaze 1.
+    assert bm.eye_degrees() == pytest.approx((10.0, 10.0, 10.0))
+    # An export whose range map turns the eyes 90 deg at full input is
+    # capped at EYE_MAX_DEG.
+    with open(os.path.join(ROOT, "rigs", "seed-san.body.json"),
+              encoding="utf-8") as fh:
+        blob = json.load(fh)
+    blob["vrm"]["look_at"].update(h_out=90.0, h_in=90.0, v_up_out=60.0,
+                                  v_down_out=90.0)
+    wild = vb.VRMBody(blob)
+    assert max(wild.eye_degrees()) == pytest.approx(vb.EYE_MAX_DEG)
+    assert abs(wild.state({"gaze.x": 1.0})["look"][0]) == pytest.approx(
+        90.0 * vb.EYE_MAX_DEG / 90.0)
+
+
+def test_idle_gaze_and_head_stay_near_the_viewer(seed_body):
+    """The idle on the VRM: head pitch 15 deg per head_y unit (Live2D
+    draws its pitch ~0.48 of its yaw), eyes within a few degrees."""
+    bm = seed_body
+    assert fv.ROLE_MAP["head_y"][2] == 15.0
+    rig = fv.VRMRig(bm, fps=FPS, log=lambda s: None)
+    pitch, eye_y, eye_x = [], [], []
+    deg = bm.eye_degrees()
+    for seed in range(3):
+        st = fs.MotionStream(rig, seed=seed, log=lambda s: None)
+        for _ in range(int(20 * FPS)):
+            o = st.frame()[0]
+            pitch.append(o["head.pitch"])
+            eye_y.append(o["gaze.y"] * deg[1])
+            eye_x.append(o["gaze.x"] * deg[0])
+    pitch, eye_y, eye_x = map(np.array, (pitch, eye_y, eye_x))
+    assert np.percentile(np.abs(pitch), 98) < 8.0
+    assert abs(pitch.mean()) < 2.0
+    assert np.percentile(np.abs(eye_y), 98) < 8.0
+    assert np.percentile(np.abs(eye_x), 98) < 10.0
+    assert np.std(eye_x) > 0.5                  # it does look about
+
+
+def test_follower_converts_live2d_angles():
+    acts = [{"t": 0.0, "tag": "pose", "arg": {"targets": {
+        "head.pitch": -20, "head.yaw": 12, "hand.R.y": "@head.y"}}},
+        {"t": 0.5, "tag": "blink"}]
+    got = fv.from_live2d(acts)
+    assert got[0]["arg"]["targets"] == {"head.pitch": -10.0, "head.yaw": 12,
+                                        "hand.R.y": "@head.y"}
+    assert acts[0]["arg"]["targets"]["head.pitch"] == -20     # not mutated
+    assert got[1] is acts[1]
+
+
+# ------------------------------------------------------------ collisions
+
+POSES = {
+    "together": {"hand.L.x": 0.0, "hand.L.y": "@chest.y",
+                 "hand.R.x": 0.0, "hand.R.y": "@chest.y"},
+    "behind (z)": {"hand.L.x": 0.15, "hand.L.y": "@hips.y", "hand.L.z": -0.6,
+                   "hand.R.x": -0.15, "hand.R.y": "@hips.y",
+                   "hand.R.z": -0.6},
+    "crossed": {"hand.L.x": -0.4, "hand.L.y": "@chest.y",
+                "hand.R.x": 0.4, "hand.R.y": "@chest.y"},
+    "R to L shoulder": {"hand.R.x": "@shoulder.L.x",
+                        "hand.R.y": "@shoulder.y"},
+    "@together": {"hands": "@together"},
+    "@clasped": {"hands": "@clasped"},
+    "@behind_back": {"hands": "@behind_back"},
+    "@chest": {"hand.R": "@chest"},
+    "@hip": {"hand.L": "@hip"},
+    "@back": {"hand.R": "@back"},
+}
+
+
+@pytest.mark.parametrize("which", ["seed", "girl"])
+def test_solved_poses_do_not_penetrate(which, seed_body, girl_body):
+    """No arm in the trunk or head and no arm through the other, in the
+    rest pose, in every solved pose and on the way there (the path the
+    pose layer plays, through the solver's detour when it gives one). The
+    old solver: together 0.08 / 0.09 hu (body / hands), behind the back
+    0.32 into the hips, crossed forearms 0.20 through each other."""
+    bm = seed_body if which == "seed" else girl_body
+    rest = bm.default_values()
+    assert max(bm.penetration(rest).values()) == 0.0
+    tol = vb.PEN_TOL + 1e-6
+    for name, t in POSES.items():
+        res = bm.solve(t)
+        v = {**rest, **res["params"]}
+        pen = bm.penetration(v)
+        assert max(pen.values()) <= tol, (name, pen)
+        a = {k: rest[k] for k in v}
+        if res.get("via"):
+            V = {**v, **res["via"]}
+            path = max(bm.path_pen(a, V), bm.path_pen(V, v))
+        else:
+            path = bm.path_pen(a, v)
+        assert path <= 2 * tol, (name, path)
+    # The composites reach what they name.
+    res = bm.solve({"hands": "@together"})
+    assert all(e["ok"] for e in res["report"].values()), res["report"]
+    pal = bm.palms({**rest, **res["params"]})
+    assert np.linalg.norm(pal["L"] - pal["R"]) < 0.3        # palm to palm
+    assert pal["L"][2] > bm.depth["chest"]                   # in front
+    res = bm.solve({"hands": "@behind_back"})
+    assert all(e["ok"] for e in res["report"].values()), res["report"]
+    pal = bm.palms({**rest, **res["params"]})
+    for s in "LR":
+        assert pal[s][2] < -0.5                 # behind the back
+        assert abs(pal[s][1] - bm.landmarks["hips"][1]) < 0.5
+    res = bm.solve({"hand.R": "@chest"})
+    assert all(e["ok"] for e in res["report"].values()), res["report"]
+
+
+def test_two_hands_at_one_place_meet_and_say_so(seed_body):
+    """What --avatar both sends for "hold your hands together" (the
+    Live2D prompt's plain x, y): the hands meet side by side, reported."""
+    bm = seed_body
+    res = bm.solve(POSES["together"])
+    pal = bm.palms({**bm.default_values(), **res["params"]})
+    assert pal["L"][0] > pal["R"][0]
+    assert not res["report"]["hand.L.x"]["ok"]
+    assert "meet" in res["why"]["hand.L.x"]
+    hints = pz.hints_text(bm, res, res["report"])
+    assert "meet" in hints["hand.L.x"]
+
+
+def test_targets_inside_the_body_miss_with_a_reason(seed_body):
+    bm = seed_body
+    chest = bm.landmarks["chest"]
+    res = bm.solve({"hand.L.x": 0.1, "hand.L.y": chest[1], "hand.L.z": 0.0})
+    v = {**bm.default_values(), **res["params"]}
+    assert max(bm.penetration(v).values()) <= vb.PEN_TOL + 1e-6
+    assert not res["report"]["hand.L.z"]["ok"]
+    assert res["why"]["hand.L.z"]
+    # The palm ends on the chest's front, not inside it.
+    assert bm.palms(v)["L"][2] > bm.depth["chest"] - 0.1
+    # flow.pose reports it as a miss with the reason.
+    poses = pz.solve_poses(bm, [{"t": 0.0, "tag": "pose", "arg": {
+        "targets": {"hand.L.x": 0.1, "hand.L.y": "@chest.y",
+                    "hand.L.z": 0.0}}, "at": 0}], log=lambda s: None)
+    assert not poses[0]["ok"] and "body" in " ".join(poses[0]["hints"].values())
+
+
+def test_composites_parse_and_play_with_a_detour(seed_body):
+    bm = seed_body
+    p = pz.parser_for(bm)
+    tags = p.feed('Here [pose {"hands": "@behind_back"}] and '
+                  '[pose {"hand.R": "@chest.front"}] [pose {"hands": '
+                  '"@nowhere"}] ok.')
+    p.close()
+    assert [t["arg"]["targets"] for t in tags] == [
+        {"hands": "@behind_back"}, {"hand.R": "@chest.front"}]
+    assert any("@nowhere" in w for w in p.warnings)
+    acts = [{"t": 0.0, **tags[0]}]
+    poses = pz.solve_poses(bm, acts, log=lambda s: None)
+    # In by a detour, held, out by it again: three tokens, one report.
+    assert [q.get("via") for q in poses] == ["in", None, "out"]
+    assert pz.reach_summary(poses)["markers"] == 1
+    assert poses[1]["start"] == pytest.approx(poses[0]["start"]
+                                              + poses[0]["dur"])
+    assert len(pz.report_lines(poses)) == 1
+    text = pz.system_prompt(bm)
+    assert '"hands": "@together"' in text and '"@behind_back"' in text
+
+
+def test_live2d_bodies_take_no_composites_and_are_unchanged():
+    """The Live2D side of --avatar both: its prompt and parser are the
+    bytes they were before the VRM composites (sha1 of the prompt and the
+    parse of a reply with composites, recorded before the change)."""
+    import hashlib
+    bm = fb.load(os.path.join(ROOT, "rigs", "Hiyori.body.json"))
+    text = pz.system_prompt(bm)
+    assert hashlib.sha1(text.encode()).hexdigest() == \
+        "8a81f66495839c7db92eb5de1a88401bd4586d0c"
+    assert "@together" not in text
+    p = pz.parser_for(bm)
+    tags = p.feed('Yes [pose {"hands": "@together", "head.tilt": 8}] ok.')
+    p.close()
+    assert tags[0]["arg"]["targets"] == {"head.tilt": 8.0}
+    assert any("'hands'" in w for w in p.warnings)
+
+
+def test_a_stale_body_file_is_rebuilt(tmp_path):
+    """A body file an older flow.vrmbody wrote (revision 1: no collision
+    model) next to its .vrm is built again when the avatar is loaded."""
+    import shutil
+    vrm = tmp_path / "zz_stale_sample.vrm"
+    shutil.copy(SEED, vrm)
+    out = os.path.join(ROOT, "rigs", "zz_stale_sample.body.json")
+    try:
+        blob = vb.build(str(vrm), log=lambda s: None)
+        del blob["vrm"]["collision"], blob["vrm"]["rev"]
+        with open(out, "w", encoding="utf-8") as fh:
+            json.dump(blob, fh)
+        said = []
+        bm, path = fv.body_for(str(vrm), None, log=said.append)
+        assert path == out and bm.coll and bm.vrm["rev"] == vb.BODY_REV
+        assert any("rebuilding" in s for s in said)
+        with open(out, encoding="utf-8") as fh:
+            assert json.load(fh)["vrm"]["rev"] == vb.BODY_REV
+    finally:
+        if os.path.exists(out):
+            os.remove(out)
