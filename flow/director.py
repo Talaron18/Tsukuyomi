@@ -1027,6 +1027,10 @@ class OpenAICompatBackend:
     def stream(self, system, messages):
         body = {"model": self.model, "stream": True,
                 "max_tokens": self.max_tokens,
+                # Usage arrives in a last chunk with empty choices; without
+                # this most streamed replies carried none (flow.dataset's
+                # budget then falls back to character-count estimates).
+                "stream_options": {"include_usage": True},
                 "messages": [{"role": "system", "content": system}] + messages}
         if self.thinking == "off":
             # Opt-in only: on SiliconFlow the reasoning models waited 15-19 s
