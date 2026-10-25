@@ -6,7 +6,7 @@ same system prompt and user turns (flow.dataexport sft), on one 24 GB GPU.
 
   data      flow.dataexport's sft.jsonl (with --meta: the session ids) or a
             flow.dataset --out folder (exported here with the default
-            filters). Every message is stripped once (flow.train.chat).
+            filters), the contents as the director sends them.
   split     by session, never by turn: a session is held out when the
             first 8 hex of sha256("<seed>:<session>") / 2^32 is below
             --eval-frac, so a run on more data keeps its old sessions on
@@ -134,11 +134,13 @@ def session_of(ex):
 
 
 def clean(ex):
-    """The example with every message stripped (chat module docstring)."""
+    """The example with every content a string, not stripped: the server
+    renders the messages as the director sends them (the body prompt ends
+    in a newline), so training renders them so too."""
     msgs = []
     for m in ex["messages"]:
         m = dict(m)
-        m["content"] = (m.get("content") or "").strip()
+        m["content"] = m.get("content") or ""
         msgs.append(m)
     return dict(ex, messages=msgs)
 
@@ -288,8 +290,11 @@ def check_template(tokenizer, family, ex) -> list[str]:
     template and with ours (prompt and full turn); [] when they agree."""
     if family == "hf" or not getattr(tokenizer, "chat_template", None):
         return []
-    msgs = [{"role": m["role"], "content": m["content"]}
-            for m in ex["messages"]]
+    # Gemma 3's own template trims each content; ours, like the server,
+    # does not (so the check trims for it).
+    trim = family == "gemma3"
+    msgs = [{"role": m["role"], "content": m["content"].strip() if trim
+             else m["content"]} for m in ex["messages"]]
     k = next(i for i, m in enumerate(msgs) if m["role"] == "assistant")
     probs = []
     for gen, part in ((True, msgs[:k]), (False, msgs[:k + 1])):

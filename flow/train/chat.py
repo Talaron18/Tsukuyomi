@@ -29,8 +29,10 @@ gets its Jinja form (jinja()) for servers that read that.
           trained spans found by rendering each prefix (no Modelfile: give
           Ollama a TEMPLATE yourself).
 
-Contents are used as they are (no trimming); flow.train.sft strips every
-message once when it loads the data, so Gemma's trim and ours agree.
+Contents are used as they are, never trimmed: the director sends the
+body prompt with its final newline, and Ollama's template cannot trim, so
+training renders the same bytes. (Gemma 3's own template trims; the
+trainer's check against it trims for it.)
 
 render(messages, family) -> (text, spans): spans are the (start, end)
 character ranges a trainer learns (each reply plus its end-of-turn token,

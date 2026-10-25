@@ -21,7 +21,7 @@ import pytest
 
 from flow.train import chat
 
-MSGS = [{"role": "system", "content": "You are Hiyori.\nYour body: ..."},
+MSGS = [{"role": "system", "content": "You are Hiyori.\nYour body: ...\n"},
         {"role": "user", "content": "Hi!\n(your body now: head.yaw 0)"},
         {"role": "assistant", "content": 'Hello! [pose {"head.tilt": 8}] Hi.'},
         {"role": "user", "content": "Dance?\n(your body now: head.yaw 0)"},
@@ -85,7 +85,7 @@ def test_weight_zero_is_not_trained():
 def test_gemma3_render():
     text, spans = chat.render(MSGS, "gemma3")
     assert text.startswith("<bos><start_of_turn>user\nYou are Hiyori.")
-    assert "Your body: ...\n\nHi!" in text
+    assert "Your body: ...\n\n\nHi!" in text
     assert "<start_of_turn>system" not in text
     assert [text[a:b] for a, b in spans][0].endswith("<end_of_turn>")
     assert chat.prompt(MSGS[:4], "gemma3", bos=False).endswith(

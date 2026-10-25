@@ -94,7 +94,7 @@ except ImportError:
 # The only place model names appear: one default per backend.
 DEFAULT_MODEL = {"anthropic": "claude-opus-5-5", "ollama": "gemma4:e4b",
                  "siliconflow": "Qwen/Qwen3.6-35B-A3B",
-                 "deepseek": "deepseek-chat"}
+                 "deepseek": "deepseek-chat", "hf": "Qwen/Qwen3-8B"}
 # OpenAI-compatible chat/completions services: base URL and the environment
 # variable holding the key. SiliconFlow's mainland site is api.siliconflow.cn
 # with its own keys; pass --api-base for it.
@@ -960,9 +960,13 @@ class OllamaBackend:
     """Ollama's /api/chat, streamed (one JSON object per line), stdlib only."""
 
     def __init__(self, model, url="http://localhost:11434", seed=0,
-                 timeout=300, log=print):
+                 timeout=300, log=print, num_ctx=None):
         self.model, self.url, self.seed = model, url.rstrip("/"), seed
         self.timeout, self.log = timeout, log
+        # The model's context unless given: Ollama's default is shorter
+        # than the body prompt plus a history (flow.train.chat.modelfile
+        # sets it for a tuned model).
+        self.num_ctx = num_ctx
         self.stop_reason, self.usage = None, {}
 
     def stream(self, system, messages):
@@ -970,6 +974,8 @@ class OllamaBackend:
         body = {"model": self.model, "stream": True,
                 "messages": [{"role": "system", "content": system}] + messages,
                 "options": {"seed": int(self.seed)}}
+        if self.num_ctx:
+            body["options"]["num_ctx"] = int(self.num_ctx)
         req = urllib.request.Request(
             self.url + "/api/chat", data=json.dumps(body).encode("utf-8"),
             headers={"Content-Type": "application/json"})
@@ -1074,10 +1080,22 @@ def make_backend(a, log=print):
     if a.backend == "anthropic":
         return AnthropicBackend(model, a.effort, a.max_tokens, log)
     if a.backend == "ollama":
-        return OllamaBackend(model, a.ollama_url, a.seed, log=log)
+        return OllamaBackend(model, a.ollama_url, a.seed, log=log,
+                             num_ctx=getattr(a, "ollama_ctx", None))
     if a.backend in OPENAI_COMPAT:
         return OpenAICompatBackend(a.backend, model, a.api_base, a.api_key_env,
                                    a.max_tokens, log=log, thinking=a.thinking)
+    if a.backend == "hf":
+        # A local transformers model (flow.train.hf; the tuned director):
+        # torch and transformers load only here.
+        try:
+            from .train.hf import HFBackend
+        except ImportError:
+            from flow.train.hf import HFBackend
+        return HFBackend(model, getattr(a, "hf_adapter", None),
+                         getattr(a, "hf_template", None),
+                         getattr(a, "hf_4bit", False), a.max_tokens,
+                         a.seed, getattr(a, "hf_greedy", False), log=log)
     if a.backend == "file":
         if not a.reply_file:
             raise SystemExit("--backend file needs --reply-file")
@@ -1511,7 +1529,7 @@ def add_args(ap):
                     "(first line of the system prompt)")
     ap.add_argument("--backend", default="anthropic",
                     choices=("anthropic", "siliconflow", "deepseek", "ollama",
-                             "file", "stdin"))
+                             "hf", "file", "stdin"))
     ap.add_argument("--model", default=None, help="language model (default "
                     + ", ".join(f"{k}: {v}" for k, v in DEFAULT_MODEL.items())
                     + ")")
@@ -1522,6 +1540,20 @@ def add_args(ap):
                          "count their thinking: Qwen3.6 spent 2048 on it "
                          "and said nothing]")
     ap.add_argument("--ollama-url", default="http://localhost:11434")
+    ap.add_argument("--ollama-ctx", type=int, default=None,
+                    help="ollama: num_ctx per request [the model's own: "
+                         "a stock model's default may cut the body prompt]")
+    ap.add_argument("--hf-adapter", default=None, metavar="DIR",
+                    help="--backend hf: a LoRA adapter on --model "
+                         "(flow.train.sft's <run>/adapter)")
+    ap.add_argument("--hf-template", default=None,
+                    choices=("qwen3", "chatml", "gemma3", "hf"),
+                    help="--backend hf: the chat template family [the "
+                         "adapter's train.json, else from --model]")
+    ap.add_argument("--hf-4bit", action="store_true",
+                    help="--backend hf: the base in 4 bit (bitsandbytes)")
+    ap.add_argument("--hf-greedy", action="store_true",
+                    help="--backend hf: greedy decoding (no sampling)")
     ap.add_argument("--thinking", default=None, choices=("off",),
                     help="siliconflow/deepseek: send enable_thinking=false "
                          "(cuts the wait before the first word on models "
