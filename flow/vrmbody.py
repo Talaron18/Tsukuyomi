@@ -1415,11 +1415,13 @@ class VRMBody(fb.BodyModel):
         return {k: out[k] for k in targets}
 
     def solve(self, targets: dict, current: dict | None = None,
-              variant=None, parts=None, weights=None) -> dict:
+              variant=None, parts=None, weights=None, via=True) -> dict:
         """BodyModel.solve's contract (module docstring, "solver"), plus
         "why": {target: the reason a hand target was moved} for the
         targets the collision model kept the hand from (flow.pose's hints
-        say it)."""
+        say it). via False: no detour searched (flow.moves solves
+        keyframes a fraction of a beat apart; the search was 87% of its
+        time)."""
         orient = {}
         for k in self.composite_keys:
             if k in targets and self.coll:
@@ -1454,7 +1456,7 @@ class VRMBody(fb.BodyModel):
                     for q in want[s]:
                         why[f"hand.{s}.{q}"] = why_s[s]
         via = self._via(cur, vals, list(want)) if want and self.coll \
-            else None
+            and via else None
         F = self.forward(vals)
         report = {}
         cost = 0.0
@@ -2113,9 +2115,17 @@ class VRMBody(fb.BodyModel):
             w = float(v.get("mouth.open", 0.0))
             if w > 0:
                 expr[vis["a"]] = min(1.0, w)
-        return {"bones": bones, "look": look,
-                "expr": {k: round(x, 4) for k, x in sorted(expr.items())},
-                "morph": {k: round(x, 4) for k, x in sorted(morph.items())}}
+        out = {"bones": bones, "look": look,
+               "expr": {k: round(x, 4) for k, x in sorted(expr.items())},
+               "morph": {k: round(x, 4) for k, x in sorted(morph.items())}}
+        # A motion primitive's sway and bob (flow.moves "hips.x" / "hips.y",
+        # hu): the whole avatar shifted, metres in the 1.0 frame, only
+        # while one plays (every other state is the bytes of before).
+        hx, hy = float(v.get("hips.x", 0.0)), float(v.get("hips.y", 0.0))
+        if hx or hy:
+            out["hips"] = [round(hx * self.hu, 5), round(hy * self.hu, 5),
+                           0.0]
+        return out
 
 
 def describe(bm: VRMBody) -> str:

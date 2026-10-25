@@ -113,6 +113,7 @@ KF, KF_MAX = 8, 16
 # The ease in and out: one beat, kept between these (s). At 110 bpm one
 # beat is 0.55 s, about the fitted idle head move's median 1.3 s halved.
 RAMP_RANGE = (0.3, 0.8)
+ARM_RAMP = 0.9          # s: the ease of a clip that moves an arm
 # Joint change (deg / units) between a cycle's first keyframe solved from
 # the rest and from the cycle's own end above which the cycle is solved
 # again from its end.
@@ -120,6 +121,15 @@ RESOLVE_JUMP = 5.0
 # Hips sway and bob are a VRM render offset of the whole avatar (hu); the
 # frame dict carries them only while a move writes them.
 HIPS = ("hips.x", "hips.y")
+# A hand no figure holds, under a trunk figure on a VRM, is carried this
+# share of the way the chest would carry it (the rest hangs): at 0.5 the
+# targets sat in the hips' surface and each solve searched its way out
+# (51 ms a keyframe, 2.8 s for a 16-beat dance).
+HANG = 0.25
+# A dance's figures are mixed over this many beats at each join, in target
+# space. Half a beat moved a fist from its peak to the hips in 8 frames.
+MIX = 1.0
+BULGE = 0.35            # hu forward at the middle of a mix
 # A Live2D arm figure is offered when its hands travel at least this share
 # of the figure's own travel within one drawing, and a clap's hands come
 # this close (hu).
@@ -259,11 +269,14 @@ def p_cheer(b, a, side, c):
     add = {"head.pitch": 5.0 * a * d, "torso.pitch": 1.5 * a * d,
            "brow.L.lift": 0.4 * a * d, "brow.R.lift": 0.4 * a * d}
     hands = {}
-    top = c.head_y + 0.5 + 0.4 * a
+    # From beside the head to above it: a pump of ~0.75 hu at amp 0.7.
+    # From the shoulder (1.4 hu) the fist crossed it in 8 frames at 110 bpm,
+    # 0.47 hu a frame -- a blur, not a pump.
+    low, top = c.head_y - 0.15, c.head_y + 0.2 + 0.6 * a
     for s in _side_list(side):
         sg = c.sgn(s)
-        hands[f"hand.{s}.x"] = c.sh_x[s] * 1.1 + sg * 0.1 * d
-        hands[f"hand.{s}.y"] = c.sh_y + 0.15 + (top - c.sh_y - 0.15) * d
+        hands[f"hand.{s}.x"] = c.sh_x[s] * 1.15 + sg * 0.1 * d
+        hands[f"hand.{s}.y"] = low + (top - low) * d
         if c.vrm:
             hands[f"hand.{s}.z"] = float(c.depth.get("chest", 0.3)) + 0.1
     return add, hands
@@ -770,6 +783,35 @@ def _rest_hands(bm, k, ctx):
     return out
 
 
+def _follow(bm, base, trunk, hands, wfig):
+    """Hand targets carried with the chest as the trunk offsets turn it
+    (a VRM): a figure's hands move with the upper body; a hand no figure
+    holds hangs, HANG of the way the chest would carry it."""
+    if not trunk:
+        return hands
+    top = next((b for b in ("upperChest", "chest", "spine") if b in bm.bones),
+               None)
+    if top is None:
+        return hands
+    W0, P0 = bm.fk(base)
+    W1, P1 = bm.fk({**base, **trunk})
+    R = W1[top] @ W0[top].T
+    out = dict(hands)
+    for s in "LR":
+        ks = [f"hand.{s}.{q}" for q in "xyz"]
+        if not all(k in hands for k in ks):
+            continue
+        p = np.array([hands[k] for k in ks], float)
+        w = bm.to_world(p)
+        w2 = P1[top] + R @ (w - P0[top])
+        p2 = bm.to_body(w2)
+        k_ = 1.0 - (1.0 - HANG) * (1.0 - min(max(wfig.get(s, 0.0), 0.0), 1.0))
+        q = p + k_ * (p2 - p)
+        for k, v in zip(ks, q):
+            out[k] = float(v)
+    return out
+
+
 def _resolve_hands(bm, hands):
     """Composite hand targets as numbers (a VRM's "hands": "@together"),
     and the composite key kept for its wrist orientation."""
@@ -845,14 +887,20 @@ def build(bm, arg, current=None, parts=None, log=print, seed=0,
             segs2.append(s)
         segs = segs2
     dec = _declared(bm)
-    add_rows, hand_rows, wclap = [], [], []
+    add_rows, hand_rows, wclap, wfig = [], [], [], []
     missing = set()
     rest_h = _rest_hands(bm, k_var, ctx)
+    # A VRM's arms hang from its chest: swayed or shimmied with it they
+    # swing into the hips (Seed-san: 0.15 hu at torso.tilt 7), so under a
+    # trunk figure they are solved too, hanging (module docstring).
+    follow = bool(ctx.vrm and getattr(bm, "coll", None)
+                  and any(PRIMS[f][2] == "trunk" for s in segs
+                          for f in s[2]))
+    any_arms = any(s[3] for s in segs) or follow
     for i in range(n):
         b = i / K
-        ws = _seg_weights(segs, b) if len(segs) > 1 else [1.0]
-        add, hands, wc = {}, {}, 0.0
-        any_arms = any(s[3] for s in segs)
+        ws = _seg_weights(segs, b, MIX) if len(segs) > 1 else [1.0]
+        add, hands, wc, wf = {}, {}, 0.0, {"L": 0.0, "R": 0.0}
         for w, (b0, b1, figs, af, sd) in zip(ws, segs):
             if w <= 0:
                 continue
@@ -876,15 +924,27 @@ def build(bm, arg, current=None, parts=None, log=print, seed=0,
                             for k2, v2 in h.items()}
                     if af == "clap":
                         wc += w
+                    for sd2 in "LR":
+                        if f"hand.{sd2}.x" in h:
+                            wf[sd2] += w
                 else:
                     h = {}
                 for var in set(rest_h) | set(h):
                     if var.startswith("hand.") and (var in h or var in rest_h):
                         hands[var] = hands.get(var, 0.0) + w * h.get(
                             var, rest_h.get(var, 0.0))
+        if ctx.vrm and len([w for w in ws if w > 0]) > 1 and hands:
+            # Between two figures the hands pass in front (BULGE): the
+            # straight line from a hip to a raised fist ran along the body,
+            # and the IK took the elbow behind it on the way.
+            mixw = 4.0 * float(np.prod(sorted(ws)[-2:]))
+            for s_ in "LR":
+                if f"hand.{s_}.z" in hands:
+                    hands[f"hand.{s_}.z"] += BULGE * mixw
         add_rows.append(add)
         hand_rows.append(hands)
         wclap.append(wc)
+        wfig.append(wf)
     # Additive variables -> parameters.
     add_p = {}
     for i, add in enumerate(add_rows):
@@ -920,20 +980,38 @@ def build(bm, arg, current=None, parts=None, log=print, seed=0,
         cache = {}
         orient_key = {"hands": "@together"} if ctx.vrm else {}
 
-        def key(tg, oc):
-            return (tuple(sorted((k2, round(v2, 4)) for k2, v2 in tg.items())),
-                    oc)
+        TRUNK_P = ("torso.yaw", "torso.pitch", "torso.tilt", "shoulders.up",
+                   "shoulder.L.up", "shoulder.R.up")
+        trunk_rows = [{p: float(add_p[p][i]) for p in TRUNK_P if p in add_p}
+                      for i in range(n)] if ctx.vrm else [{}] * n
+        if ctx.vrm and any(trunk_rows):
+            hand_rows = [_follow(bm, base, tr, tg, wf) for tr, tg, wf
+                         in zip(trunk_rows, hand_rows, wfig)]
 
-        def solve(tg, prior, oc):
+        def key(tg, oc, tr=None):
+            return (tuple(sorted((k2, round(v2, 4)) for k2, v2 in tg.items())),
+                    oc, tuple(sorted((k2, round(v2, 3)) for k2, v2 in
+                                     (tr or {}).items())))
+
+        def solve(tg, prior, oc, tr=None):
             nonlocal solves
-            kk = key(tg, oc)
+            kk = key(tg, oc, tr)
             if kk in cache:
                 return cache[kk]
+            if tr:
+                prior = {**prior, **tr}
+            if ctx.vrm and not oc:
+                # Only a clap turns the wrists: any other keyframe is
+                # solved (and played) with them where they rest.
+                prior = {**prior, **{p: base.get(p, 0.0) for s_ in "LR"
+                                     for p in (f"hand.{s_}.roll",
+                                               f"hand.{s_}.flex",
+                                               f"hand.{s_}.dev")}}
             t2 = dict(tg)
             if oc:
                 t2.update(orient_key)   # explicit numbers win (resolve)
             if ctx.vrm:
-                r = bm.solve(t2, current=prior)
+                r = bm.solve(t2, current=prior, via=False)
             else:
                 r = bm.solve(_clip_hands(t2, boxes), current=prior,
                              variant=k_var, only=allowed)
@@ -958,11 +1036,12 @@ def build(bm, arg, current=None, parts=None, log=print, seed=0,
         j = 0
         while j < len(idx):
             i = idx[j]
-            sol = solve(hand_rows[i], prior, oc_of(i))
+            sol = solve(hand_rows[i], prior, oc_of(i), trunk_rows[i])
             if cyc and i == cyc and rows:
-                kk = key(hand_rows[0], oc_of(0))
+                kk = key(hand_rows[0], oc_of(0), trunk_rows[0])
                 cache.pop(kk, None)
-                s2 = solve(hand_rows[0], {**prior, **rows[-1]}, oc_of(0))
+                s2 = solve(hand_rows[0], {**prior, **rows[-1]}, oc_of(0),
+                           trunk_rows[0])
                 jump = max((abs(s2.get(p, 0.0) - rows[0].get(p, 0.0))
                             for p in s2), default=0.0)
                 if jump > RESOLVE_JUMP:
@@ -971,7 +1050,8 @@ def build(bm, arg, current=None, parts=None, log=print, seed=0,
                     rows = []
                     p2 = {**prior, **s2}
                     for i2 in idx[:j + 1]:
-                        s3 = solve(hand_rows[i2], p2, oc_of(i2))
+                        s3 = solve(hand_rows[i2], p2, oc_of(i2),
+                                   trunk_rows[i2])
                         rows.append(s3)
                         p2 = {**p2, **s3}
                     prior = p2
@@ -1034,6 +1114,10 @@ def build(bm, arg, current=None, parts=None, log=print, seed=0,
             "left out")
     seconds = beats * spb
     ramp = float(np.clip(spb, *RAMP_RANGE))
+    if abs_p:
+        # An arm raised from hanging to overhead travels ~2.7 hu (Seed-san):
+        # over one beat at 110 bpm that peaked at 0.44 hu a frame.
+        ramp = max(ramp, ARM_RAMP)
     ramp = min(ramp, seconds / 2)
     rnd = lambda a_: [round(float(x), 5) for x in a_]  # noqa: E731
     rec = {"name": name, "spec": dict(arg), "tempo": round(tempo, 3),

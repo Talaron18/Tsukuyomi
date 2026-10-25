@@ -68,6 +68,15 @@ export function applyState(av, st, dt) {
     const n = h.getNormalizedBoneNode(name);
     if (n) n.quaternion.set(v0 ? -q[0] : q[0], q[1], v0 ? -q[2] : q[2], q[3]);
   }
+  // A motion primitive's sway and bob: the hips moved from their rest
+  // (the whole avatar, legs and all; the camera frames the upper body).
+  const hn = h.getNormalizedBoneNode("hips");
+  if (hn) {
+    if (!av.hipsRest) av.hipsRest = hn.position.clone();
+    const d = st.hips || [0, 0, 0];
+    hn.position.set(av.hipsRest.x + (v0 ? -d[0] : d[0]), av.hipsRest.y + d[1],
+                    av.hipsRest.z + (v0 ? -d[2] : d[2]));
+  }
   if (vrm.lookAt && st.look) { vrm.lookAt.yaw = st.look[0]; vrm.lookAt.pitch = st.look[1]; }
   const em = vrm.expressionManager;
   if (em) {
@@ -105,6 +114,10 @@ export function lerpState(a, b, u) {
     const qa = (a.bones || {})[n] || [0, 0, 0, 1], qb = (b.bones || {})[n] || [0, 0, 0, 1];
     _qa.set(...qa); _qb.set(...qb); _qa.slerp(_qb, u);
     out.bones[n] = [_qa.x, _qa.y, _qa.z, _qa.w];
+  }
+  if (a.hips || b.hips) {
+    const ha = a.hips || [0, 0, 0], hb = b.hips || [0, 0, 0];
+    out.hips = ha.map((x, i) => x + (hb[i] - x) * u);
   }
   const la = a.look || [0, 0], lb = b.look || [0, 0];
   out.look = [la[0] + (lb[0] - la[0]) * u, la[1] + (lb[1] - la[1]) * u];
