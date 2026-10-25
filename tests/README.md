@@ -29,3 +29,10 @@ against Python's kinematics, an offline render) need Playwright with
 Chromium (`pip install playwright && playwright install chromium`; browsers found
 wherever Playwright looks, /opt/pw-browsers used when it exists and
 PLAYWRIGHT_BROWSERS_PATH is unset) and skip without.
+
+Stage 2 (`flow/train/`, `flow/actionhead.py`): `test_train_chat.py` is pure
+Python (its Ollama-template check needs `go` and skips without);
+`test_train_eval.py` is pure numpy; `test_train_sft.py`, `test_train_hf.py`
+and `test_actionhead.py` need torch, transformers, peft and tokenizers
+(CPU builds are enough: a tiny random Qwen3 is built in the test) and skip
+without them. The 4-bit / Unsloth paths need a CUDA GPU and are not tested.

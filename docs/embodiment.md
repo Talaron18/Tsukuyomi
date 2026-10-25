@@ -339,3 +339,172 @@ name next to its poses:
 - **Not done**: beats are not synced to the speech (beat 1 is the marker).
 - `--no-body-moves`: the prompt and parser of before. Without [move]
   markers every output is the bytes it was.
+
+## Stage 2 on one 3090 Ti (2026-10)
+
+The baseline's Stage 2 on the user's server: one RTX 3090 Ti (24 GB,
+Ampere: bf16, no FP8, no FlashAttention-3). Two students of the body-mode
+director, from the data engine (`flow/dataset.py`): (a) a local model
+LoRA-tuned to write the same marked replies (`flow/train/`), (b) an action
+head on a local model's hidden states predicting the directed trajectory
+(`flow/actionhead.py`). Nothing GPU-side has run here (no GPU in this
+container): the code paths ran on CPU with a tiny random Qwen3 and tiny
+random data; the 4-bit, Unsloth and llama.cpp steps have not run at all.
+
+### What is built
+
+- **Moves in the data** (`flow.dataset`): `[move]` markers are built on
+  the body as `director.plan` builds them (seeded by the turn's seed and
+  the marker's place), a gesture under an arm move gives way, and the
+  move tokens stream through the same layers in both trajectories; the
+  markers show `played: true`, records carry `moves`, a VRM's trajectory
+  gains `hips.x` / `hips.y`. Records from before (trajectory version 1):
+  `python -m flow.dataset replay OUT` re-streams them from their replay
+  records with no model call (version 2 replay records give back the
+  arrays they were made with, bit for bit; tested on seed-san, Hiyori lite
+  and the synthetic Live2D rig).
+- **One template** (`flow/train/chat.py`): Qwen3 with thinking off as
+  ChatML with the empty `<think>\n\n</think>\n\n` on every assistant turn,
+  history included (Qwen3's own template strips it from the history, so a
+  whole session would not train as one sequence; on a single turn the two
+  are the same bytes, which the trainer checks against the real tokenizer
+  before it starts). The trainer, `--backend hf`, the merged tokenizer's
+  `chat_template` and the Ollama Modelfile's `TEMPLATE` all render the
+  same bytes (tests run the Go template the way Ollama calls it). Contents
+  are never trimmed: the body prompt ends in a newline and Ollama renders
+  it as is. ChatML (Qwen2.5) and Gemma 3 too.
+- **Trainer** (`scripts/train_sft.py` = `python -m flow.train.sft`):
+  `stats` (token lengths: whole examples, system prompt, user turns,
+  replies; the share that fits at each length), `train` (session split by
+  hash, labels on replies and their end token only, cut at a reply
+  boundary, QLoRA NF4 r32 alpha 32 on every projection, gradient
+  checkpointing, bf16, batch 1 x 16 accumulation, paged 8-bit AdamW,
+  Unsloth when it imports else transformers + PEFT with the logits only at
+  labelled positions, eval loss, resumable checkpoints guarded by a data
+  hash, a speed probe), `merge` (fp16, into the unquantized base), `gguf`
+  (llama.cpp commands), `modelfile` (TEMPLATE, stops, num_ctx 8192,
+  sampling; `--create` runs `ollama create`).
+- **Serving**: Ollama (the GGUF and the Modelfile) through the existing
+  `--backend ollama`, or `--backend hf` (transformers + the adapter,
+  `TextIteratorStreamer`) in `flow.director` and `flow.live`.
+  `--ollama-ctx N` sets num_ctx per request for a stock model.
+- **Eval** (`scripts/eval_sft.sh`, `flow.train.evalsft`): the held-out
+  sessions turn by turn through the student, the teacher live and the
+  teacher's recorded replies, each keeping its own history; per model the
+  parse-warning rate, refusals (the backend's and by text: local backends
+  never report one), cut-offs, markers per turn by tag, unplayed and
+  not-played markers, reach / MISS from the pose solve, first-text latency
+  and tokens/s; `AB=1` renders first turns for a blind A/B page
+  (`flow.legacy.abtest`, the `body_vs_tags.sh` layout).
+- **Action head** (`scripts/extract_hidden.py` = `python -m
+  flow.train.hidden`, `python -m flow.actionhead train | eval | export`):
+  module docstrings. `export` solves a trajectory back to parameters and
+  writes move tokens: `tokens.json` for `flow.runtime --tokens-in`
+  (Live2D) and `states.json` for `flow.vrmrender`, the directed clip
+  through the same path, plus a `render.sh`. Known limit: a trajectory has
+  hand positions and no palm orientation, so at a clap's contact the
+  VRM's collision model keeps the hands ~0.1 hu wider than the clip that
+  had `@together`'s orientation.
+
+### Install
+
+Tested on CPU here (these exact versions; released 2026-09/10):
+
+    pip install "transformers==5.20.2" "peft==0.21.2" "accelerate==1.15.0" \
+        "tokenizers==0.23.3" sentencepiece
+
+GPU side, tested range unknown (never run here). PyTorch with CUDA for an
+Ampere card from the official index (pick the CUDA build that matches the
+driver; torch 2.14.1 is the version the CPU tests used):
+
+    pip install "torch==2.14.1" --index-url https://download.pytorch.org/whl/cu128
+    pip install "bitsandbytes>=0.47"          # 4-bit NF4 and paged AdamW
+    pip install unsloth                       # optional, faster (it pins its own deps:
+                                              # install it in its own venv)
+
+The code also takes transformers 4.56+ (`dtype` vs `torch_dtype` and
+`processing_class` vs `tokenizer` are chosen by version; unknown
+TrainingArguments are dropped with a log line). TRL is not needed: its
+SFTTrainer's jobs here, templating and masking, are `flow.train.chat`'s so
+that they match serving exactly. llama.cpp for GGUF:
+
+    git clone https://github.com/ggml-org/llama.cpp ~/llama.cpp
+    cd ~/llama.cpp && pip install -r requirements.txt && cmake -B build && cmake --build build -j
+
+### Memory (estimates, 24 GB)
+
+| base | 4-bit weights + bf16 embeddings | LoRA r32 (fp32 + grads + 8-bit Adam) | activations at 8k (checkpointed) | logits at labelled positions | total |
+|---|---|---|---|---|---|
+| Qwen3-8B | ~6.5 GB | ~0.9 GB | ~4 GB | ~2.5 GB (152k vocab) | ~14 GB |
+| Qwen3-4B | ~3.5 GB | ~0.6 GB | ~3 GB | ~2.5 GB | ~10 GB |
+| gemma-3-12b-it | ~9.5 GB | ~1.3 GB | ~5 GB | ~4 GB (262k vocab) | ~20 GB: `--max-len 6144` if it does not fit |
+
+Without the labelled-position trick (logits everywhere) an 8k sequence's
+fp32 logits alone are ~5 GB for Qwen3 and ~8.5 GB for Gemma 3. The
+`--max-len auto` default is the 99th percentile of the examples (a
+session of 6 turns with a ~2.3k-token prompt is ~4-5k tokens).
+Serving: Qwen3-8B Q4_K_M in Ollama is ~5 GB plus the KV cache at num_ctx
+8192 (~1.2 GB); `--backend hf` in bf16 ~16.5 GB, `--hf-4bit` ~6.5 GB.
+Hidden states: one 4096-wide layer in fp16 is 8 KB a token; 15k replies
+of ~150 tokens are ~18 GB (`--proj 1024`: ~4.6 GB).
+
+### Time (estimates)
+
+15k turns as 6-turn sessions are ~2.5k examples of ~4.5k tokens, ~11M
+tokens an epoch. QLoRA on an 8B with gradient checkpointing runs at very
+roughly 1-1.5k tokens/s with PEFT and 2-3k with Unsloth on this card: ~1-3
+h an epoch, the default 2 epochs 2-6 h. The trainer's first steps log the
+real tokens/s, peak memory and the epoch time they imply: run
+`--max-steps 20` first. Eval: ~1-2 s a turn on Ollama (Q4_K_M, 8B) plus
+the teacher's own latency. Extraction: one forward of ~3-5k tokens a turn,
+~0.3-0.5 s on the 8B (~2 h for 15k turns); the action head trains in
+minutes.
+
+### The sequence on the server
+
+    # 1. data (DeepSeek teacher; resumable; export with session ids)
+    SESSIONS=2500 TURNS=6 CONC=8 BUDGET_USD=20 OUT=data/datagen/r1 \
+        nohup bash scripts/datagen.sh > datagen.log 2>&1 &
+    python -m flow.dataset replay data/datagen/r1      # older records: moves played
+    python -m flow.dataexport stats data/datagen/r1
+
+    # 2. lengths and the template check, then a speed probe, then the run
+    python scripts/train_sft.py stats --data data/datagen/r1 --base Qwen/Qwen3-8B
+    python scripts/train_sft.py train --data data/datagen/r1 --out runs/sft/q8 \
+        --base Qwen/Qwen3-8B --max-steps 20          # tokens/s, peak memory
+    python scripts/train_sft.py train --data data/datagen/r1 --out runs/sft/q8 \
+        --base Qwen/Qwen3-8B --restart               # the full run (resumable)
+
+    # 3. merge, GGUF, Ollama
+    python scripts/train_sft.py merge --run runs/sft/q8
+    python scripts/train_sft.py gguf --run runs/sft/q8 --llama-cpp ~/llama.cpp
+    python scripts/train_sft.py modelfile --run runs/sft/q8 --name tsk-q8 --create
+
+    # 4. eval against the teacher (and a blind A/B with AB=1)
+    RUN=runs/sft/q8 STUDENT_MODEL=tsk-q8 bash scripts/eval_sft.sh
+    # or through transformers: STUDENT_BACKEND=hf STUDENT_MODEL=Qwen/Qwen3-8B \
+    #   HF_ADAPTER=runs/sft/q8/adapter bash scripts/eval_sft.sh
+
+    # 5. live
+    python -m flow.live --mode body --model-json <rig>.model3.json \
+        --rig rigs/Hiyori.npz --backend ollama --model tsk-q8 --tts auto
+    # (or --backend hf --model Qwen/Qwen3-8B --hf-adapter runs/sft/q8/adapter)
+
+    # 6. action head
+    python -m flow.dataexport action data/datagen/r1 --out data/datagen/r1/export/action
+    python scripts/extract_hidden.py --export data/datagen/r1/export/action \
+        --data data/datagen/r1 --model runs/sft/q8/merged --layers -8 \
+        --proj 1024 --out runs/hidden/q8
+    python -m flow.actionhead train --export data/datagen/r1/export/action \
+        --hidden runs/hidden/q8 --out runs/ah/q8 --steps 3000
+    python -m flow.actionhead eval --ckpt runs/ah/q8/head.pt \
+        --export data/datagen/r1/export/action --hidden runs/hidden/q8 \
+        --markers runs/sft/q8/eval/student.jsonl --data data/datagen/r1
+    python -m flow.actionhead export --ckpt runs/ah/q8/head.pt \
+        --export data/datagen/r1/export/action --hidden runs/hidden/q8 \
+        --data data/datagen/r1 --id <session>/t02 --out runs/ah/q8/side
+    bash runs/ah/q8/side/render.sh                  # pred/ and directed/ clips
+
+The action head's markers baseline needs another model's markers (the
+student's, from the eval): on teacher text the markers played again are
+the target itself.
