@@ -308,7 +308,13 @@ def test_resume_after_interruption(tmp_path):
     assert res["ok"] == 2 and len(made2["character"]) == 2
     recs = ds.iter_records(str(out))
     assert len(recs) == 12 and len({r["session"] for r in recs}) == 4
-    assert ds.Store(str(out)).spent["cost_usd"] == pytest.approx(2 * spent)
+    man = [json.loads(x) for x in open(out / "sessions.jsonl")]
+    ok = [m["cost_usd"] for m in man if m["status"] == "ok"]
+    assert len(ok) == 4 and max(ok) == pytest.approx(min(ok))
+    # The session the 401 stopped had paid its user line: counted too.
+    total = sum(m["cost_usd"] for m in man)
+    assert total > sum(ok)
+    assert ds.Store(str(out)).spent["cost_usd"] == pytest.approx(total)
     # Nothing left: a third run calls nothing.
     res = ds.generate(_opts(out), backend_factory=_factory({}),
                       log=lambda s: None)
@@ -516,3 +522,67 @@ def test_config_and_session_plan():
     p = next(x for x in cfg["personas"] if x["id"] == "cheerful")
     assert ds.persona_text(cfg, p, "lafei").startswith("Laffey, a cheerful")
     assert pz.system_prompt  # the body prompt the avatars use
+
+
+def test_real_tts_timing_drives_markers_and_mouth():
+    """--tts: speech.speak times the markers from the audio, and the voice's
+    mouth track moves mouth.open on the trajectory."""
+    from flow import director as dr
+    from tests.test_live import SpeakingTTS
+    opts = ds.parse_opts(["gen", "--avatars", "seed-san"])
+    av = ds.Avatar(ds.avatar_spec("seed-san"), opts, {"p": "Seed-san."},
+                   log=lambda s: None)
+    reply = dr.ask(CharLLM(), av.system("p"), [{"role": "user",
+                                                "content": "hi"}],
+                   {}, log=lambda s: None, parser=av.parser("p"))
+    rate, _ = ds.play(av, reply, 1)
+    av.tts = SpeakingTTS()
+    fields, arr = ds.play(av, reply, 1)
+    assert fields["timing"]["method"] != "rate"
+    assert fields["timing"]["tts"]["voice"] == "fake"
+    assert av.tts.calls                         # the TTS was asked
+    t_rate = [m["t"] for m in rate["markers"] if m["t"] is not None]
+    t_tts = [m["t"] for m in fields["markers"] if m["t"] is not None]
+    assert t_tts != t_rate and t_tts == sorted(t_tts) and t_tts[0] > 0.2
+    cols = av.traj_vars
+    k = cols.index("viseme.a")
+    played = arr[""].astype(np.float32)
+    assert np.nanmax(played[:, k]) - np.nanmin(played[:, k]) > 0.1
+    assert np.nanmax(arr[".directed"].astype(np.float32)[:, k]) > 0.1
+    assert arr[".chars"].shape == (len(reply["spoken"]), 2)
+
+
+def test_failed_session_spend_counts(tmp_path):
+    """A session dying at its third call still paid for the first two: the
+    manifest and the resumed budget carry it."""
+    class Late(CharLLM):
+        def stream(self, system, messages):
+            if len(self.sent) >= 2:
+                raise RuntimeError("503 from deepseek: busy")
+            yield from super().stream(system, messages)
+    out = tmp_path / "run"
+    res = ds.generate(_opts(out, "--retries", "0", "--concurrency", "1",
+                            sessions=1, turns=3),
+                      backend_factory=lambda role, av: Late() if
+                      role == "character" else UserLLM(), log=lambda s: None)
+    assert res["failed"] == 1 and res["run_usd"] > 0
+    man = [json.loads(x) for x in open(out / "sessions.jsonl")]
+    assert man[0]["status"] == "failed" and man[0]["cost_usd"] > 0
+    assert man[0]["tokens"]["in"] == 2 * 2000 + 3 * 300
+    assert ds.Store(str(out)).spent["cost_usd"] == pytest.approx(
+        man[0]["cost_usd"])
+
+
+def test_duplicate_greeting_does_not_cut_a_session(run):
+    out, _res, _ = run
+    recs = ds.iter_records(str(out))
+    sid = recs[0]["session"]
+    notes = {r["id"]: ((["dup"], False) if r["session"] == sid
+                       and r["turn"] == 1 else ([], True)) for r in recs}
+    ex = dx.sft_examples(str(out), recs, notes, per="session", meta=True)
+    mine = next(e for e in ex if e["meta"]["session"] == sid)
+    assert len(mine["meta"]["turns"]) == 3
+    # Per turn, a dup is dropped.
+    ids = [e["meta"]["id"] for e in dx.sft_examples(str(out), recs, notes,
+                                                    per="turn", meta=True)]
+    assert f"{sid}/t01" not in ids and len(ids) == 11

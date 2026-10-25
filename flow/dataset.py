@@ -99,8 +99,9 @@ included; flow.dataexport filters):
   <out>/runs.jsonl  one line per run: argv, git head and dirty flag, prices,
                   start time; the end totals as a second line
 
-Values are rounded (ROUND decimals) and trajectories float16: a 6-turn
-session at 30 fps is ~100 KB of npz.
+Values are rounded (ROUND decimals) and trajectories float16: 3 turns of
+~5 s at 30 fps on Seed-san were 17 KB of npz (both trajectories), the turn
+records ~6 KB each (the history grows with the turn).
 
 Usage:
     python -m flow.dataset gen --avatars Hiyori,seed-san,lafei \\
@@ -481,6 +482,11 @@ def traj_vars(bm, which="offered") -> list[str]:
         out += [v for v in ("hand.L.z", "hand.R.z") if v in bm.fidx]
     if "mouth.open" in bm.fidx and "mouth.open" not in out:
         out.append("mouth.open")
+    if getattr(bm, "kind", None) == "vrm":
+        # The VRM's mouth is its visemes (the voice's vowel shares), which
+        # are parameters, not canonical features: taken as played.
+        out += [p for p in (f"viseme.{v}" for v in "aiueo")
+                if p in bm.params]
     return out
 
 
@@ -531,7 +537,7 @@ def _frames(av, acts, poses, seed, n, idle, mouth=None):
         over, parts = stream.frame()
         st = bm.perceive(over, parts=parts) if av.kind == "live2d" \
             else bm.perceive(over)
-        out[f] = [st.get(c, np.nan) for c in cols]
+        out[f] = [st[c] if c in st else over.get(c, np.nan) for c in cols]
         var[f] = vidx.get(st.get("arm.variant"), 0)
     return out, var, directed
 
@@ -763,9 +769,11 @@ def _model_of(backend):
 
 
 def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
-                stop=None, log=print, prices=PRICES):
+                stop=None, log=print, prices=PRICES, tot=None):
     """One session: (records, {npz key: array}, totals). Raises when a call
-    fails past its retries (the session is then rerun on resume)."""
+    fails past its retries (the session is then rerun on resume); `tot`
+    (a dict the caller passes) holds what was spent up to then, call by
+    call, so a failed session's spend still counts."""
     rng = random.Random(sess["seed"])
     persona = next(p for p in cfg["personas"] if p["id"] == sess["persona"])
     ptext = persona_text(cfg, persona, sess["avatar"])
@@ -777,7 +785,18 @@ def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
     system = av.system(sess["persona"])
     psha = sha(system)
     history, transcript, records, arrays = [], [], [], {}
-    tot = {"in": 0, "in_hit": 0, "out": 0, "cost_usd": 0.0}
+    if tot is None:
+        tot = {}
+    for k_ in ("in", "in_hit", "out"):
+        tot.setdefault(k_, 0)
+    tot.setdefault("cost_usd", 0.0)
+
+    def spend(t):
+        for k_ in ("in", "in_hit", "out"):
+            tot[k_] += t[k_]
+        c = cost(t, prices)
+        tot["cost_usd"] += c
+        return c
     openers = [t for t in cfg["topics"] if t.get("opener")]
     for turn in range(1, sess["turns"] + 1):
         if stop is not None and stop.is_set():
@@ -796,6 +815,7 @@ def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
         umsg = [{"role": "user", "content": user_prompt(
             cfg, ptext, user, topic, lang, mix, transcript, char_name)}]
         line, u_att, u_text, u_sec = "", 0, "", 0.0
+        u_tok, u_est, uc = {"in": 0, "in_hit": 0, "out": 0}, False, 0.0
         for _ in range(3):
             t0 = time.monotonic()
             u_text, k = with_retries(lambda: collect(user_backend, usys, umsg),
@@ -803,13 +823,16 @@ def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
                                      "user simulator")
             u_sec += time.monotonic() - t0
             u_att += k
+            t1, e1 = call_tokens(getattr(user_backend, "usage", None), usys,
+                                 umsg, u_text)
+            uc += spend(t1)
+            u_tok = {k_: u_tok[k_] + t1[k_] for k_ in u_tok}
+            u_est = u_est or e1
             line = clean_user_line(u_text)
             if line:
                 break
         if not line:
             line = rng.choice(topic.get("examples") or ["Hi!"])
-        u_tok, u_est = call_tokens(getattr(user_backend, "usage", None), usys,
-                                   umsg, u_text)
         content = line + "\n" + av.pose_now
         msgs = []
         for h in history:
@@ -823,6 +846,7 @@ def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
             opts.retries, opts.backoff, stop, log, "character")
         c_tok, c_est = call_tokens(reply.get("usage"), system, msgs,
                                    reply["raw"])
+        cc = spend(c_tok)
         rec = {"format": FORMAT, "id": f"{sess['id']}/t{turn:02d}",
                "session": sess["id"], "turn": turn,
                "n_turns": sess["turns"], "run": run_id,
@@ -865,7 +889,6 @@ def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
         transcript.append(("user", line))
         if reply["spoken"]:
             transcript.append(("char", reply["spoken"]))
-        cc, uc = cost(c_tok, prices), cost(u_tok, prices)
         rec["llm"] = {
             "character": {"backend": opts.backend,
                           "model": _model_of(char_backend),
@@ -882,10 +905,6 @@ def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
                      "seconds": round(u_sec, 3), "attempts": u_att,
                      "raw": u_text if u_text.strip() != line else None}}
         rec["cost_usd"] = round(cc + uc, 7)
-        for t_ in (c_tok, u_tok):
-            for k_ in ("in", "in_hit", "out"):
-                tot[k_] += t_[k_]
-        tot["cost_usd"] += cc + uc
         records.append(rec)
     if arrays:
         arrays["vars"] = json.dumps(av.traj_vars)
@@ -958,9 +977,12 @@ class Store:
                             "cost_usd": round(tot["cost_usd"], 7)}, run_id)
             self.done.add(sid)
 
-    def fail_session(self, sid, error, tot, run_id):
+    def fail_session(self, sid, error, tot, run_id, status="failed"):
+        """A session not written (failed past its retries, or stopped
+        mid-way: status "interrupted"), with what it spent; rerun on
+        resume."""
         with self.lock:
-            self._manifest({"session": sid, "status": "failed",
+            self._manifest({"session": sid, "status": status,
                             "error": str(error)[:500],
                             "tokens": {k: tot.get(k, 0) for k in
                                        ("in", "in_hit", "out")},
@@ -1066,8 +1088,16 @@ class Budget:
         self.n, self.run_cost, self.run_tok = 0, 0.0, 0
         self.inflight = 0
 
-    def add(self, tot):
+    def add(self, tot, finished=True):
+        """A session's spend; finished=False (failed, interrupted) counts
+        toward the caps but not the per-session average."""
         with self.lock:
+            if not finished:
+                self.cost += tot.get("cost_usd", 0.0)
+                self.tokens += tot.get("in", 0) + tot.get("out", 0)
+                self.run_cost += tot.get("cost_usd", 0.0)
+                self.run_tok += tot.get("in", 0) + tot.get("out", 0)
+                return
             self.cost += tot["cost_usd"]
             t = tot["in"] + tot["out"]
             self.tokens += t
@@ -1233,10 +1263,17 @@ def generate(opts, backend_factory=None, log=print, argv=None) -> dict:
             cb, ub = backend_factory("character", av), \
                 backend_factory("user", av)
             recs, arrs, tot = run_session(sess, av, cfg, opts, cb, ub, run_id,
-                                          stop, log, prices)
+                                          stop, log, prices, tot)
         except InterruptedError:
+            if tot["in"] or tot["out"]:
+                store.fail_session(sess["id"], "interrupted", tot, run_id,
+                                   "interrupted")
+                budget.add(tot, finished=False)
             return
         except Fatal as exc:
+            if tot["in"] or tot["out"]:
+                store.fail_session(sess["id"], f"fatal: {exc}", tot, run_id)
+                budget.add(tot, finished=False)
             with slock:
                 state["fatal"] = str(exc)
             stop.set()
@@ -1246,6 +1283,7 @@ def generate(opts, backend_factory=None, log=print, argv=None) -> dict:
         except Exception as exc:  # noqa: BLE001 - a session, not the run
             store.fail_session(sess["id"], f"{exc.__class__.__name__}: {exc}",
                                tot, run_id)
+            budget.add(tot, finished=False)
             with slock:
                 state["fails"] += 1
                 state["failed"] += 1

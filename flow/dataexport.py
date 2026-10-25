@@ -27,8 +27,9 @@ Quality filters, stats and exporters for flow.dataset's turn records.
              (avatars.json), the user turns are what the model saw (line +
              pose_now), the assistant turns the raw marked replies.
              --per session [default]: one example per session, cut before
-             its first dropped turn (every assistant turn is a target, as
-             these trainers train all of them). --per turn: one example per
+             its first dropped turn (a dup alone does not cut: the reply
+             is new); every assistant turn is a target, as these trainers
+             train all of them. --per turn: one example per
              kept turn with its history; earlier assistant turns carry
              "weight": 0 (OpenAI's fine-tuning format; elsewhere use the
              trainer's last-turn-only option, e.g. LLaMA-Factory
@@ -213,6 +214,9 @@ def stats(records, notes, prices=None) -> dict:
         sec = ((r.get("llm") or {}).get("character") or {}).get("seconds")
         if sec is not None:
             lat.append(sec)
+    st = session_turns(records, notes)
+    s["sft_sessions"] = len(st)
+    s["sft_session_turns"] = sum(len(v) for v in st.values())
     s["by"] = {k: dict(v.most_common()) for k, v in c.items()}
     s["variables"] = dict(var_hist.most_common())
     s["reach"] = dict(reach, rate=round(reach["ok"] / reach["targets"], 4)
@@ -231,7 +235,8 @@ def stats(records, notes, prices=None) -> dict:
 
 def stats_text(s) -> str:
     out = [f"{s['turns']} turns in {s['sessions']} sessions, {s['kept']} kept "
-           f"({s['kept'] / max(1, s['turns']):.0%})"]
+           f"({s['kept'] / max(1, s['turns']):.0%}); session SFT export: "
+           f"{s['sft_sessions']} sessions, {s['sft_session_turns']} turns"]
     for k in ("avatar", "persona", "lang_asked", "lang_reply", "topic",
               "markers", "not_played", "unplayed", "flags"):
         v = s["by"].get(k)
@@ -277,6 +282,35 @@ def _turn_msgs(r):
             {"role": "assistant", "content": r["reply_raw"]}]
 
 
+def session_ok(note) -> bool:
+    """A turn a session-mode example keeps: kept, or dropped only as a
+    duplicate user line (its reply is new; a repeated greeting at turn 1
+    must not cost the session's other turns)."""
+    flags, kept = note
+    return kept or [x for x in flags if x in HARD] == ["dup"]
+
+
+def session_turns(records, notes) -> dict:
+    """{session: [records]} as --per session exports them: in turn order,
+    refused turns skipped (never history), cut before the first turn
+    session_ok rejects; sessions left empty are absent."""
+    by_s = defaultdict(list)
+    for r in records:
+        by_s[r["session"]].append(r)
+    out = {}
+    for sid, recs in by_s.items():
+        keep = []
+        for r in sorted(recs, key=lambda r: r["turn"]):
+            if r.get("refused"):
+                continue
+            if not session_ok(notes[r["id"]]):
+                break
+            keep.append(r)
+        if keep:
+            out[sid] = keep
+    return out
+
+
 def sft_examples(root, records, notes, per="session", meta=False):
     """The SFT examples (dicts with "messages")."""
     reg = load_registry(root)
@@ -284,6 +318,7 @@ def sft_examples(root, records, notes, per="session", meta=False):
     by_s = defaultdict(list)
     for r in records:
         by_s[r["session"]].append(r)
+    sessions = session_turns(records, notes) if per == "session" else {}
     out = []
     for sid in sorted(by_s):
         recs = sorted(by_s[sid], key=lambda r: r["turn"])
@@ -294,11 +329,7 @@ def sft_examples(root, records, notes, per="session", meta=False):
         if per == "session":
             msgs = list(base)
             ids = []
-            for r in recs:
-                if r.get("refused"):
-                    continue            # not history: the next turn never saw it
-                if not notes[r["id"]][1]:
-                    break
+            for r in sessions.get(sid, ()):
                 msgs += _turn_msgs(r)
                 ids.append(r["id"])
             if ids:
