@@ -297,10 +297,12 @@ def p_wave(b, a, side, c):
     hands = {}
     for k in sides:
         sg = c.sgn(k)
-        hands[f"hand.{k}.x"] = sg * abs(c.sh_x[k]) * (1.5 if len(sides) == 1
+        # One hand well out beside the head: at 1.5 shoulder widths its
+        # inward swing put the palm on the forehead (Seed-san's dance).
+        hands[f"hand.{k}.x"] = sg * abs(c.sh_x[k]) * (2.0 if len(sides) == 1
                                                        else 1.3) \
-            + 0.3 * a * s
-        hands[f"hand.{k}.y"] = c.head_y + (0.15 if len(sides) == 1 else 0.6)
+            + 0.25 * a * s
+        hands[f"hand.{k}.y"] = c.head_y + (0.1 if len(sides) == 1 else 0.6)
         if c.vrm:
             hands[f"hand.{k}.z"] = float(c.depth.get("chest", 0.3)) + 0.05
     return add, hands
@@ -340,8 +342,8 @@ PRIMS = {
     "cheer": (p_cheer, 1.0, "arms", (),
               "pump your fist up on every beat (\"side\" L, R or both)"),
     "wave": (p_wave, 1.0, "arms", (),
-             "wave a raised hand side to side (\"side\" both: both hands "
-             "up, swaying together)"),
+             "wave a raised hand side to side (\"side\" L or R, default R; "
+             "both: both hands up, swaying together)"),
     "twirl": (p_twirl, 1.0, "arms", (),
               "roll your hands around each other in front of your chest"),
 }
@@ -877,7 +879,8 @@ def build(bm, arg, current=None, parts=None, log=print, seed=0,
     beats = float(arg.get("beats", BEATS))
     if arg.get("seconds") is not None and "beats" not in arg:
         beats = max(1.0, round(float(arg["seconds"]) / spb))
-    side = arg.get("side", "both")
+    # A wave is one hand unless asked (both up is a crowd's sway).
+    side = arg.get("side", "R" if name == "wave" else "both")
     kind = PRIMS[name][2] if name in PRIMS else "dance"
     if kind == "arms" and name in ("cheer", "wave"):
         sides = cp[name]["sides"]
@@ -885,7 +888,9 @@ def build(bm, arg, current=None, parts=None, log=print, seed=0,
             new = side if side in sides else (
                 "R" if "R" in sides else sides[0]) if side == "both" else (
                 "both" if "both" in sides else sides[0])
-            log(f"move: {name} side {side} not on this body; {new} instead")
+            if "side" in arg:
+                log(f"move: {name} side {side} not on this body; {new} "
+                    "instead")
             side = new
     rng = np.random.default_rng([int(arg.get("seed", seed)) & 0xFFFFFFFF,
                                  11])
