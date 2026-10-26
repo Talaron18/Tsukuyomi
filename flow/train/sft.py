@@ -66,6 +66,7 @@ Usage (scripts/train_sft.py is the same entry point):
 from __future__ import annotations
 
 import argparse
+import glob
 import hashlib
 import inspect
 import json
@@ -760,6 +761,16 @@ def gguf(o) -> list[list[str]]:
 def write_modelfile(o) -> str:
     info = run_info(o.run)
     g = o.gguf or os.path.join(o.run, "gguf", f"{o.name}-{o.quant}.gguf")
+    if not o.gguf and not os.path.exists(g):
+        # gguf's --name (the file stem, "tsk") need not be the Ollama name
+        found = sorted(glob.glob(os.path.join(o.run, "gguf",
+                                              f"*-{o.quant}.gguf")))
+        if len(found) != 1:
+            raise SystemExit(f"sft: no {g}; pass --gguf (found: "
+                             f"{', '.join(found) or 'none'})")
+        g = found[0]
+    if not os.path.exists(g):
+        raise SystemExit(f"sft: no {g}")
     path = os.path.join(o.run, "Modelfile")
     text = chat.modelfile(os.path.abspath(g), info["family"], o.num_ctx)
     with open(path, "w", encoding="utf-8") as fh:
