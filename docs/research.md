@@ -106,6 +106,61 @@ simulators (LIBERO-PRO, RoboCasa, RoboTwin) and on a Franka arm. It's a
 planner above the VLAs, not hidden states driving a body: the reference
 for a future planning layer on top of our controller, not for the head.
 
+### Read in full (papers/, 2026-10-26): what changes for flow/actionhead.py
+
+The nine priority-1 papers are in papers/; all the arXiv ids above for them
+are correct. What they say, against the head as built (frames cross-attend
+to the token states up to a look-ahead, chunks with half overlap
+cross-faded, MSE or flow matching, no motion history, no audio):
+
+- **Condition on past motion.** GestureFAR (a causal transformer over its
+  own past motion latents + audio so far, an MLP flow head per latent at
+  7.5 Hz) and LiveGesture (region-expert AR transformers over causal motion
+  tokens) both autoregress on the motion already emitted. Our head sees
+  only text, so continuity comes from the cross-fade. LiveGesture's
+  **autoregressive masking** (training on corrupted history) is the fix for
+  the drift that history feeding brings.
+- **Replace the cross-fade.** RTC shows that temporal ensembling (what the
+  cross-fade is) is less smooth than **inpainting**. The next chunk is
+  generated with the frames already committed frozen, and a soft mask over
+  the overlap. It's training-free for any flow head, so it applies to
+  `--objective fm` as is.
+- **Timing comes from speech, not the LLM.** OpenHelix's probe found the
+  MLLM latent carries task semantics and is insensitive to fast changes.
+  GestureFAR conditions on audio (mHuBERT), and ELLSA 2 on the speech
+  synthesiser's own hidden states. Our head gets per-character speech times
+  but no prosody. r1 was generated with `--tts none` (rate timing), so
+  adding audio features (energy and pitch from the TTS clip, which the lip
+  sync already computes) needs a TTS pass over the records.
+- **Which layer:** ELLSA 2 conditions on the final layer and mixes layers
+  16/20/24 for its call head; OpenHelix reports both final and middle layers
+  in use. So learn a weighted mix of a few layers rather than picking one.
+- **Freeze, align, then (maybe) tune.** OpenHelix: joining the LLM and the
+  policy without first training the projector with the LLM frozen fails
+  outright (0% in their Table 6). Prompt-tuning one `<ACT>` token
+  generalised best. Our order (frozen extraction, head trained on cached
+  states) is the right first stage. MotionGPT3 adds that a separate motion
+  branch keeps the language ability intact.
+- **Keep explicit gestures explicit.** ELLSA 2 separates *whether* to make
+  a semantic gesture (a binary call head on layers 16/20/24, which can run
+  ahead of the speech) from *how* (a retrieved exemplar guiding the
+  generator). That is our split already: markers / [move] / gestures are
+  the exemplars, and the head does the co-speech motion. A call head could
+  later replace the textual markers for gestures without losing precision.
+- **Listening.** ELLSA 2 keeps generating listener motion (nods,
+  expressions) while the user talks. We only have the idle there.
+- **Making flow cheap:** first check OpenVLA-OFT's result (L1 regression ≈
+  diffusion, faster) against our MSE mode. If flow wins, distil the head
+  alone: GestureFAR distils only the per-token head on cached conditions
+  (consistency warm-up + DMD); SnapFlow self-distils to one step with no
+  separate teacher or critic, and beats its 10-step teacher on LIBERO.
+  FASTER's horizon-aware schedule makes the first frames one step, the
+  lever if time-to-first-motion matters more than chunk quality.
+- **Runtime:** GestureFAR's stateful runtime (persistent caches, body
+  anchors against drift, a short playback buffer, slerp blends between
+  speaking, listening and idle) matches what flow.stream already does for
+  markers. The head should feed the same stream, not replace it.
+
 ## 2. Later directions
 
 ### Live co-watching and long video
