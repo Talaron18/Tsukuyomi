@@ -21,6 +21,14 @@ character times of the export put on the clock).
             through the avatar's parser fed one character at a time, so a
             marker's characters sit at its place in the speech (start ==
             end there).
+  speed     --context turn re-reads the system prompt (~2.8k tokens of a
+            ~4k turn) for every turn: rows are taken in the order of their
+            system prompt and its KV cache is computed once and cut back
+            after each turn (DynamicCache.crop), about 3x fewer tokens per
+            turn. --no-prefix-cache reads every turn whole.
+  resume    a run stopped (a dropped ssh, a crash) continues on the same
+            command: the turns whose shard is on disk are kept, the rest
+            done again; the arguments must match (args.json).
   storage   fp16, rows packed in shards of --shard-tokens tokens:
             <out>/hidden-NNNNN.npz with "<key>.h" [n, layers, D], "<key>.
             raw", "<key>.spoken" (int32); <out>/index.jsonl one line per
@@ -144,11 +152,30 @@ def layer_ids(spec, n_layers):
 
 
 class Shards:
-    def __init__(self, out, limit=SHARD_TOKENS):
+    def __init__(self, out, limit=SHARD_TOKENS, resume=False):
+        """resume: keep the index lines whose shard is on disk (a line is
+        written before its shard is), continue the numbering after them."""
         self.out, self.limit = out, int(limit)
         self.k, self.n, self.buf = 0, 0, {}
-        self.index = open(os.path.join(out, "index.jsonl"), "w",
-                          encoding="utf-8")
+        self.done = {}
+        path = os.path.join(out, "index.jsonl")
+        if resume and os.path.exists(path):
+            with open(path, encoding="utf-8") as fh:
+                for line in fh:
+                    if not line.strip():
+                        continue
+                    e = json.loads(line)
+                    if os.path.exists(os.path.join(out, e["shard"])):
+                        self.done[e["id"]] = e
+            shards = {e["shard"] for e in self.done.values()}
+            self.k = 1 + max((int(x[7:12]) for x in shards), default=-1)
+            for f in os.listdir(out):        # shards no line points to
+                if f.startswith("hidden-") and f not in shards:
+                    os.remove(os.path.join(out, f))
+        self.index = open(path, "w", encoding="utf-8")
+        for e in self.done.values():
+            self.index.write(json.dumps(e) + "\n")
+        self.index.flush()
 
     def add(self, row_id, key, h, raw, spoken):
         self.buf[key + ".h"] = h
@@ -173,6 +200,62 @@ class Shards:
     def close(self):
         self.flush()
         self.index.close()
+
+
+class PrefixCache:
+    """The system prompt's KV cache, built once per prompt and cut back to
+    it after every turn: a turn then runs only its history, user line and
+    reply. Falls back to a whole forward when the turn's tokens do not
+    start with the system block's (a tokenizer merging across it) or the
+    cache cannot be cut."""
+
+    def __init__(self, lm, tok, family, dev, enabled=True):
+        self.lm, self.tok, self.family, self.dev = lm, tok, family, dev
+        self.enabled = enabled and family != "hf"
+        self.key, self.ids, self.kv = None, None, None
+        self.cur = None
+        self.hits = self.misses = 0
+
+    def use(self, system, pre):
+        self.cur = None
+        if not self.enabled:
+            return
+        if system != self.key:
+            import torch
+            text = chat.render([{"role": "system", "content": system}],
+                               self.family)[0]
+            ids = list(self.tok(text, add_special_tokens=False)["input_ids"])
+            self.key, self.ids, self.kv = system, ids, None
+            with torch.no_grad():
+                out = self.lm(input_ids=torch.tensor([ids], device=self.dev),
+                              use_cache=True)
+            kv = out.past_key_values
+            if hasattr(kv, "crop"):
+                self.kv = kv
+        if self.kv is not None and pre[:len(self.ids)] == self.ids:
+            self.cur = len(self.ids)
+
+    def forward(self, seq):
+        """(hidden_states, how many leading tokens they skip)."""
+        import torch
+        n = self.cur
+        with torch.no_grad():
+            if n:
+                self.hits += 1
+                x = torch.tensor([seq[n:]], dtype=torch.long, device=self.dev)
+                out = self.lm(input_ids=x, past_key_values=self.kv,
+                              output_hidden_states=True, use_cache=True)
+                # Negative: drop that many from the end (transformers 5
+                # refuses a positive length; 4.x takes both).
+                extra = self.kv.get_seq_length() - n
+                if extra > 0:
+                    self.kv.crop(-extra)
+                return out.hidden_states, n
+            self.misses += 1
+            x = torch.tensor([seq], dtype=torch.long, device=self.dev)
+            out = self.lm(input_ids=x, output_hidden_states=True,
+                          use_cache=False)
+            return out.hidden_states, 0
 
 
 def extract(o, log=print) -> dict:
@@ -201,10 +284,39 @@ def extract(o, log=print) -> dict:
     layers = layer_ids(o.layers, n_layers)
     parsers = parsers_for(o.data, sorted({r["avatar"] for r in rows}))
     os.makedirs(o.out, exist_ok=True)
+    args = {k: getattr(o, k) for k in ("export", "data", "model", "adapter",
+                                       "template", "layers", "context",
+                                       "text", "proj", "seed", "limit")}
+    args_path = os.path.join(o.out, "args.json")
+    resume = os.path.exists(args_path)
+    if resume:
+        with open(args_path, encoding="utf-8") as fh:
+            if json.load(fh) != args:
+                raise SystemExit(f"hidden: {o.out} holds a run with other "
+                                 "arguments (args.json); another --out")
+    else:
+        with open(args_path, "w", encoding="utf-8") as fh:
+            json.dump(args, fh, indent=1)
     dev = next(lm.parameters()).device
     proj = None
-    sh = Shards(o.out, o.shard_tokens)
+    if o.proj and os.path.exists(os.path.join(o.out, "proj.npy")):
+        proj = torch.from_numpy(np.load(os.path.join(o.out, "proj.npy"))
+                                ).to(dev)
+    sh = Shards(o.out, o.shard_tokens, resume=resume)
+    if sh.done:
+        log(f"hidden: resuming, {len(sh.done)} turns on disk")
+    todo = [r for r in rows if r["id"] not in sh.done]
+    if o.context == "turn":
+        # One system prompt's turns together, so its cache is built once.
+        def sha(r):
+            rec = recs.get(r["id"])
+            return rec["avatar"]["prompt_sha"] if rec else ""
+        order = {k: i for i, k in enumerate(dict.fromkeys(map(sha, todo)))}
+        todo.sort(key=lambda r: order[sha(r)])
+    cache = PrefixCache(lm, tok, family, dev,
+                        enabled=o.context == "turn" and o.prefix_cache)
     t0, n_tok, D = time.monotonic(), 0, None
+    rows = todo
     for i, r in enumerate(rows):
         text = r["reply_raw"] if o.text == "reply" else r["spoken"]
         idx, spoken = spoken_index(text, parsers[r["avatar"]]())
@@ -218,16 +330,16 @@ def extract(o, log=print) -> dict:
             if rec is None:
                 log(f"hidden: {r['id']} not in {o.data}; text alone")
             else:
-                msgs = turn_messages(rec, prompts[rec["avatar"]["prompt_sha"]])
+                system = prompts[rec["avatar"]["prompt_sha"]]
+                msgs = turn_messages(rec, system)
                 p = chat.prompt(msgs, family) if family != "hf" else \
                     tok.apply_chat_template(msgs, tokenize=False,
                                             add_generation_prompt=True)
                 pre = list(tok(p, add_special_tokens=False)["input_ids"])
-        x = torch.tensor([pre + ids], dtype=torch.long, device=dev)
-        with torch.no_grad():
-            out = lm(input_ids=x, output_hidden_states=True, use_cache=False)
-        hs = out.hidden_states
-        h = torch.stack([hs[k][0, len(pre):] for k in layers], 1).float()
+                cache.use(system, pre)
+        hs, skip = cache.forward(pre + ids)
+        h = torch.stack([hs[k][0, len(pre) - skip:] for k in layers],
+                        1).float()
         if o.proj:
             if proj is None:
                 g = torch.Generator().manual_seed(int(o.seed))
@@ -246,10 +358,15 @@ def extract(o, log=print) -> dict:
             log(f"hidden: {i + 1}/{len(rows)} turns, {n_tok} tokens, "
                 f"{el / (i + 1):.2f} s a turn")
     sh.close()
+    if cache.hits:
+        log(f"hidden: system prompt cached for {cache.hits} turns "
+            f"({cache.misses} read whole)")
+    rows = rows + list(sh.done.values())
     meta = {"model": o.model, "adapter": o.adapter, "family": family,
             "layers": layers, "layers_arg": o.layers, "dim": D,
             "context": o.context, "text": o.text, "proj": o.proj,
-            "seed": o.seed, "turns": len(rows), "tokens": n_tok,
+            "seed": o.seed, "turns": len(rows),
+            "tokens": n_tok + sum(e["tokens"] for e in sh.done.values()),
             "export": os.path.abspath(o.export)}
     with open(os.path.join(o.out, "meta.json"), "w", encoding="utf-8") as fh:
         json.dump(meta, fh, indent=1)
@@ -290,6 +407,10 @@ def parse(argv):
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--load-4bit", action="store_true")
     ap.add_argument("--device", default="auto")
+    ap.add_argument("--no-prefix-cache", dest="prefix_cache",
+                    action="store_false",
+                    help="read every turn whole (the system prompt again "
+                         "each time)")
     ap.add_argument("--out", required=True)
     return ap.parse_args(argv)
 

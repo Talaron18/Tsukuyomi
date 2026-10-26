@@ -765,12 +765,16 @@ def write_modelfile(o) -> str:
         # gguf's --name (the file stem, "tsk") need not be the Ollama name
         found = sorted(glob.glob(os.path.join(o.run, "gguf",
                                               f"*-{o.quant}.gguf")))
-        if len(found) != 1:
+        if len(found) == 1:
+            g = found[0]
+        elif len(found) > 1:
             raise SystemExit(f"sft: no {g}; pass --gguf (found: "
-                             f"{', '.join(found) or 'none'})")
-        g = found[0]
+                             f"{', '.join(found)})")
     if not os.path.exists(g):
-        raise SystemExit(f"sft: no {g}")
+        if o.create:
+            raise SystemExit(f"sft: no {g} for ollama create; run gguf "
+                             "first, or pass --gguf")
+        log(f"sft: warning: no {g} yet (the Modelfile points at it)")
     path = os.path.join(o.run, "Modelfile")
     text = chat.modelfile(os.path.abspath(g), info["family"], o.num_ctx)
     with open(path, "w", encoding="utf-8") as fh:

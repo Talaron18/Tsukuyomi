@@ -193,3 +193,49 @@ def test_extract_on_a_tiny_model(made, tmp_path):
     assert sp.shape == (e["tokens"], 2) and (np.diff(sp[:, 0]) >= 0).all()
     d = ah.Data(stem, str(tmp_path / "h"))
     assert d.item(0)["h"].shape[1] == 16
+
+
+def test_extract_prefix_cache_and_resume(made, tmp_path):
+    """The system prompt's cached KV gives the states a whole forward
+    gives; a run cut short continues where its shards end."""
+    pytest.importorskip("transformers")
+    pytest.importorskip("tokenizers")
+    from flow.train import chat
+    from tests import tiny_lm
+    out, stem, _hid = made
+    texts = [r["reply_raw"] for r in ds.iter_records(str(out))] * 5
+    lm = tiny_lm.build(str(tmp_path / "tiny-qwen3"), texts + [chat.render(
+        [{"role": "user", "content": "hi"}], "qwen3")[0]])
+    logs = []
+
+    def run(name, *extra):
+        o = fh.parse(["--export", stem, "--data", str(out), "--model", lm,
+                      "--layers=-1,1", "--out", str(tmp_path / name),
+                      "--shard-tokens", "50", "--device", "cpu", *extra])
+        fh.extract(o, log=logs.append)
+        idx = fh.load_index(str(tmp_path / name))
+        hs = {}
+        for e in idx.values():
+            with np.load(tmp_path / name / e["shard"]) as z:
+                hs[e["id"]] = z[e["key"] + ".h"].astype(np.float32)
+        return hs
+
+    cached = run("cached")
+    assert any("cached for 8 turns" in s for s in logs)
+    whole = run("whole", "--no-prefix-cache")
+    assert cached.keys() == whole.keys() and len(cached) == 8
+    for k in cached:
+        np.testing.assert_allclose(cached[k], whole[k], atol=2e-2)
+    # Cut short: drop the last shard (and its index lines stay behind, as
+    # after a crash); the same command finishes the run.
+    d = tmp_path / "cached"
+    last = sorted(f for f in os.listdir(d) if f.startswith("hidden-"))[-1]
+    os.remove(d / last)
+    logs.clear()
+    again = run("cached")
+    assert any("resuming" in s for s in logs)
+    assert again.keys() == cached.keys()
+    for k in again:
+        np.testing.assert_allclose(again[k], cached[k], atol=2e-2)
+    with pytest.raises(SystemExit):
+        run("cached", "--proj", "8")
