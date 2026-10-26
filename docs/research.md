@@ -161,6 +161,49 @@ cross-faded, MSE or flow matching, no motion history, no audio):
   speaking, listening and idle) matches what flow.stream already does for
   markers. The head should feed the same stream, not replace it.
 
+### Priority-2 papers (papers/, 2026-10-26)
+
+- **Knowledge Insulation** (Physical Intelligence, 2505.23705): adding a
+  flow-matching action expert and training it into the backbone harms
+  both training speed and the backbone's knowledge. The fix: stop the
+  expert's gradient at the backbone (`sg`), and co-train the backbone on
+  *discrete* action tokens (FAST) plus ordinary VLM data. Freezing the
+  backbone outright works worse when it has to learn the domain. **This is
+  our recipe almost exactly.** The LoRA student learns the domain from
+  discrete actions in text (the markers play the FAST role), and the head
+  reads its states without sending gradients back. If the head is ever
+  trained jointly with the LoRA, keep the stop-gradient and keep markers
+  in the LoRA's training text. Whether the speech-only student should
+  still be trained on markers (as KI's discrete co-training suggests)
+  is a question to test.
+- **SmolVLA** (2506.01844): takes VLM features from only the first half
+  of the layers (N = L/2: faster, and as good). Its action expert
+  alternates cross-attention (to the VLM) and self-attention (over the
+  action chunk). Self-attention is what makes chunks smooth. An async
+  stack predicts the next chunk while the current one plays. For us:
+  layer 18 of Qwen3-8B's 36 belongs in the layer ablation, and the head's
+  frames should self-attend between cross-attention blocks.
+- **FloodDiffusion 2** (2609.33167): streaming text-to-motion with a
+  KV-cached "partial attention" (finalised history no longer depends on
+  the active window: 11x faster denoising, 2.3 ms per update) and root-path
+  conditioning. Also an **FK-induced quadratic loss**: errors are weighted
+  by how much they move the body (a dataset-averaged kinematic
+  response), shown to keep the regression target unbiased (any Bregman
+  divergence does). For our head: weight each canonical variable's error
+  by its forward-model reach (flow.body already measures how far each
+  variable moves the hands, head and mouth) instead of plain MSE on
+  normalised variables. That's cheap, and FD2 shows it's safe.
+- **GMR** (2510.02252): retargeting artifacts (foot sliding,
+  self-penetration, impossible motion) carry straight through to what is
+  learned; better retargeting beats reward tuning. When BEAT2 goes to VRM,
+  run it through the collision model in flow/vrmbody.py and drop clips
+  that penetrate rather than training on them.
+- **UniMotion** (2603.22282): one LLM backbone with continuous motion and
+  RGB pathways (a motion VAE aligned with vision). It has a cold-start
+  problem, where text alone is too sparse to calibrate a new motion
+  pathway, and fixes it with a self-supervised latent pre-training stage.
+  This matters if the head ever moves inside the LLM; for now it doesn't.
+
 ## 2. Later directions
 
 ### Live co-watching and long video
