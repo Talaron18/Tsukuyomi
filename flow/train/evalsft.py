@@ -111,6 +111,16 @@ def _avatars(data, names, opts, log):
     out = {}
     for n in names:
         spec = dict(reg["avatars"][n]["spec"])
+        # The spec holds the generating machine's paths; on another one
+        # (the GPU box) the event stats and clips may be absent: the
+        # defaults score the same markers (reach is the body file's).
+        ev = spec.get("events")
+        if ev and ev != "default" and not os.path.exists(ev):
+            log(f"eval: {n}: no {ev} here; default event stats")
+            spec["events"] = "default"
+        if spec.get("clips") and not os.path.exists(spec["clips"]):
+            log(f"eval: {n}: no {spec['clips']} here; no clips")
+            spec["clips"] = None
         out[n] = ds.Avatar(spec, opts, {"eval": None}, log)
     return out, reg
 
