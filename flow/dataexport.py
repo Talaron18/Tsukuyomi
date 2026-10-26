@@ -10,8 +10,9 @@ Quality filters, stats and exporters for flow.dataset's turn records.
              same avatar x persona, dedupe()), lite (a Live2D avatar
              generated without its model: its prompt has no gestures and its
              trajectory no idle; kept only with --keep-lite). Soft ones are
-             counted only: no_pose, unplayed (markers parsed away, e.g. a
-             newer marker kind), planned (play_warnings: a gesture dropped
+             counted only: no_pose, unplayed (markers parsed away, e.g. an
+             invented [fPose ...] or a newer marker kind: kept out of the SFT
+             exports all the same, SFT_HARD), planned (play_warnings: a gesture dropped
              under a pose or move, a move the body lacks), usage_estimated.
   dedupe     user lines normalised (case, punctuation, spaces) and compared
              by character-trigram Jaccard (>= --dup-jaccard) within an
@@ -70,6 +71,10 @@ except ImportError:
 HARD = ("refused", "empty", "cutoff", "parse", "no_body", "miss", "dup",
         "lite")
 SOFT = ("no_pose", "unplayed", "planned", "usage_estimated")
+# Soft flags that still keep a turn out of the SFT exports: a marker the
+# parser threw away (an invented [fPose ...]) would be learned; the turn's
+# trajectory is fine for the action head.
+SFT_HARD = ("unplayed",)
 MAX_MISS = 0.34
 DUP_JACCARD = 0.85
 
@@ -294,6 +299,8 @@ def session_ok(note) -> bool:
     duplicate user line (its reply is new; a repeated greeting at turn 1
     must not cost the session's other turns)."""
     flags, kept = note
+    if any(x in flags for x in SFT_HARD):
+        return False
     return kept or [x for x in flags if x in HARD] == ["dup"]
 
 
@@ -348,7 +355,8 @@ def sft_examples(root, records, notes, per="session", meta=False):
                 out.append(ex)
             continue
         for r in recs:
-            if not notes[r["id"]][1]:
+            f, kept = notes[r["id"]]
+            if not kept or any(x in f for x in SFT_HARD):
                 continue
             msgs = list(base)
             for h in r.get("history") or ():

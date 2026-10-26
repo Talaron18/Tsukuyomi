@@ -784,3 +784,10 @@ def test_planning_warnings_are_soft():
     assert "parse" not in f and "planned" in f
     r["warnings"].append("[pose {]: bad JSON (x); dropped")
     assert "parse" in dx.flag(r)
+
+
+def test_unplayed_markers_stay_out_of_sft():
+    from flow import dataexport as dx
+    assert not dx.session_ok((["unplayed"], True))
+    assert dx.session_ok((["no_pose"], True))
+    assert dx.session_ok((["dup"], False))
