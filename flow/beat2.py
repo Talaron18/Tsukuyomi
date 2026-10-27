@@ -44,13 +44,19 @@ in the format `flow.dataexport action` writes, so scripts/extract_hidden.py
             Forearm roll goes to the wrist's roll, the VRM has no forearm
             twist bone. A droop in the avatar's own T-pose (vrmbody's
             `align`) drops out: the parameters are measured from the
-            ideal T. Root: the global orientation's yaw is the clip's
-            facing, a circular moving mean over --facing-window seconds
-            (0: the clip's mean), taken off every rotation, so the avatar
-            keeps facing the camera while its torso turns a little about
-            it; the translation, in the same frame and with its own moving
-            mean off, is the hips' sway and bob (hips.x, hips.y, hu,
-            clipped). Fingers (30 bones, where the avatar has them) are
+            ideal T. Root: every rotation is taken in the actor's own pelvis
+            frame (the global orientation, per frame) turned by the clip's
+            habitual spine posture (the median pitch and tilt of spine3
+            against the pelvis), so the torso values are the spine's
+            motion against the pelvis: the mocap's global frame (a pelvis
+            carried tilted, a whole-body turn) is not torso pitch or yaw,
+            and the avatar keeps facing the camera. (Relative to the world
+            or a moving-mean facing, the torso of the first real clip sat
+            at pitch -12 deg with yaw swings of +-35 deg.) The translation,
+            in the facing frame -- spine3's heading, a circular moving mean
+            over --facing-window seconds (0: the clip's mean) -- with its
+            own moving mean off, is the hips' sway and bob (hips.x, hips.y,
+            hu, clipped). Fingers (30 bones, where the avatar has them) are
             carried for the preview only; --fingers stores them. The legs
             are not used. An up axis that is not y (a z-up clip) is found
             from the spine and turned (reported).
@@ -65,7 +71,9 @@ in the format `flow.dataexport action` writes, so scripts/extract_hidden.py
             measured on the fitted values before the limits clamp them: arm
             penetration into the trunk / head and arm into arm (the body's
             collision model, hu), the palms' speed (hu/s), how far a joint
-            is past its limit (deg; the shoulder's extension too). A frame
+            is past its limit (deg; the shoulder's extension too; the
+            wrists are clamped but not counted, their roll is the forearm's
+            twist and the VRM has none). A frame
             past --max-pen / --max-speed / --max-limit is bad, with
             --bad-pad s around it; utterances are cut at bad runs and the
             pieces left kept if they are --min-seg s or longer. Rotation
@@ -74,6 +82,16 @@ in the format `flow.dataexport action` writes, so scripts/extract_hidden.py
             gross cases (vrmbody's PEN_TOL, 0.02 hu, is a solver's
             tolerance, not a filter), and the report has the distributions
             to choose from.
+  contacts  Before the filter measures, an arm deeper than --contact-pen hu
+            in the trunk / head or the other arm is solved again with
+            VRMBody's collision-aware IK (arm_ik) for the palm where the
+            mocap put it -- on the surface if the palm is inside -- with the
+            swivel nearest the mocap arm: contact-aware retargeting
+            (docs/research.md), the hand on the belly stays on the belly.
+            Keyframes every 3 frames over the penetrating runs, the arm's
+            change interpolated from zero 0.2 s either side (no pops),
+            further passes for what is still deep; --no-contact-fix keeps
+            the rotation transfer as it is.
   segments  One utterance per row, cut at silences of --gap s between words
             (the TextGrid), 3-15 s (--min-seg, --max-seg: longer ones split
             at the longest silence near the middle, shorter ones merged
@@ -190,7 +208,8 @@ SILENCE = {"", "sp", "sil", "spn", "sp1", "<unk>", "<eps>", "<sil>", "<sp>",
 # Defaults of the filter and the segmenter (module docstring).
 CFG = dict(facing_window=20.0, max_pen=0.10, max_speed=25.0, max_limit=25.0,
            bad_pad=0.15, min_seg=3.0, max_seg=15.0, gap=0.35, pad=0.3,
-           hips_x_max=0.15, hips_y_max=0.08, fingers=False, check_text=True)
+           hips_x_max=0.15, hips_y_max=0.08, fingers=False, check_text=True,
+           contact_fix=True, contact_pen=0.04, contact_stride=3)
 
 
 def log(s):
@@ -854,6 +873,19 @@ def facing_yaw(G, fps, window):
     return np.degrees(np.arctan2(m[:, 1], m[:, 0]))
 
 
+def stance(G):
+    """[N, 3, 3]: the frame the avatar's torso is measured in -- the actor's
+    own pelvis (global orientation) turned by the clip's habitual spine
+    posture, the median pitch and tilt of the spine against the pelvis
+    (the lumbar curve and the way the pelvis is carried, not a gesture).
+    Whole-body turns, rocking and tilt of the pelvis are then not the
+    torso's."""
+    Pm = G[:, J["pelvis"]]
+    _y, p, t = euler_angles(np.swapaxes(Pm, 1, 2) @ G[:, J["spine3"]])
+    C = euler_batch(np.zeros(1), [np.median(p)], [np.median(t)])[0]
+    return Pm @ C
+
+
 def _split(bm, pairs):
     """vrmbody.local_rotations' split: the bones present and their shares."""
     have = [(b, w) for b, w in pairs if b in bm.bones]
@@ -991,6 +1023,11 @@ def hips_of(trans, yaw, hu, fps, window, xmax, ymax):
             np.clip(p[:, 1] / hu, -ymax, ymax))
 
 
+CONTACT_PRIOR = 250.0       # swivel: stay near the mocap arm (vb.arm_ik prior)
+CONTACT_RAMP = 0.2         # s the contact fix fades in / out over
+WRIST_KEYS = frozenset(k for s in "LR" for k in vb.WRIST[s])
+
+
 def column_spec(cols):
     """How each trajectory column comes from the fit: ("param", name),
     ("palm", side index, axis), ("hips", name) or ("nan",)."""
@@ -1078,11 +1115,114 @@ def measure(bm, val, hips, cols, fps):
     return {"traj": traj, "palms": palms, "pen": pen, "speed": speed}
 
 
+def _deglitch(pins, tol=25.0):
+    """Drops from pins ({frame: change [4]}) the keyframes whose change is
+    more than tol degrees from the line between their neighbours' changes
+    where those two agree: the solver took another swivel basin for one
+    frame. Returns the frames dropped."""
+    out = []
+    while True:
+        fr = sorted(pins)
+        for i in range(1, len(fr) - 1):
+            a, f, c = fr[i - 1], fr[i], fr[i + 1]
+            if not pins[f].any():
+                continue
+            line = pins[a] + (pins[c] - pins[a]) * (f - a) / (c - a)
+            if np.abs(pins[f] - line).max() > tol and \
+                    np.abs(pins[c] - pins[a]).max() < tol:
+                del pins[f]
+                out.append(f)
+                break
+        else:
+            return out
+
+
+def fix_contacts(bm, val, hips, cols, fps, meas, cfg):
+    """Contact-preserving post-pass (docs/research.md, contact-aware
+    retargeting): rotation transfer keeps angles, not contacts, so a hand
+    resting on a thin actor's belly ends up inside a bulkier avatar. Where
+    an arm is deeper than cfg contact_pen in the trunk / head or in the
+    other arm, the arm is solved again by the body's own collision-aware
+    IK (VRMBody.arm_ik) for the palm where the mocap put it -- onto the
+    surface when the palm itself is inside -- with the swivel nearest the
+    mocap's own arm. Keyframes every cfg contact_stride frames over the
+    penetrating runs; the arm's four parameters are moved by the keyframes' change
+    interpolated linearly (from zero CONTACT_RAMP s either side of a run),
+    so the mocap's own motion stays on top and nothing pops. Frames still deep after that become keyframes in a
+    further pass. `val` is changed in place (the parameters the arm takes,
+    within their limits). Returns {frames: frames changed, passes,
+    keyframes}."""
+    N = len(meas["pen"])
+    base = bm.default_values()
+    orig = {k: np.array(val[k], float) for k in vb.JOINTS}
+    pal0 = meas["palms"]
+    pins = {s: {} for s in "LR"}            # frame -> change of ARM[s]
+    ban = {s: set() for s in "LR"}          # keyframes the solver flipped on
+    thr = cfg["contact_pen"]
+    pen = meas["pen"]
+    done = 0
+    ramp = max(int(round(CONTACT_RAMP * fps)), 1)
+    for stride in (max(int(cfg["contact_stride"]), 1), 1, 1):
+        hit = pen > thr
+        if not hit.any():
+            break
+        keys, edges = set(), set()
+        for a, b in runs(hit):
+            keys.update(range(a, b, stride))
+            keys.add(b - 1)
+        for a, b in runs(moving_mean(hit.astype(float), 2 * ramp + 1) > 0):
+            edges.update((a - 1, b))
+        for f in sorted(keys):
+            v = dict(base)
+            v.update({k: float(val[k][f]) for k in vb.JOINTS})
+            p = bm.penetration(v)
+            for s in "LR":
+                if f in ban[s] or max(p[f"body.{s}"], p["hands"]) <= thr:
+                    continue
+                want = dict(zip("xyz", map(float, pal0[f, "LR".index(s)])))
+                mocap = {k: float(orig[k][f]) for k in vb.ARM[s]}
+                sol = bm.arm_ik(s, want, {**v, **mocap}, CONTACT_PRIOR)
+                v.update(sol)
+                for k in vb.ARM[s]:
+                    val[k][f] = float(np.clip(
+                        sol[k], bm.params[k]["min"], bm.params[k]["max"]))
+                pins[s][f] = np.array([val[k][f] - orig[k][f]
+                                       for k in vb.ARM[s]])
+                p = bm.penetration({**v, **{k: val[k][f] for k in vb.ARM[s]}})
+        # zero change just outside each run, so the change fades in / out
+        for s in "LR":
+            for g in edges:
+                if 0 <= g < N and g not in keys and pins[s]:
+                    pins[s].setdefault(g, np.zeros(4))
+            ban[s].update(_deglitch(pins[s]))
+            if not pins[s]:
+                continue
+            fr = np.array(sorted(pins[s]))
+            ch = np.array([pins[s][f] for f in fr])
+            for i, k in enumerate(vb.ARM[s]):
+                new = orig[k] + np.interp(np.arange(N), fr, ch[:, i])
+                val[k][:] = np.clip(new, bm.params[k]["min"],
+                                    bm.params[k]["max"])
+        done += 1
+        pen = measure(bm, val, hips, cols, fps)["pen"]
+    changed = np.zeros(N, bool)
+    for s in "LR":
+        for k in vb.ARM[s]:
+            changed |= np.abs(val[k] - orig[k]) > 1e-6
+    return {"frames": int(changed.sum()), "passes": done,
+            "pen_before": stat(meas["pen"]),
+            "keyframes": int(sum(len(x) for x in pins.values()))}
+
+
 def limit_excess(fit_, bm):
     """[N] degrees: the most any joint is past its limit before the clamp
-    (shoulders' units are 12 deg), and the shoulder's extension."""
+    (shoulders' units are 12 deg), and the shoulder's extension. The wrists
+    are clamped but not counted: their roll is the forearm's twist (the VRM
+    has no forearm twist bone), mocap's to excess and harmless clamped."""
     ex = np.zeros(len(fit_["ext"]))
     for k, x in fit_["raw"].items():
+        if k in WRIST_KEYS:
+            continue
         lo, hi = float(bm.params[k]["min"]), float(bm.params[k]["max"])
         d = np.maximum(np.maximum(lo - x, x - hi), 0.0)
         if k.startswith("shoulder"):
@@ -1101,8 +1241,7 @@ def retarget_clip(av, clip, cfg):
         G = world_rotations(clip["poses"], up)
         clip = dict(clip, trans=clip["trans"] @ up.T)
     yaw = facing_yaw(G, clip["fps"], cfg["facing_window"])
-    Fr = rot(1, -yaw)
-    G = Fr[:, None] @ G
+    G = np.swapaxes(stance(G), 1, 2)[:, None] @ G
     fit_ = fit(bm, G, av.fingers if cfg["fingers"] else ())
     hx, hy = hips_of(clip["trans"], yaw, bm.hu, clip["fps"],
                      cfg["facing_window"], cfg["hips_x_max"],
@@ -1112,9 +1251,15 @@ def retarget_clip(av, clip, cfg):
     except ImportError:
         from flow import dataset as ds
     cols = ds.traj_vars(bm)
-    meas = measure(bm, fit_["val"], {"hips.x": hx, "hips.y": hy}, cols,
-                   clip["fps"])
-    return {"fit": fit_, "meas": meas, "cols": cols, "up": up_name,
+    hips = {"hips.x": hx, "hips.y": hy}
+    meas = measure(bm, fit_["val"], hips, cols, clip["fps"])
+    contact = None
+    if cfg.get("contact_fix", True) and bm.coll:
+        contact = fix_contacts(bm, fit_["val"], hips, cols, clip["fps"],
+                               meas, cfg)
+        if contact["frames"]:
+            meas = measure(bm, fit_["val"], hips, cols, clip["fps"])
+    return {"fit": fit_, "meas": meas, "contact": contact, "cols": cols, "up": up_name,
             "yaw": yaw, "hips": (hx, hy),
             "limit": limit_excess(fit_, bm)}
 
@@ -1294,6 +1439,9 @@ def process_clip(av, info, cfg, parser=None, log=log):
            "head_clamp_deg": stat(fit_["head_clamp"]),
            "penetration_hu": dict(stat(meas["pen"]), over_tol=round(float(
                (meas["pen"] > vb.PEN_TOL).mean()), 4)),
+           "contact_fix": ({k: rt["contact"][k] for k in (
+               "frames", "keyframes", "passes", "pen_before")}
+               if rt["contact"] else None),
            "palm_speed_hu_s": stat(meas["speed"]),
            "limit_excess_deg": stat(rt["limit"]),
            "limit_worst": {k: round(float(max(
@@ -1717,8 +1865,14 @@ def parse(argv):
     r.add_argument("--allow-outside-data", action="store_true")
     r.add_argument("--fingers", action="store_true",
                    help="store the fingers' rotations too (preview)")
-    for k, h in (("facing_window", "s of the facing's moving mean (0: the "
-                  "clip's mean)"), ("max_pen", "hu: a frame deeper is bad"),
+    r.add_argument("--no-contact-fix", dest="contact_fix",
+                   action="store_false",
+                   help="keep the rotation transfer's arm-in-body poses "
+                   "(default: re-solve the arms that penetrate)")
+    for k, h in (("facing_window", "s of the facing's moving mean (the hips' "
+                  "frame; 0: the clip's mean)"),
+                 ("contact_pen", "hu: an arm deeper than this is re-solved"),
+                 ("max_pen", "hu: a frame deeper is bad"),
                  ("max_speed", "hu/s: a palm faster is bad"),
                  ("max_limit", "deg: a joint further past its limit is bad"),
                  ("bad_pad", "s of bad around a bad frame"),

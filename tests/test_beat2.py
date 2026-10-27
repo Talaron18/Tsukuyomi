@@ -423,7 +423,8 @@ def test_facing_and_up_axis(seed):
     n = 150
     wob = np.radians(8) * np.sin(np.linspace(0, 12, n))
     p = pose(n, left_elbow=aa("y", -50))
-    p[:, 0, 1] = np.radians(70) + wob               # turned 70 deg, wobbling
+    p[:, 0, 1] = np.radians(70)                     # turned 70 deg
+    p[:, J["spine3"], 1] = wob                      # the torso wobbling on it
     cfg = dict(b2.CFG, facing_window=0)
     clip = {"poses": p, "trans": np.zeros((n, 3)), "fps": 30.0}
     rt = b2.retarget_clip(seed, clip, cfg)
@@ -434,7 +435,7 @@ def test_facing_and_up_axis(seed):
         np.degrees(wob).std(), rel=0.1)
     # the same wobble, not turned: the same hands
     q = pose(n, left_elbow=aa("y", -50))
-    q[:, 0, 1] = wob
+    q[:, J["spine3"], 1] = wob
     rq = b2.retarget_clip(seed, dict(clip, poses=q), cfg)
     assert np.abs(rt["meas"]["palms"] - rq["meas"]["palms"])[:, 0].max() < 0.1
     # a z-up clip (root turned y -> z) is found and turned back
@@ -448,6 +449,119 @@ def test_facing_and_up_axis(seed):
         "y", -50))), cfg)
     assert abs(rz["meas"]["palms"] - r0["meas"]["palms"]).max() < 0.05
     del rng
+
+
+def test_the_global_frame_is_not_the_torso(seed):
+    """A pelvis carried tilted, or a body turning as a whole, is the actor's
+    stance, not a bent or twisted torso; the spine's own motion still is."""
+    n = 300
+    t = np.linspace(0, 1, n)
+    clip = {"trans": np.zeros((n, 3)), "fps": 30.0}
+    base = pose(n, left_elbow=aa("y", -50))
+    r0 = b2.retarget_clip(seed, dict(clip, poses=base), b2.CFG)
+    tilt = base.copy()
+    tilt[:, 0] = np.stack([np.radians(-11) + np.radians(4) * np.sin(9 * t),
+                           np.radians(40) * np.sin(2.5 * t),
+                           np.radians(5) * np.cos(7 * t)], 1)
+    r1 = b2.retarget_clip(seed, dict(clip, poses=tilt), b2.CFG)
+    for k in ("torso.pitch", "torso.yaw", "torso.tilt"):
+        assert abs(r1["fit"]["raw"][k]).max() < 0.5, k
+    assert np.abs(r1["meas"]["palms"] - r0["meas"]["palms"]).max() < 0.02
+    # a habitual lean of the spine against the pelvis is the posture
+    lean = base.copy()
+    lean[:, J["spine2"]] = aa("x", 20)
+    rl = b2.retarget_clip(seed, dict(clip, poses=lean), b2.CFG)
+    assert abs(rl["fit"]["raw"]["torso.pitch"]).max() < 0.5
+    # while the spine's own swing about it is the torso's
+    swing = lean.copy()
+    swing[:, J["spine2"], 0] += np.radians(10) * np.sin(9 * t)
+    swing[:, J["spine2"], 1] = np.radians(10) * np.sin(7 * t)
+    rs = b2.retarget_clip(seed, dict(clip, poses=swing), b2.CFG)
+    assert np.ptp(rs["fit"]["raw"]["torso.pitch"]) > 10
+    assert np.ptp(rs["fit"]["raw"]["torso.yaw"]) > 10
+
+
+def test_wrist_roll_is_clamped_not_counted(seed):
+    bm = seed.bm
+    f = fit_pose(seed, pose(1, left_wrist=aa("x", 70)))
+    lo = float(bm.params["hand.L.roll"]["min"])
+    assert f["raw"]["hand.L.roll"][0] < lo - 20      # the mocap's forearm twist
+    assert f["val"]["hand.L.roll"][0] == lo          # clamped
+    assert b2.limit_excess(f, bm)[0] == 0.0
+    # the elbow's limits still count
+    g = fit_pose(seed, pose(1, left_shoulder=aa("z", 150)))
+    assert b2.limit_excess(g, bm)[0] > 20
+
+
+def test_mirrored_mocap_gives_mirrored_wrists(seed):
+    rng = np.random.default_rng(3)
+    p = pose(40)
+    q = pose(40)
+    for side in ("left", "right"):
+        for j in ("collar", "shoulder", "elbow", "wrist"):
+            p[:, J[f"{side}_{j}"]] = rng.normal(0, 0.3, (40, 3))
+    for j in ("collar", "shoulder", "elbow", "wrist"):
+        q[:, J[f"left_{j}"]] = p[:, J[f"right_{j}"]] * [1, -1, -1]
+        q[:, J[f"right_{j}"]] = p[:, J[f"left_{j}"]] * [1, -1, -1]
+    a, b = fit_pose(seed, p), fit_pose(seed, q)
+    for k in ("roll", "flex", "dev"):
+        assert np.allclose(a["raw"][f"hand.L.{k}"], b["raw"][f"hand.R.{k}"])
+
+
+def penetrating_forearm(bm):
+    """Left arm values whose forearm is through the trunk while the palm is
+    clear of it (a hand resting by the belly of a thin actor, on a bulkier
+    body)."""
+    v = {**bm.default_values(), "upper_arm.L.elev": 10,
+         "upper_arm.L.plane": 75, "upper_arm.L.twist": -60,
+         "forearm.L.bend": 90}
+    return v
+
+
+def test_an_arm_through_the_trunk_is_pushed_out_with_the_palm_kept(seed):
+    from flow import dataset as ds
+    bm = seed.bm
+    v = penetrating_forearm(bm)
+    assert bm.penetration(v)["body.L"] > 0.15
+    assert bm.body_sdf(bm.palms(v)["L"][None])[0] > 0.1      # palm is clear
+    n = 40
+    val = {k: np.full(n, v[k]) for k in vb.JOINTS}
+    # a run in the middle: the mocap arm comes into the body and leaves it
+    ramp = np.clip(1 - np.abs(np.arange(n) - 20) / 10, 0, 1)
+    rest = bm.default_values()
+    for k in vb.ARM["L"]:
+        val[k] = rest[k] + ramp * (v[k] - rest[k])
+    hips = {"hips.x": np.zeros(n), "hips.y": np.zeros(n)}
+    cols = ds.traj_vars(bm)
+    m0 = b2.measure(bm, val, hips, cols, 30.0)
+    assert m0["pen"].max() > 0.15
+    before = {k: x.copy() for k, x in val.items()}
+    fc = b2.fix_contacts(bm, val, hips, cols, 30.0, m0, dict(b2.CFG))
+    m1 = b2.measure(bm, val, hips, cols, 30.0)
+    assert fc["frames"] > 0
+    assert m1["pen"].max() <= b2.CFG["contact_pen"]
+    # the palm is where the mocap put it, the right arm untouched, the arm
+    # changes without a pop
+    moved = np.linalg.norm(m1["palms"] - m0["palms"], axis=2)
+    assert moved[20].max() <= 0.05 and moved.max() < 0.1
+    for k in vb.ARM["R"]:
+        assert np.array_equal(val[k], before[k])
+    for k in vb.ARM["L"]:
+        assert np.abs(np.diff(val[k])).max() < 25
+    assert m1["speed"].max() < 25.0
+    assert (val["upper_arm.L.twist"] != before["upper_arm.L.twist"]).any()
+    # the first and last frames, with the arm at rest, are as they were
+    assert val["upper_arm.L.elev"][0] == before["upper_arm.L.elev"][0]
+
+
+def test_the_contact_fix_is_off_with_the_flag_and_cheap_when_clear(seed):
+    n = 60
+    p = pose(n, left_elbow=aa("y", -50))
+    clip = {"poses": p, "trans": np.zeros((n, 3)), "fps": 30.0}
+    r = b2.retarget_clip(seed, clip, b2.CFG)
+    assert r["contact"]["frames"] == 0
+    r = b2.retarget_clip(seed, clip, dict(b2.CFG, contact_fix=False))
+    assert r["contact"] is None
 
 
 def test_hips_follow_the_translation_in_the_facing_frame(seed):

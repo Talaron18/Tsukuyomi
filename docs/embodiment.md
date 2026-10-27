@@ -552,11 +552,17 @@ is the check (below).
   lands on the mocap forearm, the wrist from the rest; forearm roll goes to
   the wrist), each joint measured against what the joints above it achieved
   after their limits. The avatar's own T-pose droop (`align`) drops out.
-- **Root.** The torso's heading, a circular moving mean over 20 s
-  (`--facing-window`; 0 = the clip's mean), is taken off everything, so the
-  avatar faces the camera and only turns about it; the translation in that
-  frame, high-passed, is `hips.x` / `hips.y` (clipped to 0.15 / 0.08 hu).
-  A z-up clip is detected from the spine and turned. Legs unused.
+- **Root.** Everything is taken in the actor's own pelvis frame (global
+  orientation, per frame) turned by the clip's habitual spine posture (median
+  pitch / tilt of spine3 against the pelvis), so the torso values are the
+  spine's motion against the pelvis, not the mocap's global frame: on the
+  first real clip (Seed-san) the torso sat at pitch -22 / -12 / -5 deg
+  (p5 / p50 / p95, range +-15) and yaw -40 / +5 / +29 (range +-25) until
+  this, a tilted pelvis and whole-body turns read as torso lean and twist;
+  now -8 / 0 / +7 and -5 / +1 / +8. The translation, in the frame of the
+  torso's heading (circular moving mean over 20 s, `--facing-window`; 0 =
+  the clip's mean), high-passed, is `hips.x` / `hips.y` (clipped to 0.15 /
+  0.08 hu). A z-up clip is detected from the spine and turned. Legs unused.
 - **Variables.** The same columns the data engine records for the avatar
   (`flow.dataset.traj_vars`), from the body's forward model; gaze, eyes,
   brows, mouth and visemes are NaN (the loss masks them; the voice owns the
@@ -564,9 +570,21 @@ is the check (below).
 - **Filter** (GMR's lesson). Per frame, before the limits clamp: arm in
   trunk / head and arm in arm (the collision model), palm speed, joint past
   its limit. Bad frames (defaults: 0.10 hu, 25 hu/s, 25 deg, 0.15 s around)
-  cut the utterances; pieces under 3 s are dropped. Rotation transfer keeps
-  angles, not contacts, so a thin actor's hand on the belly is inside a
-  bulkier avatar: look at `report` and tune `--max-pen` before training.
+  cut the utterances; pieces under 3 s are dropped. The wrists are clamped
+  but not counted as past a limit (their roll is the forearm's twist, the VRM
+  has no forearm bone for it; on the real clip they were most of the "52 deg"
+  limit excess).
+- **Contacts.** Rotation transfer keeps angles, not contacts, so a thin
+  actor's hand on the belly is inside a bulkier avatar (real clip: arm in
+  body 0.05 / 0.17 / 0.25 hu at p50 / p90 / p99, 30% of frames over 0.10). Arms
+  deeper than `--contact-pen` (0.04 hu) are solved again with the body's
+  collision-aware IK for the palm where the mocap put it (onto the surface
+  when the palm is inside), the swivel nearest the mocap arm, on keyframes
+  every 3 frames, the change interpolated and faded in and out over 0.2 s
+  (contact-aware retargeting, docs/research.md). Real clip: 0.01 / 0.02 /
+  0.03 hu, palm moved 0.04 hu (median) where it was changed, palm speed p99
+  unchanged. `--no-contact-fix` turns it off. Look at `report` and tune
+  `--max-pen` before training.
 - **Segments**: one utterance per row (cut at 0.35 s silences between
   words, 3-15 s, 0.3 s of motion either side); `spoken` = the words joined,
   per-character times from the word times, relative to the segment.

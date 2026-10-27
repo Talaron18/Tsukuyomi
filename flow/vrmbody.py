@@ -1608,13 +1608,16 @@ class VRMBody(fb.BodyModel):
                 why[s] = "that is inside your body: the hand stops on it"
         return {k: vals[k] for s in want for k in ARM[s] + WRIST[s]}, why
 
-    def arm_ik(self, s, want: dict, values: dict) -> dict:
+    def arm_ik(self, s, want: dict, values: dict, prior=1.0) -> dict:
         """Joint angles of arm s putting its palm at `want` ({x, y, z},
         hu; missing components as module docstring), from the pose
         `values` (torso, shoulders, the other arm, the arm's current
-        angles), out of the body and the other arm."""
+        angles), out of the body and the other arm. prior scales how much
+        the swivel stays near the arm's current angles against the
+        elbow's own preference (POLE): large, the arm that clears the body
+        with the least change."""
         sol, _info = self._arm_solve(s, self._hand_target(s, want, values),
-                                     values)
+                                     values, prior=prior)
         return sol
 
     def _box_clear(self, x, y, z):
@@ -1687,7 +1690,8 @@ class VRMBody(fb.BodyModel):
             tb[2] = z
         return tb
 
-    def _arm_solve(self, s, tb, values, other_mode="escape", orient=None):
+    def _arm_solve(self, s, tb, values, other_mode="escape", orient=None,
+                   prior=1.0):
         """Two-bone IK for arm s onto the palm target tb (hu): the elbow
         bend from the shoulder-palm distance (exact, by bisection on the
         actual bone vectors), then the rotation of the whole arm onto the
@@ -1725,6 +1729,7 @@ class VRMBody(fb.BodyModel):
         e0, p0, w0, _b0 = (values[k] for k in ARM[s])
         lo_b, hi_b = (self.params[ARM[s][3]]["min"],
                       self.params[ARM[s][3]]["max"])
+        prior_w = W_PRIOR * prior
         psi = np.radians(-180.0 + 360.0 * np.arange(SWIVEL_STEPS)
                          / SWIVEL_STEPS)
 
@@ -1792,7 +1797,7 @@ class VRMBody(fb.BodyModel):
                     pen_a = self._pair_pen_batch(caps, other)
             cost = 1e6 * viol + W_PEN * (np.maximum(pen_b - PEN_TOL, 0)
                                          + np.maximum(pen_a - PEN_TOL, 0)) \
-                + W_POLE * pc + W_PRIOR * prior + W_TWIST * (w / 70.0) ** 2
+                + W_POLE * pc + prior_w * prior + W_TWIST * (w / 70.0) ** 2
             # A wrist past its limits leaves the hand short of `orient`:
             # weighed below the body (a hand turned a little off is better
             # than one in the chest), above the elbow's preferences.
