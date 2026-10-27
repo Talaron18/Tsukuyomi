@@ -1,0 +1,19 @@
+{
+ "model": "/home/syarol/tsk-runs/sft/q8/merged",
+ "adapter": null,
+ "family": "hf",
+ "layers": [
+  36,
+  29,
+  18
+ ],
+ "layers_arg": "-1,-8,18",
+ "dim": 1024,
+ "context": "turn",
+ "text": "reply",
+ "proj": 1024,
+ "seed": 0,
+ "turns": 10891,
+ "tokens": 1416088,
+ "export": "/mnt/e/Tsukuyomi/data/datagen/r1/export/action"
+}
