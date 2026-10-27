@@ -1,0 +1,19 @@
+{
+ "model": "/home/syarol/tsk-runs/sft/q8/merged",
+ "adapter": null,
+ "family": "qwen3",
+ "layers": [
+  36,
+  29,
+  18
+ ],
+ "layers_arg": "-1,-8,18",
+ "dim": 1024,
+ "context": "turn",
+ "text": "spoken",
+ "proj": 1024,
+ "seed": 0,
+ "turns": 10891,
+ "tokens": 291983,
+ "export": "/mnt/e/Tsukuyomi/data/datagen/r1/export/action"
+}

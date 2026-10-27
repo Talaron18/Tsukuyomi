@@ -1,0 +1,170 @@
+{
+ "turns": 1076,
+ "normalised_mse": {
+  "head": 1.07151,
+  "rest": 1.17691,
+  "mean": 1.23918
+ },
+ "per_variable": {
+  "brow.L.angle": {
+   "head": 0.000836,
+   "rest": 0.000842,
+   "mean": 0.000842
+  },
+  "brow.L.form": {
+   "head": 0.00309,
+   "rest": 0.003396,
+   "mean": 0.003389
+  },
+  "brow.L.lift": {
+   "head": 0.015538,
+   "rest": 0.019411,
+   "mean": 0.01856
+  },
+  "brow.L.slide": {
+   "head": 1.2e-05,
+   "rest": 1.2e-05,
+   "mean": 1.2e-05
+  },
+  "brow.R.angle": {
+   "head": 0.000768,
+   "rest": 0.000774,
+   "mean": 0.000773
+  },
+  "brow.R.form": {
+   "head": 0.002981,
+   "rest": 0.00328,
+   "mean": 0.003273
+  },
+  "brow.R.lift": {
+   "head": 0.014052,
+   "rest": 0.017461,
+   "mean": 0.016812
+  },
+  "brow.R.slide": {
+   "head": 6e-06,
+   "rest": 0.0,
+   "mean": 0.0
+  },
+  "cheek.blush": {
+   "head": 0.010767,
+   "rest": 0.008552,
+   "mean": 0.241936
+  },
+  "eye.L.open": {
+   "head": 0.000957,
+   "rest": 0.000984,
+   "mean": 0.000982
+  },
+  "eye.L.smile": {
+   "head": 0.017881,
+   "rest": 0.020742,
+   "mean": 0.019712
+  },
+  "eye.R.open": {
+   "head": 0.000896,
+   "rest": 0.000925,
+   "mean": 0.000923
+  },
+  "eye.R.smile": {
+   "head": 0.017953,
+   "rest": 0.020839,
+   "mean": 0.0198
+  },
+  "gaze.x": {
+   "head": 0.015473,
+   "rest": 0.016375,
+   "mean": 0.016361
+  },
+  "gaze.y": {
+   "head": 0.005724,
+   "rest": 0.007307,
+   "mean": 0.007164
+  },
+  "hand.L.x": {
+   "head": 0.011627,
+   "rest": 0.013162,
+   "mean": 0.01772
+  },
+  "hand.L.y": {
+   "head": 0.209022,
+   "rest": 0.287062,
+   "mean": 0.402033
+  },
+  "hand.L.z": {
+   "head": 0.032765,
+   "rest": 0.037489,
+   "mean": 0.034238
+  },
+  "hand.R.x": {
+   "head": 0.016141,
+   "rest": 0.020037,
+   "mean": 0.02976
+  },
+  "hand.R.y": {
+   "head": 0.174573,
+   "rest": 0.24043,
+   "mean": 0.390768
+  },
+  "hand.R.z": {
+   "head": 0.024011,
+   "rest": 0.027585,
+   "mean": 0.02592
+  },
+  "head.pitch": {
+   "head": 3.773713,
+   "rest": 4.472455,
+   "mean": 4.475273
+  },
+  "head.tilt": {
+   "head": 7.497727,
+   "rest": 8.108578,
+   "mean": 7.895705
+  },
+  "head.yaw": {
+   "head": 10.303132,
+   "rest": 11.344054,
+   "mean": 11.301138
+  },
+  "hips.x": {
+   "head": 2e-06,
+   "rest": 2e-06,
+   "mean": 2e-06
+  },
+  "hips.y": {
+   "head": 2e-06,
+   "rest": 2e-06,
+   "mean": 2e-06
+  },
+  "shoulder.L.up": {
+   "head": 0.000165,
+   "rest": 0.000165,
+   "mean": 0.000165
+  },
+  "shoulder.R.up": {
+   "head": 0.000275,
+   "rest": 0.000276,
+   "mean": 0.000275
+  },
+  "shoulders.up": {
+   "head": 0.021068,
+   "rest": 0.021411,
+   "mean": 0.021247
+  },
+  "torso.pitch": {
+   "head": 2.179727,
+   "rest": 2.393849,
+   "mean": 2.308539
+  },
+  "torso.tilt": {
+   "head": 2.762631,
+   "rest": 3.169943,
+   "mean": 3.067808
+  },
+  "torso.yaw": {
+   "head": 1.458291,
+   "rest": 1.573801,
+   "mean": 1.55389
+  }
+ }
+}

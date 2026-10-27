@@ -1,0 +1,113 @@
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:04<00:12,  4.29s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:08<00:08,  4.22s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:13<00:04,  4.72s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:14<00:00,  3.34s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:14<00:00,  3.75s/it]
+The tokenizer you are loading from '/home/syarol/tsk-runs/sft/q8/merged' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+hf: /home/syarol/tsk-runs/sft/q8/merged on cuda in 17.0s
+hidden: 100/10891 turns, 3214 tokens, 0.27 s a turn
+hidden: 200/10891 turns, 6483 tokens, 0.25 s a turn
+hidden: 300/10891 turns, 9637 tokens, 0.25 s a turn
+hidden: 400/10891 turns, 12603 tokens, 0.24 s a turn
+hidden: 500/10891 turns, 15479 tokens, 0.24 s a turn
+hidden: 600/10891 turns, 18434 tokens, 0.24 s a turn
+hidden: 700/10891 turns, 21495 tokens, 0.24 s a turn
+hidden: 800/10891 turns, 24567 tokens, 0.24 s a turn
+hidden: 900/10891 turns, 27518 tokens, 0.24 s a turn
+hidden: 1000/10891 turns, 30842 tokens, 0.24 s a turn
+hidden: 1100/10891 turns, 34191 tokens, 0.24 s a turn
+hidden: 1200/10891 turns, 37031 tokens, 0.24 s a turn
+hidden: 1300/10891 turns, 39612 tokens, 0.24 s a turn
+hidden: 1400/10891 turns, 41867 tokens, 0.24 s a turn
+hidden: 1500/10891 turns, 43964 tokens, 0.23 s a turn
+hidden: 1600/10891 turns, 46153 tokens, 0.23 s a turn
+hidden: 1700/10891 turns, 48307 tokens, 0.23 s a turn
+hidden: 1800/10891 turns, 50391 tokens, 0.23 s a turn
+hidden: 1900/10891 turns, 52633 tokens, 0.23 s a turn
+hidden: 2000/10891 turns, 54816 tokens, 0.23 s a turn
+hidden: 2100/10891 turns, 57063 tokens, 0.22 s a turn
+hidden: 2200/10891 turns, 59236 tokens, 0.22 s a turn
+hidden: 2300/10891 turns, 61523 tokens, 0.22 s a turn
+hidden: 2400/10891 turns, 63567 tokens, 0.22 s a turn
+hidden: 2500/10891 turns, 66039 tokens, 0.22 s a turn
+hidden: 2600/10891 turns, 68955 tokens, 0.22 s a turn
+hidden: 2700/10891 turns, 71965 tokens, 0.22 s a turn
+hidden: 2800/10891 turns, 74798 tokens, 0.22 s a turn
+hidden: 2900/10891 turns, 77780 tokens, 0.22 s a turn
+hidden: 3000/10891 turns, 80661 tokens, 0.22 s a turn
+hidden: 3100/10891 turns, 83741 tokens, 0.22 s a turn
+hidden: 3200/10891 turns, 86732 tokens, 0.22 s a turn
+hidden: 3300/10891 turns, 89769 tokens, 0.22 s a turn
+hidden: 3400/10891 turns, 92905 tokens, 0.22 s a turn
+hidden: 3500/10891 turns, 95795 tokens, 0.23 s a turn
+hidden: 3600/10891 turns, 98654 tokens, 0.23 s a turn
+hidden: 3700/10891 turns, 101530 tokens, 0.23 s a turn
+hidden: 3800/10891 turns, 104441 tokens, 0.23 s a turn
+hidden: 3900/10891 turns, 107209 tokens, 0.23 s a turn
+hidden: 4000/10891 turns, 110438 tokens, 0.23 s a turn
+hidden: 4100/10891 turns, 113400 tokens, 0.23 s a turn
+hidden: 4200/10891 turns, 116227 tokens, 0.23 s a turn
+hidden: 4300/10891 turns, 119388 tokens, 0.23 s a turn
+hidden: 4400/10891 turns, 122313 tokens, 0.23 s a turn
+hidden: 4500/10891 turns, 125257 tokens, 0.23 s a turn
+hidden: 4600/10891 turns, 128332 tokens, 0.22 s a turn
+hidden: 4700/10891 turns, 131412 tokens, 0.22 s a turn
+hidden: 4800/10891 turns, 134309 tokens, 0.22 s a turn
+hidden: 4900/10891 turns, 136869 tokens, 0.22 s a turn
+hidden: 5000/10891 turns, 138945 tokens, 0.22 s a turn
+hidden: 5100/10891 turns, 141101 tokens, 0.22 s a turn
+hidden: 5200/10891 turns, 143106 tokens, 0.22 s a turn
+hidden: 5300/10891 turns, 145173 tokens, 0.22 s a turn
+hidden: 5400/10891 turns, 147264 tokens, 0.22 s a turn
+hidden: 5500/10891 turns, 149249 tokens, 0.22 s a turn
+hidden: 5600/10891 turns, 151294 tokens, 0.22 s a turn
+hidden: 5700/10891 turns, 153445 tokens, 0.22 s a turn
+hidden: 5800/10891 turns, 155660 tokens, 0.22 s a turn
+hidden: 5900/10891 turns, 157912 tokens, 0.22 s a turn
+hidden: 6000/10891 turns, 160271 tokens, 0.22 s a turn
+hidden: 6100/10891 turns, 163044 tokens, 0.22 s a turn
+hidden: 6200/10891 turns, 165707 tokens, 0.22 s a turn
+hidden: 6300/10891 turns, 168555 tokens, 0.22 s a turn
+hidden: 6400/10891 turns, 171038 tokens, 0.22 s a turn
+hidden: 6500/10891 turns, 173942 tokens, 0.22 s a turn
+hidden: 6600/10891 turns, 176729 tokens, 0.22 s a turn
+hidden: 6700/10891 turns, 179610 tokens, 0.22 s a turn
+hidden: 6800/10891 turns, 182354 tokens, 0.22 s a turn
+hidden: 6900/10891 turns, 185254 tokens, 0.22 s a turn
+hidden: 7000/10891 turns, 188033 tokens, 0.22 s a turn
+hidden: 7100/10891 turns, 190754 tokens, 0.22 s a turn
+hidden: 7200/10891 turns, 193749 tokens, 0.22 s a turn
+hidden: 7300/10891 turns, 196540 tokens, 0.22 s a turn
+hidden: 7400/10891 turns, 199323 tokens, 0.22 s a turn
+hidden: 7500/10891 turns, 202097 tokens, 0.22 s a turn
+hidden: 7600/10891 turns, 204959 tokens, 0.22 s a turn
+hidden: 7700/10891 turns, 207612 tokens, 0.22 s a turn
+hidden: 7800/10891 turns, 210129 tokens, 0.22 s a turn
+hidden: 7900/10891 turns, 213140 tokens, 0.22 s a turn
+hidden: 8000/10891 turns, 215977 tokens, 0.22 s a turn
+hidden: 8100/10891 turns, 218872 tokens, 0.22 s a turn
+hidden: 8200/10891 turns, 221673 tokens, 0.22 s a turn
+hidden: 8300/10891 turns, 224464 tokens, 0.22 s a turn
+hidden: 8400/10891 turns, 227242 tokens, 0.22 s a turn
+hidden: 8500/10891 turns, 229411 tokens, 0.22 s a turn
+hidden: 8600/10891 turns, 231640 tokens, 0.22 s a turn
+hidden: 8700/10891 turns, 234033 tokens, 0.22 s a turn
+hidden: 8800/10891 turns, 236589 tokens, 0.22 s a turn
+hidden: 8900/10891 turns, 238855 tokens, 0.22 s a turn
+hidden: 9000/10891 turns, 241395 tokens, 0.22 s a turn
+hidden: 9100/10891 turns, 243795 tokens, 0.22 s a turn
+hidden: 9200/10891 turns, 246247 tokens, 0.22 s a turn
+hidden: 9300/10891 turns, 248497 tokens, 0.22 s a turn
+hidden: 9400/10891 turns, 250509 tokens, 0.22 s a turn
+hidden: 9500/10891 turns, 252539 tokens, 0.22 s a turn
+hidden: 9600/10891 turns, 254803 tokens, 0.22 s a turn
+hidden: 9700/10891 turns, 257191 tokens, 0.22 s a turn
+hidden: 9800/10891 turns, 260035 tokens, 0.22 s a turn
+hidden: 9900/10891 turns, 262816 tokens, 0.22 s a turn
+hidden: 10000/10891 turns, 265928 tokens, 0.22 s a turn
+hidden: 10100/10891 turns, 268825 tokens, 0.22 s a turn
+hidden: 10200/10891 turns, 271748 tokens, 0.22 s a turn
+hidden: 10300/10891 turns, 274625 tokens, 0.22 s a turn
+hidden: 10400/10891 turns, 277452 tokens, 0.22 s a turn
+hidden: 10500/10891 turns, 280579 tokens, 0.22 s a turn
+hidden: 10600/10891 turns, 283596 tokens, 0.22 s a turn
+hidden: 10700/10891 turns, 286377 tokens, 0.22 s a turn
+hidden: 10800/10891 turns, 289150 tokens, 0.22 s a turn
+hidden: system prompt cached for 10891 turns (0 read whole)
+hidden: 10891 turns, 291983 tokens, layers [36, 29, 18], dim 1024 -> /home/syarol/tsk-runs/hidden/q8_spoken (2366s)
