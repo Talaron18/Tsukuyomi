@@ -44,7 +44,9 @@ def family_of(model, adapter=None, template=None) -> str:
         if os.path.exists(info):
             with open(info, encoding="utf-8") as fh:
                 return json.load(fh)["family"]
-    for path in (model, adapter):
+    # A merged model sits in <run>/merged: the run's train.json is a level up.
+    for path in (model, adapter, model and os.path.dirname(
+            os.path.abspath(model))):
         if path and os.path.exists(os.path.join(path, "train.json")):
             with open(os.path.join(path, "train.json"), encoding="utf-8") as fh:
                 return json.load(fh)["family"]
