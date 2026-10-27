@@ -1,0 +1,19 @@
+{
+ "model": "/home/syarol/tsk-runs/sft/q8/merged",
+ "adapter": null,
+ "family": "qwen3",
+ "layers": [
+  36,
+  29,
+  18
+ ],
+ "layers_arg": "-1,-8,18",
+ "dim": 1024,
+ "context": "none",
+ "text": "spoken",
+ "proj": 1024,
+ "seed": 0,
+ "turns": 27647,
+ "tokens": 542130,
+ "export": "/mnt/e/Tsukuyomi/data/beat2/seed-san/action"
+}

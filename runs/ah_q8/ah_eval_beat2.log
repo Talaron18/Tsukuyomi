@@ -1,0 +1,18 @@
+actionhead: 3068 turns; normalised MSE head 1.06523, rest 1.1331, mean 1.07463
+  hand.L.x         head 0.13464  rest 0.15368  mean 0.13775
+  hand.L.y         head 0.32699  rest 0.36244  mean 0.33875
+  hand.L.z         head 0.073385  rest 0.082142  mean 0.075647
+  hand.R.x         head 0.17029  rest 0.1982  mean 0.17399
+  hand.R.y         head 0.38703  rest 0.41758  mean 0.39726
+  hand.R.z         head 0.074424  rest 0.088701  mean 0.076502
+  head.pitch       head 94.354  rest 30.993  mean 95.911
+  head.tilt        head 40.168  rest 24.124  mean 40.28
+  head.yaw         head 98.737  rest 84.338  mean 100.85
+  hips.x           head 0.01464  rest 0.026903  mean 0.014626
+  hips.y           head 0.000645  rest 0.001208  mean 0.00064
+  shoulder.L.up    head 0.062406  rest 0.048424  mean 0.059731
+  shoulder.R.up    head 0.061945  rest 0.048424  mean 0.059731
+  shoulders.up     head 0.13228  rest 0.11956  mean 0.139
+  torso.pitch      head 10.614  rest 15.22  mean 10.643
+  torso.tilt       head 11.492  rest 15.499  mean 11.445
+  torso.yaw        head 18.127  rest 10.07  mean 17.465
