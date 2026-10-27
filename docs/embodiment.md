@@ -558,7 +558,8 @@ is the check (below).
 On the GPU machine (WSL, repo at `/mnt/e/Tsukuyomi`). BEAT2 is the Hugging
 Face dataset `H-Liu1997/BEAT2` (check the page for the files and the
 licence; the layout assumed is `smplxflame_30/`, `wave16k/`, `textgrid/`
-next to each other). Retargeted motion is a derivative of it: **keep the
+next to each other, and `--beat2` is the folder that holds them, or one
+level above it when only one subfolder does). Retargeted motion is a derivative of it: **keep the
 outputs out of git** (`--out` must be under `data/`, which is ignored).
 
     cd /mnt/e/Tsukuyomi

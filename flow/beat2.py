@@ -350,10 +350,23 @@ def layout(root) -> dict:
     """{poses, wave, textgrid}: BEAT2's three folders under root (the
     names of the HF dataset; the first that exists, or one starting like
     it), or SystemExit saying what is there."""
-    out = {"poses": _first_dir(root, ("smplxflame_30", "smplxflame")),
-           "wave": _first_dir(root, ("wave16k", "wave")),
-           "textgrid": _first_dir(root, ("textgrid", "TextGrid"))}
+    def look(r):
+        return {"poses": _first_dir(r, ("smplxflame_30", "smplxflame")),
+                "wave": _first_dir(r, ("wave16k", "wave")),
+                "textgrid": _first_dir(r, ("textgrid", "TextGrid"))}
+    out = look(root)
     miss = [k for k, v in out.items() if v is None]
+    if miss and os.path.isdir(root):
+        # One level down (a dataset that keeps them in a subfolder): taken
+        # when exactly one subfolder holds all three.
+        nested = [d for d in sorted(glob.glob(os.path.join(root, "*")))
+                  if os.path.isdir(d) and None not in look(d).values()]
+        if len(nested) == 1:
+            return look(nested[0])
+        if len(nested) > 1:
+            raise SystemExit(f"beat2: {len(nested)} subfolders of {root} hold "
+                             f"the three folders: {nested}; pass one as "
+                             "--beat2")
     if miss:
         have = sorted(os.listdir(root)) if os.path.isdir(root) else "no such folder"
         raise SystemExit(f"beat2: {root}: no folder for {miss} (expected "
@@ -661,44 +674,43 @@ def prosody(x, sr, fps, n, fmin=70.0, fmax=400.0, thresh=0.15) -> np.ndarray:
     tmin = max(int(sr / fmax), 2)
     L = W + tmax + 1
     xp = np.concatenate([np.zeros(W // 2), x, np.zeros(L + W)])
-    fr = np.stack([xp[ci:ci + L] for ci in c])      # [:W] is centred on ci
-    fr = fr - fr.mean(1, keepdims=True)
     nfft = 1 << int(np.ceil(np.log2(L + W)))
-    A = np.fft.rfft(fr[:, :W], nfft)
-    B = np.fft.rfft(fr, nfft)
-    r = np.fft.irfft(np.conj(A) * B, nfft)[:, :tmax + 1]   # r[t] = sum x_j x_j+t
-    cs = np.concatenate([np.zeros((len(fr), 1)),
-                         np.cumsum(fr ** 2, 1)], 1)
-    e0 = cs[:, W:W + 1]
     tau = np.arange(tmax + 1)
-    et = cs[:, W + tau] - cs[:, tau]
-    d = e0 + et - 2 * r
-    d[:, 0] = 0
-    cm = np.cumsum(d[:, 1:], 1) / np.arange(1, tmax + 1)
-    dn = np.ones_like(d)
-    dn[:, 1:] = d[:, 1:] / np.maximum(cm, 1e-12)
-    floor = 0.02 * (out[:, 0].max() + 1e-9)
-    for f in range(n):
-        if out[f, 0] < max(floor, 1e-4):
-            continue
-        row = dn[f]
-        t = tmin
-        found = -1
-        while t < tmax:
-            if row[t] < thresh:
-                while t + 1 < tmax and row[t + 1] < row[t]:
-                    t += 1
-                found = t
-                break
-            t += 1
-        if found < 0:
-            continue
-        a, b, g = row[found - 1], row[found], row[found + 1]
-        den = a - 2 * b + g
-        tt = found + (0.5 * (a - g) / den if abs(den) > 1e-12 else 0.0)
-        f0 = sr / tt
-        if fmin * 0.9 <= f0 <= fmax * 1.1:
-            out[f, 1], out[f, 2] = f0, 1.0
+    floor = max(0.02 * (out[:, 0].max() + 1e-9), 1e-4)
+    live = np.flatnonzero(out[:, 0] >= floor)       # near silence: unvoiced
+    for b0 in range(0, len(live), 1024):            # blocks: bounded memory
+        idx = live[b0:b0 + 1024]
+        fr = np.stack([xp[c[f]:c[f] + L] for f in idx])   # [:W] centred on c
+        fr = fr - fr.mean(1, keepdims=True)
+        A = np.fft.rfft(fr[:, :W], nfft)
+        B = np.fft.rfft(fr, nfft)
+        r = np.fft.irfft(np.conj(A) * B, nfft)[:, :tmax + 1]   # sum x_j x_j+t
+        cs = np.concatenate([np.zeros((len(fr), 1)),
+                             np.cumsum(fr ** 2, 1)], 1)
+        d = cs[:, W:W + 1] + (cs[:, W + tau] - cs[:, tau]) - 2 * r
+        d[:, 0] = 0
+        cm = np.cumsum(d[:, 1:], 1) / np.arange(1, tmax + 1)
+        dn = np.ones_like(d)
+        dn[:, 1:] = d[:, 1:] / np.maximum(cm, 1e-12)
+        for k, f in enumerate(idx):
+            row = dn[k]
+            t = tmin
+            found = -1
+            while t < tmax:
+                if row[t] < thresh:
+                    while t + 1 < tmax and row[t + 1] < row[t]:
+                        t += 1
+                    found = t
+                    break
+                t += 1
+            if found < 0:
+                continue
+            a, b, g = row[found - 1], row[found], row[found + 1]
+            den = a - 2 * b + g
+            tt = found + (0.5 * (a - g) / den if abs(den) > 1e-12 else 0.0)
+            f0 = sr / tt
+            if fmin * 0.9 <= f0 <= fmax * 1.1:
+                out[f, 1], out[f, 2] = f0, 1.0
     return out
 
 

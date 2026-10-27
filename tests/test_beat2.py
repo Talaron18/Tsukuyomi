@@ -737,6 +737,13 @@ def test_a_few_head_steps_on_it(exported, tmp_path):
                   "--chunk", "48", "--eval-frac", "0"])
     res = ah.train(o, log=lambda s: None)
     assert len(res["history"]) == 2
+    # the documented eval step, on this export alone (no markers, no data)
+    e = ah.evaluate(ah.parse(["eval", "--ckpt", str(tmp_path / "ah" /
+                                                    "head.pt"),
+                              "--export", stem, "--hidden",
+                              str(root / "hidden")]), log=lambda s: None)
+    assert {"head", "rest", "mean"} <= set(e["normalised_mse"])
+    assert "head.tilt" in e["per_variable"]
 
 
 def test_preview_states_carry_fingers_and_the_mouth(exported, seed):
@@ -785,5 +792,12 @@ def test_clip_listing_and_speakers(tmp_path):
     assert len(b2.list_clips(str(tmp_path), "scott,solomon", limit=1)) == 1
     with pytest.raises(SystemExit, match="no clip"):
         b2.list_clips(str(tmp_path), "nobody")
+    # a dataset one folder down is found; two of them are not guessed
+    make_beat2(str(tmp_path / "wrap" / "en"), stems=("5_a_0_0_0",))
+    assert [c["stem"] for c in b2.list_clips(str(tmp_path / "wrap"))] == [
+        "5_a_0_0_0"]
+    make_beat2(str(tmp_path / "wrap" / "zh"), stems=("6_b_0_0_0",))
+    with pytest.raises(SystemExit, match="2 subfolders"):
+        b2.list_clips(str(tmp_path / "wrap"))
     with pytest.raises(SystemExit, match="smplxflame_30"):
         b2.list_clips(str(tmp_path / "empty"))
