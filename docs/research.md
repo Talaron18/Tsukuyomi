@@ -204,6 +204,65 @@ cross-faded, MSE or flow matching, no motion history, no audio):
   pathway, and fixes it with a self-supervised latent pre-training stage.
   This matters if the head ever moves inside the LLM; for now it doesn't.
 
+### One controller, many bodies (2026-10-27)
+
+Prompted by "Learning to Get Up Across Morphologies" (2512.12230, read in
+full; it trains one get-up policy for seven small humanoids). The rest
+comes from a research pass, mostly [snippet]: arXiv was unreachable.
+
+Where we stand: a shared body-relative control space (the canonical
+variables), each body's own forward model and a clamping solver, and the
+body's description in the prompt (the LLM) or as an avatar embedding plus
+a variable mask (the action head). 2512.12230 does the first two
+(common joints, body-relative measures, the simulator enforces limits)
+with no body description at all.
+
+What the literature says, against that:
+- **Body diversity beats data volume.** "Towards Embodiment Scaling Laws"
+  (2505.05753, GENBOT-1K: ~1,000 procedurally generated bodies) found
+  that adding bodies generalises to unseen ones more than adding data
+  per body. 2512.12230: held-out bodies far from the rest (top-heavy,
+  long-armed) transfer worst (17-42%), and a body that could not learn
+  alone did at 81% in shared training. Our version: lafei is the outlier
+  (the student's 17% miss rate there), and synthetic Live2D/VRM variants
+  (scaled limbs, narrowed ranges, parameter subsets) are cheap to make
+  from the body files.
+- **Per-parameter tokens with a shared decoder** (URMA 2409.06366,
+  CrossFormer 2408.11812, PALUM 2601.07272's part grouping), or thin
+  per-body adapters over a shared core (X-WBC 2609.15213). Our head's
+  fixed vocabulary plus a mask is the simplest form; tokens per variable,
+  carrying its range from the body file, would let an unseen body bring
+  its own ranges.
+- **Text descriptions of the body transfer.** AnyTop (2502.17327: motion
+  diffusion for any skeleton) embeds a text description per joint, the
+  same idea as our prompt. A description embedding may generalise better
+  than a learned avatar ID.
+- **Keep contacts as contacts.** Contact-aware retargeting (Villegas et
+  al., ICCV 2021, 2109.07431) and ReConForM (2502.21207, real-time) keep
+  hand-to-face and hands-together contacts across body sizes. That is the
+  answer to absolute vs reach-normalised space: absolute (shared) space,
+  plus named contact targets resolved per body (`@together`, a face
+  anchor), plus a contact metric in evaluation. It matters for the BEAT2
+  retarget, where a human's hand-to-chin should stay a hand-to-chin.
+- **Baselines:** the NerveNet critique ("My Body is a Cage", 2010.01856)
+  found structure-free encoders about as good. Always run one. Report
+  per-held-out-body results with variance (2512.12230, AnyBody
+  2505.14986), never one average.
+- **Live2D specifically:** no published method generates Live2D parameter
+  curves from text or audio, or handles per-rig reach. Textoon
+  (2501.10020) is the closest (ARKit-style mouth shapes for Live2D).
+
+Experiments this suggests, in order of cost:
+1. **Leave-one-body-out for the LLM:** train the student without xuefeng
+   (or lafei) and measure its pose accuracy there from the prompt alone.
+2. **Synthetic bodies in the data engine:** vary the existing body files
+   (ranges, limb scale, dropped parameters) per session, so the student
+   learns to read ranges instead of memorising three bodies; then repeat
+   test 1.
+3. **Action head conditioning:** learned ID vs a body-description
+   embedding vs per-variable range tokens, with a structure-free
+   baseline, held-out bodies, and BEAT2 targets.
+
 ## 2. Later directions
 
 ### Live co-watching and long video
