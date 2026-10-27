@@ -6,7 +6,12 @@ same system prompt and user turns (flow.dataexport sft), on one 24 GB GPU.
 
   data      flow.dataexport's sft.jsonl (with --meta: the session ids) or a
             flow.dataset --out folder (exported here with the default
-            filters), the contents as the director sends them.
+            filters), the contents as the director sends them. From a
+            folder, --correct-misses [default; --no-correct-misses] writes
+            each pose target the solver missed as the value it reached
+            (flow.dataexport: the avatar's reach is what is taught), and
+            --avatar-weight NAME=N repeats an avatar's examples N times.
+            An sft.jsonl is taken as it was exported.
   split     by session, never by turn: a session is held out when the
             first 8 hex of sha256("<seed>:<session>") / 2^32 is below
             --eval-frac, so a run on more data keeps its old sessions on
@@ -100,9 +105,12 @@ def log(s):
 
 # ---------------------------------------------------------------- data
 
-def load_examples(data, per="session", max_miss=None, keep_lite=False):
+def load_examples(data, per="session", max_miss=None, keep_lite=False,
+                  correct_misses=True, avatar_weight=None):
     """The SFT examples ({"messages", "meta"}) from an sft.jsonl or a
-    flow.dataset folder (exported here with flow.dataexport's filters)."""
+    flow.dataset folder (exported here with flow.dataexport's filters,
+    missed pose targets corrected to the value reached, and the avatars in
+    `avatar_weight` ["NAME=N", ...] repeated; an sft.jsonl is as exported)."""
     if os.path.isdir(data):
         try:
             from .. import dataexport as dx
@@ -113,9 +121,18 @@ def load_examples(data, per="session", max_miss=None, keep_lite=False):
         recs = ds.iter_records(data)
         if not recs:
             raise SystemExit(f"no records under {data}/shards")
+        fix, counts = dx.correct_misses(recs) if correct_misses else ({}, None)
         notes = dx.annotate(recs, max_miss if max_miss is not None
-                            else dx.MAX_MISS, keep_lite=keep_lite)
-        return dx.sft_examples(data, recs, notes, per=per, meta=True)
+                            else dx.MAX_MISS, keep_lite=keep_lite, fix=fix)
+        w = dx.parse_weights(avatar_weight, {r["avatar"]["name"]
+                                             for r in recs})
+        if counts:
+            log(dx.correction_line(counts))
+        if w:
+            log("avatar weights: " + ", ".join(f"{a} x{n}"
+                                               for a, n in w.items()))
+        return dx.sft_examples(data, recs, notes, per=per, meta=True,
+                               fix=fix, weights=w)
     out = []
     with open(data, encoding="utf-8") as fh:
         for line in fh:
@@ -571,7 +588,9 @@ def versions() -> dict:
 
 def prepare(o, tok):
     """Examples -> split -> rows; writes split.json and lengths.json."""
-    exs = [clean(e) for e in load_examples(o.data, o.per)]
+    exs = [clean(e) for e in load_examples(
+        o.data, o.per, correct_misses=o.correct_misses,
+        avatar_weight=o.avatar_weight)]
     if not exs:
         raise SystemExit(f"no examples in {o.data}")
     train, ev, info = split(exs, o.eval_frac, o.split_seed, o.split_by_row)
@@ -789,7 +808,9 @@ def write_modelfile(o) -> str:
 def stats(o) -> dict:
     o.family = o.template or chat.family_for(o.base)
     tok = load_tokenizer(o.base)
-    exs = [clean(e) for e in load_examples(o.data, o.per)]
+    exs = [clean(e) for e in load_examples(
+        o.data, o.per, correct_misses=o.correct_misses,
+        avatar_weight=o.avatar_weight)]
     rep = length_report(tok, exs, o.family)
     print(report_text(rep, o.family))
     probs = check_template(tok, o.family, exs[0]) if exs else []
@@ -812,6 +833,15 @@ def add_data_args(p):
     p.add_argument("--per", default="session", choices=("session", "turn"),
                    help="with a dataset folder: one example per session "
                         "[default] or per turn")
+    p.add_argument("--correct-misses", default=True,
+                   action=argparse.BooleanOptionalAction,
+                   help="with a dataset folder: write each missed pose "
+                        "target as the value the solver reached [on]")
+    p.add_argument("--avatar-weight", action="append", default=[],
+                   metavar="NAME=N",
+                   help="with a dataset folder: repeat that avatar's "
+                        "examples N times (repeatable), e.g. lafei=2; "
+                        "held-out sessions repeat too")
     p.add_argument("--base", default=DEFAULT_BASE,
                    help=f"base model [{DEFAULT_BASE}]; e.g. Qwen/Qwen3-4B, "
                         "google/gemma-3-12b-it")

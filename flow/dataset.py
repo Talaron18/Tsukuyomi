@@ -69,7 +69,10 @@ included; flow.dataexport filters):
   poses       pose.solve_poses records, rounded: t, start, dur, hold,
               release, targets (as written), resolved, params (as played),
               parts, variant_name, report {var: {target, got, error, unit,
-              ok}}, exact / exact_ok (Live2D with the Core), ok, via
+              ok}}, exact / exact_ok (Live2D with the Core), ok, via, at
+              (the marker's place in spoken: flow.dataexport --correct-misses
+              ties a marker in reply_raw to its pose by order, `at` and
+              targets, and writes a missed target as report[var].got)
   moves       flow.moves.solve_moves records, rounded: name, t, at, start,
               seconds, beats, tempo, amp, segments, solves, solve_seconds
   reach       pose.reach_summary {markers, targets, ok, miss, exact_ok,

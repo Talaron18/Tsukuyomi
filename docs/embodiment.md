@@ -384,6 +384,25 @@ random data; the 4-bit, Unsloth and llama.cpp steps have not run at all.
   hash, a speed probe), `merge` (fp16, into the unquantized base), `gguf`
   (llama.cpp commands), `modelfile` (TEMPLATE, stops, num_ctx 8192,
   sampling; `--create` runs `ollama create`).
+- **Teaching the reachable value** (`flow.dataexport --correct-misses`,
+  on by default for `sft`, `stats` and the trainer's dataset-folder
+  loading): the student of the first run asked for hand positions that
+  lafei's narrow-armed rig cannot reach (17% of its targets missed against
+  the teacher's 8%). The solver records, per target, the value it did reach
+  (`got`); the export writes that number into the marker in place of the
+  missed one (an `"@shoulder.y"` anchor that missed becomes the number;
+  reached targets, `dur`, `hold` and the spoken text stay byte for byte).
+  A turn whose misses are all corrected no longer counts as a MISS turn
+  for the export, so a session is no longer cut there; the `miss` flag and
+  the reach rates stay as recorded, and `stats` counts markers and targets
+  corrected per avatar and what was skipped (records from before the
+  report, markers that do not line up with their pose records, a target
+  whose key cannot be found). The reached value is not always a fixed
+  point: asked for again, ~95% of corrected markers land (random hand
+  targets, 80 per body: Hiyori 78/78 and lafei 76/80 ok, seed-san 47/56,
+  where hands that would pass through the body come back shifted again);
+  the action export keeps what was played. `--avatar-weight lafei=2`
+  repeats an avatar's sessions in the export (also `scripts/train_sft.py`).
 - **Serving**: Ollama (the GGUF and the Modelfile) through the existing
   `--backend ollama`, or `--backend hf` (transformers + the adapter,
   `TextIteratorStreamer`) in `flow.director` and `flow.live`.

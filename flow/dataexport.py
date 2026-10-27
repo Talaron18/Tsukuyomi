@@ -14,6 +14,30 @@ Quality filters, stats and exporters for flow.dataset's turn records.
              invented [fPose ...] or a newer marker kind: kept out of the SFT
              exports all the same, SFT_HARD), planned (play_warnings: a gesture dropped
              under a pose or move, a move the body lacks), usage_estimated.
+  correct    --correct-misses (default on for sft and stats): a pose target
+             the solver missed is written as the value it reached. Per pose
+             marker in a reply, the report of its pose record says which
+             targets missed (ok false) and what the rig did reach (got); the
+             marker's JSON gets that number in place of the missed value (an
+             anchor such as "@shoulder.y" included): 2 decimals for hu and
+             unit variables, whole numbers for deg and pct, whatever the
+             unit's tolerance (body.TOL) is far beyond. Reached targets,
+             dur / hold, the spoken text and every other byte of the reply
+             are as written. The marker is found in reply_raw by the pose
+             parser's own bracket scan and tied to its pose record by order,
+             char offset (`at`) and targets; where the two lists do not
+             agree the turn is left as it was and counted, as are records
+             from before the report existed and markers whose key cannot be
+             found in the text (a composite target, a missed got of null).
+             A turn whose misses are all corrected no longer counts as a
+             MISS turn for the export (flag miss_fixed, soft; "miss" stays in
+             the flags and the stats), so a session is not cut there. The
+             action export keeps what was played. stats counts markers and
+             targets corrected, per avatar, and the skipped.
+  weights    --avatar-weight lafei=2 (repeatable, or lafei=2,Hiyori=3): the
+             SFT export writes that avatar's examples N times in a row, in
+             the same order every run; the trainer's session split keeps
+             copies together. Default: each once.
   dedupe     user lines normalised (case, punctuation, spaces) and compared
              by character-trigram Jaccard (>= --dup-jaccard) within an
              avatar x persona; the first one is kept.
@@ -47,12 +71,15 @@ Quality filters, stats and exporters for flow.dataset's turn records.
 Usage:
     python -m flow.dataexport stats data/datagen/pilot
     python -m flow.dataexport sft data/datagen/pilot --out sft.jsonl
+    python -m flow.dataexport sft data/datagen/pilot --out sft.jsonl \\
+        --avatar-weight lafei=2 --no-correct-misses
     python -m flow.dataexport action data/datagen/pilot --out action
 """
 
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import re
@@ -64,13 +91,15 @@ import numpy as np
 
 try:
     from . import dataset as ds
+    from . import pose as pz
 except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from flow import dataset as ds
+    from flow import pose as pz
 
 HARD = ("refused", "empty", "cutoff", "parse", "no_body", "miss", "dup",
         "lite")
-SOFT = ("no_pose", "unplayed", "planned", "usage_estimated")
+SOFT = ("no_pose", "unplayed", "planned", "usage_estimated", "miss_fixed")
 # Soft flags that still keep a turn out of the SFT exports: a marker the
 # parser threw away (an invented [fPose ...]) would be learned; the turn's
 # trajectory is fine for the action head.
@@ -169,22 +198,37 @@ def flag(r, max_miss=MAX_MISS) -> list[str]:
     return f
 
 
-def annotate(records, max_miss=MAX_MISS, dup=DUP_JACCARD, keep_lite=False):
-    """{id: (flags, kept)} for every record."""
+def hard_flags(f, keep_lite=False) -> list[str]:
+    """The flags that drop a turn: HARD ones, a miss its corrections
+    cleared (miss_fixed) and lite when kept aside."""
+    return [x for x in f if x in HARD and not (keep_lite and x == "lite")
+            and not (x == "miss" and "miss_fixed" in f)]
+
+
+def annotate(records, max_miss=MAX_MISS, dup=DUP_JACCARD, keep_lite=False,
+             fix=None):
+    """{id: (flags, kept)} for every record. `fix`: correct_misses' first
+    result; a turn flagged miss whose remaining misses (those not
+    corrected) are within max_miss gets the soft flag miss_fixed and is
+    kept on that count ("miss" stays in its flags)."""
     dups = dedupe(records, dup)
     out = {}
     for r in records:
         f = flag(r, max_miss)
+        if "miss" in f and r["id"] in (fix or ()):
+            reach = r["reach"]
+            left = reach["miss"] - fix[r["id"]]["targets"]
+            if left / reach["targets"] <= max_miss:
+                f.append("miss_fixed")
         if r["id"] in dups:
             f.append("dup")
-        hard = [x for x in f if x in HARD and not (keep_lite and x == "lite")]
-        out[r["id"]] = (f, not hard)
+        out[r["id"]] = (f, not hard_flags(f, keep_lite))
     return out
 
 
 # --------------------------------------------------------------- stats
 
-def stats(records, notes, prices=None) -> dict:
+def stats(records, notes, prices=None, counts=None) -> dict:
     s = {"turns": len(records), "kept": sum(k for _, k in notes.values()),
          "sessions": len({r["session"] for r in records})}
     c = defaultdict(Counter)
@@ -240,6 +284,8 @@ def stats(records, notes, prices=None) -> dict:
         s["character_seconds"] = {"median": round(float(np.median(lat)), 2),
                                   "p90": round(float(np.percentile(lat, 90)),
                                                2)}
+    if counts is not None:
+        s["corrections"] = counts
     if s["turns"]:
         s["cost_per_turn_usd"] = round(cost / s["turns"], 7)
     return s
@@ -260,6 +306,12 @@ def stats_text(s) -> str:
                    f"{r['miss']} MISS, {r['markers']} pose markers"
                    + (f"; Core {r['exact_ok']}/{r['exact_n']}"
                       if r["exact_n"] else ""))
+    c = s.get("corrections")
+    if c is not None:
+        out.append(correction_line(c))
+        for a, v in c["by_avatar"].items():
+            out.append(f"  {a:14s} {v['markers']} markers, {v['targets']} "
+                       f"targets corrected, {v['skipped']} skipped")
     if s["variables"]:
         top = max(s["variables"].values())
         out.append("targeted variables:")
@@ -289,9 +341,189 @@ def load_registry(root) -> dict:
         return json.load(fh)
 
 
-def _turn_msgs(r):
+# ------------------------------------------------------ miss corrections
+
+_VALUE = (r'"[^"]*"|\'[^\']*\'|@[\w.]+(?:[+-][\d.]+)?|'
+          r'[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?')
+
+
+def pose_spans(text):
+    """[(start, end, at, targets)] for the pose markers of a raw reply:
+    text[start:end] is the marker with its brackets, `at` the spoken offset
+    and `targets` what the parser took from it (any variable, any landmark:
+    no body at hand). The pose parser is fed one character at a time and
+    its bracket state watched, so a marker is found where the parser found
+    it (a '[' that never closed, a marker restarted by a new '[')."""
+    p = pz.PoseParser()
+    out, start = [], 0
+    for i, ch in enumerate(text):
+        c = ch.translate(pz.dr._FULLWIDTH)
+        was = p._buf is not None
+        restart = was and c == "[" and p._depth == 0 and not p._instr
+        done = p.feed(ch)
+        if (not was or restart) and p._buf is not None:
+            start = i
+        for t in done:
+            if t["tag"] == pz.POSE:
+                out.append((start, i + 1, t["at"], t["arg"]["targets"]))
+    return out
+
+
+def _same_targets(a, b) -> bool:
+    """Every target in `a` is in `b` with the same value (numbers to a
+    thousandth: the records are rounded, the parser's floats are not)."""
+    for k, v in a.items():
+        w = b.get(k)
+        if isinstance(v, str) or isinstance(w, str) or w is None:
+            if v != w:
+                return False
+        elif abs(float(v) - float(w)) > 1e-3:
+            return False
+    return True
+
+
+def _got_text(got, unit) -> str:
+    """The reached value as a model writes it: whole numbers for degrees
+    and percents, up to 2 decimals for hu and unit variables."""
+    s = f"{got:.0f}" if unit in ("deg", "pct") else f"{got:.2f}"
+    if "." in s:
+        s = s.rstrip("0").rstrip(".")
+    return "0" if s in ("-0", "") else s
+
+
+def _rewrite(marker, values):
+    """The marker text with {key: new number} put in for those keys' values;
+    None when a key is not found exactly once."""
+    for key, new in values.items():
+        pat = re.compile(r'([{,]\s*)(["\']?)' + re.escape(key)
+                         + r'\2(\s*:\s*)(' + _VALUE + ")")
+        hits = list(pat.finditer(marker))
+        if len(hits) != 1:
+            return None
+        m = hits[0]
+        marker = marker[:m.start(4)] + new + marker[m.end(4):]
+    return marker
+
+
+def correct_reply(r):
+    """(text, markers, targets, skipped) for one record: its reply_raw with
+    each missed target of each pose marker set to the value reached
+    (module docstring). skipped: [] or reasons, "no_fields" / "mismatch"
+    (the turn, left as it was) and "unmappable" (one marker)."""
+    text = r.get("reply_raw") or ""
+    marks = [m for m in r.get("markers") or () if m.get("tag") == pz.POSE]
+    poses = [p for p in r.get("poses") or () if not p.get("via")]
+    if any(m.get("at") is None or not isinstance(m.get("arg"), dict)
+           for m in marks) or any("report" not in p or p.get("at") is None
+                                  for p in poses):
+        return text, 0, 0, ["no_fields"]
+    spans = pose_spans(text)
+    if len(spans) != len(marks) or any(
+            sp[2] != m["at"] or not _same_targets(
+                m["arg"].get("targets") or {}, sp[3])
+            for sp, m in zip(spans, marks)):
+        return text, 0, 0, ["mismatch"]
+    # Marker -> pose record: same place and targets, each record once. A
+    # marker with no record (the solver dropped it) has nothing to correct;
+    # a record with no marker means the two lists disagree.
+    pool, tied = list(poses), []
+    for sp, m in zip(spans, marks):
+        k = next((j for j, p in enumerate(pool) if p["at"] == m["at"]
+                  and _same_targets(p.get("targets") or {},
+                                    m["arg"].get("targets") or {})), None)
+        tied.append(pool.pop(k) if k is not None else None)
+    if pool:
+        return text, 0, 0, ["mismatch"]
+    edits, nm, nt, skipped = [], 0, 0, []
+    for sp, p in zip(spans, tied):
+        if p is None:
+            continue
+        miss = {v: e for v, e in p["report"].items() if not e.get("ok")}
+        if not miss:
+            continue
+        vals = {}
+        for v, e in miss.items():
+            if e.get("got") is None or v not in (p.get("targets") or {}):
+                break
+            vals[v] = _got_text(float(e["got"]), e.get("unit"))
+        else:
+            new = _rewrite(text[sp[0]:sp[1]], vals)
+            if new is not None:
+                edits.append((sp[0], sp[1], new))
+                nm += 1
+                nt += len(vals)
+                continue
+        skipped.append("unmappable")
+    for a, b, new in reversed(edits):
+        text = text[:a] + new + text[b:]
+    return text, nm, nt, skipped
+
+
+def correct_misses(records):
+    """({id: {"reply", "markers", "targets"}}, counts): the corrected
+    replies of the turns that had a corrected marker, and the counters
+    (markers, targets, turns corrected, miss_turns: turns with a MISS,
+    skipped {reason: n}, by_avatar {name: {markers, targets, skipped}})."""
+    fix = {}
+    c = {"markers": 0, "targets": 0, "turns": 0, "miss_turns": 0,
+         "skipped": Counter(), "by_avatar": {}}
+    for r in records:
+        if r.get("refused") or not (r.get("reach") or {}).get("miss"):
+            continue
+        a = c["by_avatar"].setdefault(
+            r["avatar"]["name"], {"markers": 0, "targets": 0, "skipped": 0})
+        c["miss_turns"] += 1
+        text, nm, nt, skipped = correct_reply(r)
+        for why in skipped:
+            c["skipped"][why] += 1
+            a["skipped"] += 1
+        if nm:
+            fix[r["id"]] = {"reply": text, "markers": nm, "targets": nt}
+            c["turns"] += 1
+            c["markers"] += nm
+            c["targets"] += nt
+            a["markers"] += nm
+            a["targets"] += nt
+    c["skipped"] = dict(c["skipped"])
+    return fix, c
+
+
+def correction_line(c) -> str:
+    return (f"miss corrections: {c['markers']} markers, {c['targets']} "
+            f"targets in {c['turns']} of {c['miss_turns']} turns with a miss"
+            + (", skipped " + ", ".join(f"{k} {n}" for k, n in
+                                        c["skipped"].items())
+               if c["skipped"] else ""))
+
+
+def parse_weights(specs, avatars=None) -> dict:
+    """{avatar: n} from --avatar-weight values ("lafei=2" or
+    "lafei=2,Hiyori=3"); an avatar the data lacks (a typo) or a weight
+    below 1 is an error."""
+    out = {}
+    for spec in specs or ():
+        for part in str(spec).split(","):
+            if not part.strip():
+                continue
+            name, _, n = part.partition("=")
+            name = name.strip()
+            try:
+                n = int(n)
+            except ValueError:
+                raise SystemExit(f"--avatar-weight {part!r}: want NAME=N")
+            if n < 1:
+                raise SystemExit(f"--avatar-weight {part!r}: N is at least 1")
+            if avatars is not None and name not in avatars:
+                raise SystemExit(f"--avatar-weight: no avatar {name!r} in "
+                                 f"the data (have {', '.join(sorted(avatars))})")
+            out[name] = n
+    return out
+
+
+def _turn_msgs(r, fix=None):
+    reply = (fix or {}).get(r["id"], {}).get("reply", r["reply_raw"])
     return [{"role": "user", "content": r["user_content"]},
-            {"role": "assistant", "content": r["reply_raw"]}]
+            {"role": "assistant", "content": reply}]
 
 
 def session_ok(note) -> bool:
@@ -301,7 +533,7 @@ def session_ok(note) -> bool:
     flags, kept = note
     if any(x in flags for x in SFT_HARD):
         return False
-    return kept or [x for x in flags if x in HARD] == ["dup"]
+    return kept or hard_flags(flags) == ["dup"]
 
 
 def session_turns(records, notes) -> dict:
@@ -325,8 +557,16 @@ def session_turns(records, notes) -> dict:
     return out
 
 
-def sft_examples(root, records, notes, per="session", meta=False):
-    """The SFT examples (dicts with "messages")."""
+def _repeat(exs, n):
+    return [copy.deepcopy(x) for x in exs for _ in range(n)]
+
+
+def sft_examples(root, records, notes, per="session", meta=False, fix=None,
+                 weights=None):
+    """The SFT examples (dicts with "messages"). `fix`: correct_misses'
+    first result (the replies it rewrote stand in for reply_raw, history
+    included); `weights` {avatar: n}: that avatar's examples n times each,
+    one after the other."""
     reg = load_registry(root)
     prompts = reg["prompts"]
     by_s = defaultdict(list)
@@ -340,11 +580,16 @@ def sft_examples(root, records, notes, per="session", meta=False):
         if system is None:
             continue
         base = [{"role": "system", "content": system}]
+        times = (weights or {}).get(recs[0]["avatar"]["name"], 1)
+        start = len(out)
+        # What the history shows of a corrected turn is its corrected reply.
+        fixed = {r["reply_raw"]: fix[r["id"]]["reply"] for r in recs
+                 if r["id"] in (fix or ())}
         if per == "session":
             msgs = list(base)
             ids = []
             for r in sessions.get(sid, ()):
-                msgs += _turn_msgs(r)
+                msgs += _turn_msgs(r, fix)
                 ids.append(r["id"])
             if ids:
                 ex = {"messages": msgs}
@@ -353,6 +598,7 @@ def sft_examples(root, records, notes, per="session", meta=False):
                                   "avatar": recs[0]["avatar"]["name"],
                                   "persona": recs[0]["persona"]}
                 out.append(ex)
+            out[start:] = _repeat(out[start:], times)
             continue
         for r in recs:
             f, kept = notes[r["id"]]
@@ -361,14 +607,16 @@ def sft_examples(root, records, notes, per="session", meta=False):
             msgs = list(base)
             for h in r.get("history") or ():
                 msgs.append({"role": "user", "content": h["user_content"]})
-                msgs.append({"role": "assistant", "content": h["reply"],
+                msgs.append({"role": "assistant",
+                             "content": fixed.get(h["reply"], h["reply"]),
                              "weight": 0})
-            msgs += _turn_msgs(r)
+            msgs += _turn_msgs(r, fix)
             ex = {"messages": msgs}
             if meta:
                 ex["meta"] = {"id": r["id"], "avatar": r["avatar"]["name"],
                               "persona": r["persona"], "reach": r["reach"]}
             out.append(ex)
+        out[start:] = _repeat(out[start:], times)
     return out
 
 
@@ -429,6 +677,11 @@ def main(argv=None) -> int:
         p.add_argument("--max-miss", type=float, default=MAX_MISS)
         p.add_argument("--dup-jaccard", type=float, default=DUP_JACCARD)
         p.add_argument("--keep-lite", action="store_true")
+        if name != "action":
+            p.add_argument("--correct-misses", default=True,
+                           action=argparse.BooleanOptionalAction,
+                           help="write each missed pose target as the "
+                                "value reached [on]")
         if name == "stats":
             p.add_argument("--json", default=None)
         if name == "sft":
@@ -436,6 +689,10 @@ def main(argv=None) -> int:
             p.add_argument("--per", default="session",
                            choices=("session", "turn"))
             p.add_argument("--meta", action="store_true")
+            p.add_argument("--avatar-weight", action="append", default=[],
+                           metavar="NAME=N",
+                           help="write that avatar's examples N times "
+                                "(repeatable, or NAME=N,NAME=N)")
         if name == "action":
             p.add_argument("--out", required=True,
                            help="path stem: <out>.jsonl and <out>.npz")
@@ -446,18 +703,24 @@ def main(argv=None) -> int:
     if not recs:
         print(f"no records under {a.root}/shards", file=sys.stderr)
         return 1
-    notes = annotate(recs, a.max_miss, a.dup_jaccard, a.keep_lite)
+    fix, counts = (correct_misses(recs) if a.cmd != "action"
+                   and a.correct_misses else ({}, None))
+    notes = annotate(recs, a.max_miss, a.dup_jaccard, a.keep_lite, fix)
     if a.cmd == "stats":
-        s = stats(recs, notes)
+        s = stats(recs, notes, counts=counts)
         print(stats_text(s))
         if a.json:
             with open(a.json, "w", encoding="utf-8") as fh:
                 json.dump(s, fh, ensure_ascii=False, indent=1)
         return 0
     if a.cmd == "sft":
+        w = parse_weights(a.avatar_weight,
+                          {r["avatar"]["name"] for r in recs})
         n = write_jsonl(a.out, sft_examples(a.root, recs, notes, a.per,
-                                            a.meta))
+                                            a.meta, fix, w))
         print(f"{n} examples -> {a.out}")
+        if counts:
+            print(correction_line(counts))
         return 0
     n = action_pairs(a.root, recs, notes, a.out, a.traj)
     print(f"{n} pairs -> {a.out}.jsonl, {a.out}.npz")
