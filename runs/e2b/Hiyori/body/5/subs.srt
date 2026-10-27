@@ -1,0 +1,12 @@
+1
+00:00:00,100 --> 00:00:01,538
+Hi there, friend!
+
+2
+00:00:02,400 --> 00:00:03,525
+Nice to see you!
+
+3
+00:00:04,388 --> 00:00:06,275
+And the door is right over there!
+

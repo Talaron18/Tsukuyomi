@@ -1,0 +1,16 @@
+1
+00:00:00,104 --> 00:00:00,865
+The beach...
+
+2
+00:00:01,925 --> 00:00:03,240
+that sounds nice.
+
+3
+00:00:04,732 --> 00:00:06,349
+But can I bring my pillow?
+
+4
+00:00:07,407 --> 00:00:10,556
+I'll probably nap on the sand anyway.
+

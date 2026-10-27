@@ -1,0 +1,28 @@
+1
+00:03:12,667 --> 00:03:13,167
+Hey!
+
+2
+00:03:14,167 --> 00:03:15,154
+Good to see you.
+
+3
+00:03:16,267 --> 00:03:17,542
+What are you up to today?
+
+4
+00:03:19,733 --> 00:03:20,533
+Let's see...
+
+5
+00:03:21,633 --> 00:03:23,396
+something surprising, huh?
+
+6
+00:03:24,500 --> 00:03:27,038
+Did you know octopuses have three hearts?
+
+7
+00:03:28,133 --> 00:03:30,645
+Two of them stop beating when they swim.
+
