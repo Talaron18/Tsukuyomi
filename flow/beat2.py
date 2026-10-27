@@ -396,22 +396,36 @@ def list_clips(root, speakers=None, limit=0) -> list[dict]:
     lay = layout(root)
     want = {s.strip().lower() for s in (speakers or "").split(",")
             if s.strip()}
-    out, seen = [], []
+    out = []
+    # Per speaker: npz files, and how many of them have a wav / a TextGrid
+    # (a partial download shows up here).
+    count = {}
     for p in sorted(glob.glob(os.path.join(lay["poses"], "*.npz"))):
         stem = os.path.splitext(os.path.basename(p))[0]
-        seen.append(stem)
         sid, name = speaker_of(stem)
-        if want and not ({sid, name} & want):
-            continue
         wav = _find(lay["wave"], stem, (".wav", ".WAV"))
         tg = _find(lay["textgrid"], stem, (".TextGrid", ".textgrid",
                                            ".Textgrid"))
+        c = count.setdefault(f"{sid}_{name}", [0, 0, 0])
+        c[0] += 1
+        c[1] += wav is not None
+        c[2] += tg is not None
+        if want and not ({sid, name} & want):
+            continue
         if wav and tg:
             out.append({"stem": stem, "npz": p, "wav": wav, "textgrid": tg})
     if not out:
-        raise SystemExit(f"beat2: no clip with an npz, a wav and a TextGrid "
-                         f"under {root} (speakers {sorted(want) or 'all'}); "
-                         f"npz files seen: {seen[:8]}")
+        def k(x):
+            h = x.split("_")[0]
+            return (int(h) if h.isdigit() else 1 << 30, x)
+        have = ", ".join(f"{s} {c[0]}/{c[1]}/{c[2]}"
+                         for s, c in sorted(count.items(),
+                                            key=lambda kv: k(kv[0])))
+        raise SystemExit(
+            f"beat2: no clip with an npz, a wav and a TextGrid under {root} "
+            f"(speakers {sorted(want) or 'all'}). Per speaker, npz / with a "
+            f"wav / with a TextGrid: {have or 'no npz at all'}. Folders: "
+            f"{lay['poses']}, {lay['wave']}, {lay['textgrid']}")
     return out[:limit] if limit else out
 
 
@@ -1502,6 +1516,8 @@ def load_reports(out):
 
 
 def summary(out) -> dict:
+    if not os.path.isdir(out):
+        raise SystemExit(f"beat2: {out} does not exist: run retarget first")
     reps = [r for r in load_reports(out) if "error" not in r]
     segs = [s for r in reps for s in r["segments"]]
     kept = [s for s in segs if s["status"] == "kept"]
