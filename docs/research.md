@@ -252,6 +252,49 @@ What the literature says, against that:
   curves from text or audio, or handles per-rig reach. Textoon
   (2501.10020) is the closest (ARKit-style mouth shapes for Live2D).
 
+Read in full (papers/, 2026-10-27), the details that matter here:
+- **URMA** (2409.06366): every joint has a fixed-size *description
+  vector* (rotation axis, position on the body, torque/velocity limits,
+  control range). The encoder pools joints by attention keyed on their
+  descriptions. The universal decoder pairs the shared action latent with
+  each joint's encoded description to output that joint's action. An
+  unseen robot just brings its own descriptions. For our action head:
+  replace the learned avatar ID with a description per canonical variable
+  (its range on this body, units, body part, how far it moves the hand or
+  head, all already in the body file), and decode each variable from
+  (latent, its description). A new avatar then needs no new embedding.
+- **Embodiment scaling laws** (2505.05753, GENBOT-1K, URMA-based):
+  experts per body distilled into one policy. Within each class, going
+  from 5% to 100% of the training bodies about doubles reward on unseen
+  ones; across classes, 2-5x over single-class training. More data on 5%
+  of the bodies saturates at 4x volume. Humanoids had not saturated at
+  ~800 bodies (quadrupeds and hexapods at ~100). The real Go2 with one
+  knee's range cut by 20% got a working limp zero-shot. **That is the
+  lafei case.** Training across bodies whose ranges vary is what teaches
+  a controller to respect a narrow range it has never seen, which
+  supports the synthetic body variants in the next data run.
+- **AnyTop** (2502.17327): each joint's *name*, embedded with T5, is
+  added to its token, and attention is biased by joint relations and
+  graph distance. Names carry semantics across skeletons ("Left Wing" ~
+  "Left Arm"). Our variables already have stable semantic names
+  (`hand.R.y`), which the LLM reads; a head could embed them the same
+  way.
+- **ReConForM** (2502.21207): key vertices rigged on the source mesh,
+  transferred automatically to the target; descriptors are the key
+  vertices' relative trajectories (distances, normalised by body size),
+  adaptively weighted over time; the target motion is optimised to match
+  them, in real time. **Contact-aware retargeting** (Villegas et al.,
+  2109.07431): detect self-contacts (from geometry) and foot contacts in
+  the source; an energy keeps them and penalises interpenetration;
+  geometry-conditioned RNN plus encoder-space optimisation. For
+  flow/beat2.py, which is rotation transfer only: a contact post-pass
+  that finds frames where the source hand is near the face, the other
+  hand or the torso (distances relative to the source's own limb
+  lengths) and pulls the target to the same relative distance with
+  VRMBody's IK (it already has `@together`-style named targets). Do it
+  if the first previews show hands missing the face or sinking into
+  the body.
+
 Experiments this suggests, in order of cost:
 1. **Leave-one-body-out for the LLM:** train the student without xuefeng
    (or lafei) and measure its pose accuracy there from the prompt alone.
