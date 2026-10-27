@@ -1494,7 +1494,8 @@ def process_clip(av, info, cfg, parser=None, log=log):
                     "frames": b - a, "traj": SOURCE, "user": "",
                     "spoken": spoken, "reply_raw": spoken, "markers": [],
                     "speech_seconds": round(sg["words"][-1][1] - a / fps, 3),
-                    "lang": {"asked": None, "reply": _lang(spoken)},
+                    "lang": {"asked": None,
+                             "reply": _lang(spoken, info["npz"])},
                     "clip": stem, "speaker": name or sid_,
                     "t0": round(a / fps, 3), "t1": round(b / fps, 3),
                     "prosody": list(PROSODY_COLS), "joints": list(vb.JOINTS)})
@@ -1507,7 +1508,16 @@ def process_clip(av, info, cfg, parser=None, log=log):
     return rep, rows, arrays
 
 
-def _lang(text):
+# BEAT2's folders are named by language (beat_spanish_v2.0.0, ...); the
+# script alone cannot tell Spanish from English.
+FOLDER_LANG = {"chinese": "zh", "english": "en", "japanese": "ja",
+               "spanish": "es"}
+
+
+def _lang(text, path=""):
+    m = re.search(r"beat_([a-z]+)_v", path or "")
+    if m and m.group(1) in FOLDER_LANG:
+        return FOLDER_LANG[m.group(1)]
     han = sum("一" <= c <= "鿿" for c in text)
     kana = sum("぀" <= c <= "ヿ" for c in text)
     if kana:
