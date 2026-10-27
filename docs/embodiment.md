@@ -511,3 +511,89 @@ minutes.
 The action head's markers baseline needs another model's markers (the
 student's, from the eval): on teacher text the markers played again are
 the target itself.
+
+## E4: BEAT2 retargeted (2026-10)
+
+The head learned little from the teacher's trajectories (normalised MSE
+1.07 against 1.18 for holding still): the markers' motion choices are
+partly arbitrary. `flow/beat2.py` puts real human co-speech motion in the
+same files. Built and tested on synthetic BEAT2-shaped clips
+(`tests/test_beat2.py`); it has not seen the real data, so the first run
+is the check (below).
+
+- **Retarget by rotation transfer.** SMPL-X's template and three-vrm's
+  normalized rig (what `flow.vrmbody` drives) are both T-poses whose bones
+  have the identity rotation at rest, y up, facing +Z, the character's left
+  on +X: one frame, so a joint's world rotation is the same rotation on
+  both, no SMPL-X body model (its mesh and licence are not needed) and no
+  VRM 0 special case (the body file and the page already turn VRM 0 into
+  the 1.0 frame). The world rotations are fitted to the body's own
+  parameters top down (torso, head, shoulders, upper arm from its direction,
+  the elbow from the angle to the forearm, the twist chosen so the forearm
+  lands on the mocap forearm, the wrist from the rest; forearm roll goes to
+  the wrist), each joint measured against what the joints above it achieved
+  after their limits. The avatar's own T-pose droop (`align`) drops out.
+- **Root.** The torso's heading, a circular moving mean over 20 s
+  (`--facing-window`; 0 = the clip's mean), is taken off everything, so the
+  avatar faces the camera and only turns about it; the translation in that
+  frame, high-passed, is `hips.x` / `hips.y` (clipped to 0.15 / 0.08 hu).
+  A z-up clip is detected from the spine and turned. Legs unused.
+- **Variables.** The same columns the data engine records for the avatar
+  (`flow.dataset.traj_vars`), from the body's forward model; gaze, eyes,
+  brows, mouth and visemes are NaN (the loss masks them; the voice owns the
+  mouth; no FLAME mapping). `<key>.joints` keeps the 23 fitted parameters.
+- **Filter** (GMR's lesson). Per frame, before the limits clamp: arm in
+  trunk / head and arm in arm (the collision model), palm speed, joint past
+  its limit. Bad frames (defaults: 0.10 hu, 25 hu/s, 25 deg, 0.15 s around)
+  cut the utterances; pieces under 3 s are dropped. Rotation transfer keeps
+  angles, not contacts, so a thin actor's hand on the belly is inside a
+  bulkier avatar: look at `report` and tune `--max-pen` before training.
+- **Segments**: one utterance per row (cut at 0.35 s silences between
+  words, 3-15 s, 0.3 s of motion either side); `spoken` = the words joined,
+  per-character times from the word times, relative to the segment.
+- **Prosody** for the head to read later (nothing reads it yet):
+  `<key>.prosody` [frames, 3] = RMS, f0 (Hz, YIN), voiced, at the frame
+  times; the row names the columns (`prosody`).
+
+On the GPU machine (WSL, repo at `/mnt/e/Tsukuyomi`). BEAT2 is the Hugging
+Face dataset `H-Liu1997/BEAT2` (check the page for the files and the
+licence; the layout assumed is `smplxflame_30/`, `wave16k/`, `textgrid/`
+next to each other). Retargeted motion is a derivative of it: **keep the
+outputs out of git** (`--out` must be under `data/`, which is ignored).
+
+    cd /mnt/e/Tsukuyomi
+    # 0. the data (check the dataset page; this needs git-lfs or huggingface-cli)
+    huggingface-cli download H-Liu1997/BEAT2 --repo-type dataset \
+        --local-dir ~/BEAT2
+    # 1. a body file for the avatar (once; flow.train.hidden reads rigs/<name>.body.json)
+    python -m flow.vrmbody --vrm assets/vrm/VRM1_Constraint_Twist_Sample.vrm \
+        --out rigs/seed-san.body.json
+    # 2. a small run first, then all of it (resumable; --jobs = processes)
+    python -m flow.beat2 retarget --beat2 ~/BEAT2 \
+        --vrm assets/vrm/VRM1_Constraint_Twist_Sample.vrm \
+        --body rigs/seed-san.body.json --out data/beat2/seed-san \
+        --speakers 2 --limit 5 --fingers
+    python -m flow.beat2 report --out data/beat2/seed-san
+    python -m flow.beat2 preview --out data/beat2/seed-san --beat2 ~/BEAT2 \
+        --id beat2.<clip>/s00                  # data/beat2/seed-san/preview/
+    python -m flow.beat2 preview ... --also-vrm assets/vrm/three-vrm-girl.vrm \
+        --also-body rigs/three-vrm-girl.body.json    # side by side
+    python -m flow.beat2 retarget --beat2 ~/BEAT2 --vrm ... --body ... \
+        --out data/beat2/seed-san --jobs 8
+    # 3. hidden states of the text alone, then the head, then its eval
+    python scripts/extract_hidden.py --export data/beat2/seed-san/action \
+        --context none --text spoken --model ~/tsk-runs/sft/q8/merged \
+        --layers -8 --proj 1024 --out ~/tsk-runs/hidden/beat2
+    python -m flow.actionhead train --export data/beat2/seed-san/action \
+        --hidden ~/tsk-runs/hidden/beat2 --out ~/tsk-runs/ah/beat2 --steps 3000
+    python -m flow.actionhead eval --ckpt ~/tsk-runs/ah/beat2/head.pt \
+        --export data/beat2/seed-san/action --hidden ~/tsk-runs/hidden/beat2
+
+What to check first on the real data: that a clip's report says `up_axis:
+y-up` and `fps_source: mocap_frame_rate` (otherwise the layout differs from
+the assumption), the preview of two or three clips (arms where they should
+be, not crossed or behind the back, the torso not twisting as the person
+turns), and `report`'s distributions (kept hours, the penetration quantiles;
+if most is dropped, raise `--max-pen`). `--context none` is the text alone,
+the distribution the head sees when the speech is not a marked reply; the
+`--text spoken` matches the rows (`reply_raw` = `spoken`).
