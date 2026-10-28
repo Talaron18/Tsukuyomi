@@ -1,0 +1,1 @@
+[pose {"hand.R.y": "@shoulder.y", "head.tilt": 8, "mouth.form": 0.8, "dur": 0.4}] Hi there! [move {"name": "wave", "side": "R", "beats": 4, "tempo": 100}] Hey, waving at you!
