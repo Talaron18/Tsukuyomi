@@ -239,3 +239,243 @@ def test_extract_prefix_cache_and_resume(made, tmp_path):
         np.testing.assert_allclose(again[k], cached[k], atol=2e-2)
     with pytest.raises(SystemExit):
         run("cached", "--proj", "8")
+
+
+# ------------------------------------------- motion history, prosody, mix
+
+def _train(made, out, *extra, steps=12, every=4):
+    _out, stem, hid = made
+    o = ah.parse(["train", "--export", stem, "--hidden", hid, "--out",
+                  str(out), "--steps", str(steps), "--eval-every",
+                  str(every), "--dim", "16", "--batch", "4", "--chunk", "48",
+                  "--eval-frac", "0.3", *extra])
+    return ah.train(o, log=lambda s: None)
+
+
+def _eval(made, ckpt, *extra):
+    _out, stem, hid = made
+    return ah.evaluate(ah.parse(["eval", "--ckpt", str(ckpt), "--export",
+                                 stem, "--hidden", hid, "--steps", "2",
+                                 *extra]), log=lambda s: None)
+
+
+def test_default_head_keeps_the_old_format(made, tmp_path):
+    """No new option, no new parameter or config entry: checkpoints of the
+    plain head load as before (also one without the entries added later),
+    and a run folder resolves to its best checkpoint, or head.pt alone."""
+    _train(made, tmp_path / "a")
+    ck = torch.load(tmp_path / "a" / "head.pt", weights_only=False)
+    assert set(ck["config"]) == {"d_in", "n_vars", "n_avatars", "d", "layers",
+                                 "heads", "lookahead", "objective",
+                                 "dropout"}
+    assert {k.split(".")[0] for k in ck["state"]} == {
+        "tok", "null", "avatar", "avail", "q_time", "k_time", "dec", "out"}
+    assert ck["mean"].ndim == 1
+    for k in ("pooled_mean", "pooled_std", "norm", "opts", "step", "best"):
+        ck.pop(k, None)
+    torch.save(ck, tmp_path / "a" / "head.pt")
+    os.remove(tmp_path / "a" / "head.best.pt")
+    assert ah.resolve(str(tmp_path / "a")).endswith("head.pt")
+    e = _eval(made, tmp_path / "a")
+    assert set(e["normalised_mse"]) == {"head", "rest", "mean"}
+    assert e["skip_seconds"] == 0 and e["norm"] == "pooled"
+    assert e["layer_mix"] is None
+
+
+def test_best_checkpoint_and_patience(made, tmp_path):
+    res = _train(made, tmp_path / "b", steps=24, every=4)
+    h = res["history"]
+    assert os.path.exists(tmp_path / "b" / "head.pt")
+    best = torch.load(tmp_path / "b" / "head.best.pt", weights_only=False)
+    last = torch.load(tmp_path / "b" / "head.pt", weights_only=False)
+    top = min(h, key=lambda x: x["eval"])
+    assert best["step"] == top["step"] and last["step"] == 24
+    assert res["best_eval"] == pytest.approx(top["eval"], abs=1e-4)
+    assert ah.resolve(str(tmp_path / "b")).endswith("head.best.pt")
+    assert ah.resolve(str(tmp_path / "b" / "head.pt")).endswith("head.pt")
+    # patience 1: stops after the first evaluation that does not improve
+    r2 = _train(made, tmp_path / "c", "--patience", "1", "--lr", "0.5",
+                steps=400, every=2)
+    assert len(r2["history"]) < 200
+
+
+def test_history_is_teacher_forced_and_rolled_out(made, tmp_path):
+    out, stem, hid = made
+    d = ah.Data(stem, hid)
+    mean, std = ah.norm_stats(d, range(len(d)))
+    it = d.item(0)
+    F = len(it["y"])
+    rng = np.random.default_rng(0)
+    b = ah.batch([it], mean, std, 48, rng, hist=15, f0s=[30], train=False)
+    yn = (it["y"] - mean) / std
+    np.testing.assert_allclose(b["hist"][0].numpy(), yn[15:30], atol=1e-5)
+    assert b["hist_m"][0].numpy().shape == (15, len(d.vocab))
+    np.testing.assert_allclose(b["anchor"][0].numpy(),
+                               ah.last_valid(yn[15:30], it["m"][15:30]))
+    # before the clip's start the history is missing, not zeros known
+    b0 = ah.batch([it], mean, std, 48, rng, hist=15, f0s=[5], train=False)
+    assert not b0["hist_m"][0, :10].any() and b0["hist_m"][0, 10:].any()
+    # training corrupts it
+    bc = ah.batch([it], mean, std, 48, rng, hist=15, f0s=[30],
+                  corrupt=dict(noise=0.5, drop_frame=0.3, drop_var=0.3,
+                               drop_all=0.0))
+    assert not np.allclose(bc["hist"][0].numpy(), b["hist"][0].numpy())
+
+    res = _train(made, tmp_path / "h", "--history", "0.5", steps=8, every=4)
+    assert len(res["history"]) == 2
+    model, ck = ah.load(str(tmp_path / "h"))
+    assert model.hist == 15 and ck["config"]["history"] == 15
+    p = ah.predict(model, it, ck["mean"], ck["std"], 48, 2)
+    assert p.shape == it["y"].shape and np.isfinite(p).all()
+    np.testing.assert_array_equal(p[:15], it["y"][:15])    # given, as they are
+    assert not np.allclose(p[15:], it["y"][15:])
+    cold = ah.predict(model, it, ck["mean"], ck["std"], 48, 2, given=0)
+    assert cold.shape == p.shape and not np.allclose(cold[:15], it["y"][:15])
+    # The rollout depends on the history it is given.
+    shifted = dict(it, y=it["y"] + 5 * (np.arange(F)[:, None] < 15))
+    assert not np.allclose(ah.predict(model, shifted, ck["mean"], ck["std"],
+                                      48, 2)[20:], p[20:])
+    e = _eval(made, tmp_path / "h")
+    assert e["skip_seconds"] == 0.5 and e["history_seconds"] == 0.5
+    nm = e["normalised_mse"]
+    assert set(nm) == {"head", "rest", "mean", "hold"}
+    for k in ("relative_mse", "velocity_mse", "std_ratio"):
+        assert set(e[k]) == set(nm), k
+    assert e["std_ratio"]["rest"] == 0.0
+    assert "std_ratio" in e["per_variable_motion"]["head.tilt"]
+    json.dumps(e)                                  # no NaN, JSON-safe
+    assert "NaN" not in json.dumps(e)
+
+
+def test_delta_target_is_an_offset_from_the_last_frame(made, tmp_path):
+    out, stem, hid = made
+    d = ah.Data(stem, hid)
+    mean, std = ah.norm_stats(d, range(len(d)))
+    with pytest.raises(SystemExit):
+        ah.parse(["train", "--export", stem, "--hidden", hid, "--out", "x",
+                  "--target", "delta"])
+    _train(made, tmp_path / "d", "--history", "0.5", "--target", "delta")
+    model, ck = ah.load(str(tmp_path / "d"))
+    assert model.delta and ck["config"]["target"] == "delta"
+    it = d.item(0)
+    b = ah.batch([it], mean, std, 48, None, hist=15, f0s=[30], train=False)
+    # a model that predicts zero offsets holds the last known frame
+    zero = type("Z", (), {"hist": 15, "delta": True, "objective": "mse",
+                          "use_pros": False,
+                          "eval": lambda self: None,
+                          "__call__": lambda self, **kw: torch.zeros(
+                              kw["avail"].shape[0], kw["t_frame"].shape[1],
+                              len(d.vocab))})()
+    y = ah.sample(zero, b, None, 1)
+    np.testing.assert_allclose(y, np.repeat(b["anchor"][:1].numpy(), 48, 0))
+    assert _eval(made, tmp_path / "d")["normalised_mse"]["hold"] > 0
+
+
+def test_missing_prosody_is_a_mask_not_zeros(made, tmp_path):
+    out, stem, hid = made
+    d = ah.Data(stem, hid, prosody=True)
+    it = d.item(0)
+    assert it["pros"] is None                     # the teacher's rows: none
+    mean, std = ah.norm_stats(d, range(len(d)))
+    b = ah.batch([it], mean, std, 48, None, train=False, pros=True)
+    assert b["pros_m"].tolist() == [False] and (b["pros"] == 0).all()
+    _train(made, tmp_path / "p", "--prosody")
+    model, ck = ah.load(str(tmp_path / "p"))
+    assert model.use_pros and ck["config"]["prosody"] is True
+    kw = ah.inputs(b)
+    with torch.no_grad():
+        a = model(**kw)
+        kw["pros"] = torch.randn_like(kw["pros"])     # ignored when missing
+        np.testing.assert_allclose(model(**kw).numpy(), a.numpy(),
+                                   atol=1e-6)
+        kw["pros_m"] = torch.tensor([True])           # and not when present
+        assert not np.allclose(model(**kw).numpy(), a.numpy())
+    e = _eval(made, tmp_path / "p")
+    assert e["beat"] == {} or e["beat"]["gt"]["hands"]["segments"] == 0
+
+
+def test_layer_mix_weights_sum_to_one_and_learn():
+    cls = ah.model_cls()
+    m = cls(36, 5, 2, d=16, layers=1, heads=2, mix=3)
+    w = m.layer_weights()
+    assert w.shape == (3,) and abs(w.sum() - 1) < 1e-6
+    np.testing.assert_allclose(w, 1 / 3, atol=1e-6)
+    B, N, F = 2, 4, 6
+    kw = dict(h=torch.randn(B, N, 36), t_tok=torch.rand(B, N),
+              tok_pad=torch.zeros(B, N, dtype=torch.bool),
+              t_frame=torch.rand(B, F), frame_pad=torch.zeros(
+                  B, F, dtype=torch.bool), a=torch.zeros(B, dtype=torch.long),
+              avail=torch.ones(B, 5))
+    opt = torch.optim.SGD(m.parameters(), lr=0.5)
+    for _ in range(5):
+        loss = (m(**kw) - 1).pow(2).mean()
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+    w2 = m.layer_weights()
+    assert abs(w2.sum() - 1) < 1e-6 and not np.allclose(w2, w, atol=1e-4)
+    with pytest.raises(ValueError):
+        cls(10, 5, 2, mix=3)
+    # a layer repeated is a layer once: equal weight to equal states
+    x = torch.randn(B, N, 12)
+    same = cls(36, 5, 2, d=16, layers=1, heads=2, mix=3).eval()
+    base = same.embed_tokens(torch.cat([x, x, x], -1))
+    again = same.embed_tokens(torch.cat([x, x, x], -1))
+    np.testing.assert_allclose(base.detach().numpy(), again.detach().numpy())
+
+
+def test_layer_mix_trains_and_reports(made, tmp_path):
+    _train(made, tmp_path / "m", "--layer-mix")
+    model, ck = ah.load(str(tmp_path / "m"))
+    assert model.mix == 1 and ck["config"]["mix"] == 1
+    e = _eval(made, tmp_path / "m")
+    assert e["layer_mix"]["weights"] == [1.0]
+
+
+def test_no_text_head_has_no_token_path(made, tmp_path):
+    _train(made, tmp_path / "n", "--no-text", "--history", "0.5")
+    model, ck = ah.load(str(tmp_path / "n"))
+    assert not model.use_text and not hasattr(model, "tok")
+    e = _eval(made, tmp_path / "n")
+    assert "head" in e["normalised_mse"]
+    with pytest.raises(SystemExit):
+        ah.parse(["train", "--export", "e", "--hidden", "h", "--out", "o",
+                  "--no-text"])
+
+
+def test_per_avatar_norm_in_a_run(made, tmp_path):
+    out, stem, hid = made
+    d = ah.Data(stem, hid)
+    tr, _ev = ah.split_ids(d, 0.3, 0)
+    m, s = ah.norm_stats(d, tr, per_avatar=True)
+    pm, ps = ah.norm_stats(d, tr)
+    assert m.shape == (3, len(d.vocab))
+    assert not np.allclose(m[1], m[2])                 # two bodies, two stats
+    np.testing.assert_allclose(m[0], pm, atol=1e-6)
+    _train(made, tmp_path / "v", "--norm", "avatar")
+    _model, ck = ah.load(str(tmp_path / "v"))
+    assert ck["mean"].shape == (3, len(d.vocab)) and ck["norm"] == "avatar"
+    np.testing.assert_allclose(ck["pooled_std"], ps, atol=1e-6)
+    e = _eval(made, tmp_path / "v")
+    assert e["norm"] == "avatar" and e["normalised_mse"]["mean"] > 0
+    # the baselines are scored on the pooled std whatever the run's norm
+    e0 = _eval(made, tmp_path / "v", "--skip", "0")
+    assert e0["normalised_mse"]["rest"] == pytest.approx(
+        e["normalised_mse"]["rest"])
+    # an old checkpoint's avatar index past the table is the unknown one
+    np.testing.assert_array_equal(ah.stats_for(ck["mean"], ck["std"], 99)[0],
+                                  ck["mean"][0])
+
+
+def test_the_table_prints_runs_side_by_side(made, tmp_path):
+    _train(made, tmp_path / "t1")
+    _train(made, tmp_path / "t2", "--history", "0.5")
+    js = []
+    for n in ("t1", "t2"):
+        _eval(made, tmp_path / n, "--skip", "0.5", "--json",
+              str(tmp_path / n / "eval.json"))
+        js.append(str(tmp_path / n / "eval.json"))
+    lines = ah.table(js, log=lambda s: None)
+    assert lines[0].split() == ["t1", "t2"]
+    assert any(l.startswith("nmse.head") for l in lines)
+    assert any(l.startswith("nmse.hold") for l in lines)
