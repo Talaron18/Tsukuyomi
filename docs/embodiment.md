@@ -726,3 +726,41 @@ turns), and `report`'s distributions (kept hours, the penetration quantiles;
 if most is dropped, raise `--max-pen`). `--context none` is the text alone,
 the distribution the head sees when the speech is not a marked reply; the
 `--text spoken` matches the rows (`reply_raw` = `spoken`).
+
+#### Grid results (2026-10-28, runs/ah_grid/)
+
+BEAT2, 3,068 held-out segments, the first second of each unscored (the
+history's); normalised MSE (nmse), motion around each segment's own mean
+(rel), predicted / true motion std (std):
+
+| run | nmse | rel | std | hands speed ~ audio accents (corr) |
+|---|---|---|---|---|
+| hold last frame | 1.105 | 0.471 | 0 | - |
+| a text only | 1.066 | 0.473 | 0.08 | 0.02 |
+| b + history 1 s | 0.899 | 0.496 | 0.42 | 0.04 |
+| c + history + prosody | 0.854 | 0.488 | 0.41 | 0.30 |
+| d history + prosody, no text | **0.790** | **0.468** | 0.34 | 0.29 |
+| e = c with flow matching | 1.652 | 0.764 | 0.84 | 0.01 |
+| ground truth | | | 1 | 0.03 |
+
+What it says:
+- History is what lowers nmse: knowing the current pose. None of the
+  regression heads predicts the motion *around* the posture better than a
+  constant (rel 0.47-0.50 vs 0.471): the exact gesture is not predictable
+  from these inputs, and regression shrinks to a fraction of the real
+  motion (std 0.08-0.42).
+- Text adds nothing measurable here: d (no text) beats c on every row.
+  The LLM's states of the transcript do not carry the gesture beyond what
+  history and prosody give, at least under per-frame error.
+- The prosody heads tie hand speed to loudness far more than people do
+  (corr 0.30 vs 0.03 in the mocap): a learned shortcut, not human timing.
+- Flow matching (e) moves like a person in amount (std 0.84) but its
+  per-frame error is large, as a sample (not an average) must be; per-
+  frame metrics cannot judge it, only watching or distribution metrics
+  (FGD-style) can.
+
+So, for now: the explicit path (the LLM writes poses and moves, the solver
+executes) stays the body's controller; an audio-driven generative layer
+(history + prosody, flow matching) is the candidate for background gesture
+between markers, to be judged by eye; LLM hidden states as the motion
+source are not supported by either the teacher data or BEAT2.
