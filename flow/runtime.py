@@ -859,6 +859,12 @@ def main(argv=None) -> int:
     ap.add_argument("--seconds", type=float, default=8.0)
     ap.add_argument("--fps", type=float, default=30.0)
     ap.add_argument("--size", type=int, default=512)
+    ap.add_argument("--frame", default="full", choices=("bust", "full"),
+                    help="camera: bust = head and chest (flow.framing), "
+                         "full = the whole canvas [full]")
+    ap.add_argument("--body", default=None,
+                    help="the rig's body file for --frame bust [rigs/<rig "
+                         "name>.body.json]")
     ap.add_argument("--out", default="preview")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--no-autonomic", action="store_true")
@@ -1525,6 +1531,15 @@ def main(argv=None) -> int:
     with Live2DBackend(a.model, size=a.size, strip_dynamics=False,
                        fps=a.fps) as be:
         be.calibrate()
+        if a.frame == "bust":
+            try:
+                from . import framing
+            except ImportError:
+                from flow import framing
+            v = framing.bust_view(be, a.body or framing.body_path_for(
+                a.rig, a.model), a.model)
+            if v:
+                be.set_view(*v)
         print("backend: " + ", ".join(
             f"{k}={be._api_report[k]}" for k in ("order", "timestep", "parts")
             if k in be._api_report))

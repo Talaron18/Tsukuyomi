@@ -1439,6 +1439,7 @@ def plan(a, reply, out_dir, motions, log=print, tts=None, body=None):
         raise SystemExit(f"runtime planning failed ({rc})")
     cmd = [sys.executable, "-m", "flow.runtime"] + base + [
         "--tokens-in", tok, "--size", str(a.size),
+        "--frame", getattr(a, "frame", "full"),
         "--out", os.path.join(out_dir, "render")]
     return cmd, seconds
 
@@ -1642,6 +1643,9 @@ def add_args(ap):
     ap.add_argument("--fps", type=float, default=30.0)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--size", type=int, default=512)
+    ap.add_argument("--frame", default="bust", choices=("bust", "full"),
+                    help="Live2D renders: bust = head and chest (flow."
+                         "framing), full = the whole canvas [bust]")
     ap.add_argument("--gestures", default=None, metavar="FILE.json",
                     help="per-rig gesture descriptions: a JSON object label "
                          "-> text, or label -> {\"desc\": text, \"hide\": "

@@ -497,6 +497,14 @@ class Live2DBackend:
                 self._setter(pid, float(value), 1.0)
         self._apply_parts(parts)
 
+    def set_view(self, scale: float = 1.0, offset_x: float = 0.0,
+                 offset_y: float = 0.0) -> None:
+        """Camera only (flow.framing): live2d-py's model scale about the
+        canvas centre, then a shift in half-canvas units (+x right, +y
+        up). Parameters and measurements are untouched."""
+        self.model.SetScale(float(scale))
+        self.model.SetOffset(float(offset_x), float(offset_y))
+
     def render(self, overrides: dict[str, float] | None = None,
                order: str | None = None,
                parts: dict[str, float] | None = None) -> np.ndarray:

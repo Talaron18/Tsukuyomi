@@ -1238,6 +1238,12 @@ def main(argv=None) -> int:
     with Live2DBackend(a.model_json, size=a.size, bg=bg,
                        strip_dynamics=False, fps=a.fps) as be:
         be.calibrate()
+        if getattr(a, "frame", "full") == "bust":
+            from flow import framing
+            v = framing.bust_view(be, framing.body_path_for(
+                a.rig, a.model_json), a.model_json)
+            if v:
+                be.set_view(*v)
         print("backend: " + ", ".join(
             f"{k}={be._api_report[k]}" for k in ("order", "timestep", "parts")
             if k in be._api_report))
