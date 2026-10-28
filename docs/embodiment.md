@@ -622,6 +622,112 @@ is better except the ratios and correlations):
   weights (layers 36, 29, 18 for `-1,-8,18`). Differences smaller than
   two runs' spread (rerun with `--seed 1`) are not results.
 
+#### Probes: why the grid came out as it did (2026-10)
+
+The grid says no regression head beats a constant on the motion around
+the posture, text adds nothing, and prosody heads tie hand speed to
+loudness far more than people do. `flow.probe` asks why, with no
+controller: two questions, each with the control that would show an
+answer to be speaker or recording identity. Spec in the module docstring.
+Code and tests ran on synthetic data only (CPU); none of the numbers
+below exist yet.
+
+    cd /mnt/e/Tsukuyomi
+    bash scripts/beat2_probe.sh                    # prosody + match, ~/tsk-runs/probe
+    MODE=prosody bash scripts/beat2_probe.sh       # numpy only, minutes
+    LIMIT=2000 STEPS=500 bash scripts/beat2_probe.sh    # a quick look
+
+or by hand (export `data/beat2/seed-san/action`, hidden states
+`~/tsk-runs/hidden/beat2`, layers `[36, 29, 18]` projected to 1024):
+
+    python -m flow.probe prosody --export data/beat2/seed-san/action \
+        --out ~/tsk-runs/probe
+    python -m flow.probe match --export data/beat2/seed-san/action \
+        --hidden ~/tsk-runs/hidden/beat2 --out ~/tsk-runs/probe --layer 1
+    python -m flow.probe match ... --split speaker --layer all   # new speakers
+    python -m flow.probe all ... --sem ~/BEAT2/sem               # + semantic windows
+
+Both write `report.txt` and `report.json` (`prosody`, `match`). `--layer`
+takes an index into the stored layers (1 = layer 29, the default), a layer
+number, or `all` (a learned mix, three times the RAM; estimate: the states of
+one layer are ~3 GB). `--limit N` keeps whole clips until N segments are in.
+The budget of `match` is `--steps 3000 x --batch 128` per variant, six
+variants; the estimate on a 3090 Ti is 15-25 minutes plus the loading of
+the shards (not measured: it was only run on CPU). `prosody` is numpy and
+takes minutes.
+
+**prosody** (the ground truth only). Per segment, six voice features
+(loudness, its range, voiced share, f0 and its range, speaking rate in
+units per voiced second -- characters for zh / ja, space-separated words
+for en / es --, pauses) against the hands' and head's amplitude (std and
+p95 - p5 around the segment mean), speed (mean, p90) and the share of
+frames with the hands moving; then 2 s windows with a lag scan, and the
+frame-level accent correlation of the grid (reproduces the 0.03). Every
+number has a 95% CI from resampling whole clips. Read the
+`within speaker` tables (z-scored per speaker, then pooled), not
+`overall`: where the two differ, speaker style was driving it. The
+`no dur` table removes segment length (a longer segment has more spread by
+itself). In the tables `*` marks a CI that excludes 0, the last two
+columns average |r| over the four amplitude and the four speed columns.
+The two hypotheses are at the end of the report, with the paired
+difference of the two |r| and its CI:
+
+- loudness moves the amplitude more than the speed: `loud` row, `hand_std`
+  / `head_std` against `hand_v` / `head_v`; supported when the difference
+  is positive with a CI above 0. A lag scan that peaks away from 0 says who
+  follows whom (positive: motion after the voice).
+- the speaking rate moves the speed more than the amplitude: `rate` row,
+  the same columns the other way round; supported when `hand_v` beats
+  `hand_std` with a CI above 0.
+
+Amplitude and speed are not independent measures (a faster swing of the
+same size is faster), so read the whole row, not one cell. If the within-
+speaker numbers are small (|r| under 0.1-0.2) the voice carries little of
+the motion in the mocap itself, and a head that reads loudness as speed
+has learned something the data does not support.
+
+**match** (text and prosody against motion). 3 s windows; the motion, the
+tokens from 1 s before the window to its end, and the window's prosody are
+encoded to 128-d and matched with a symmetric InfoNCE. Each variant is
+scored on held-out clips (or speakers) as top-1 / top-5 retrieval among
+K = 32 candidate motions for a text, under three ways of drawing the 31
+wrong ones: `random` (another clip), `speaker` (the same speaker, another
+clip) and `clip` (the same recording, a different time). Chance is 1/32 =
+0.031 and 5/32 = 0.16.
+
+| variant | trained on | tells you |
+|---|---|---|
+| text, prosody, text+prosody | batches of one speaker | what each carries about the motion once the speaker is no help |
+| text_shuffled | the tokens of another window | the pipeline: must be at chance everywhere (a CI above chance is a leak) |
+| text_random | random batches | how much of the score is speaker or language, which random negatives allow; compare its `random` column with `speaker` and `clip` |
+| text_clip | batches from one recording | the hardest: speaker, recording and language the same |
+
+How to read it:
+
+- Text carries gesture information if `text` is clearly above chance in the
+  `speaker` and `clip` columns (the CI's low end above 0.031, and more than
+  `text_shuffled`) on held-out clips; the `clip` column is the strictest.
+  Better still on `--split speaker` (speakers never seen in training).
+- Text beyond the voice: `text+prosody` above `prosody` in the same column.
+  `prosody` above `text` means the audio is the signal and the LLM states
+  add nothing, as the grid's d - c suggested.
+- Everything at chance in `speaker` / `clip` but high in `random` for
+  `text_random` is the speaker-identity finding: the states say who is
+  talking and in what language, not what the hands do.
+- All variants near chance with train top-1 rising in the curves is
+  overfitting of a probe that is too large for the signal (the text is
+  1024-d per token): lower `--steps`, or `--dim 64`, before concluding.
+  The report is the last step; nothing is chosen on the held-out windows.
+- `--center` removes the window's mean pose, leaving only the gesture
+  (posture identifies a recording and a speaker; it is what the MSE grid
+  mostly scored).
+- `--sem DIR` (BEAT2's semantic annotations; the format is detected, not
+  known: a file `<clip>.txt|csv|tsv|json` with start and end seconds, and
+  a gesture type or a relevance score) splits the accuracy into windows
+  that overlap a semantic gesture and those that do not; if nothing parses
+  it says so and goes on. Text helping only on the semantic windows would
+  be the case for a text-driven gesture layer for the rare semantic ones.
+
 ## E4: BEAT2 retargeted (2026-10)
 
 The head learned little from the teacher's trajectories (normalised MSE

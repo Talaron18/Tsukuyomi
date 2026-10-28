@@ -36,3 +36,8 @@ Python (its Ollama-template check needs `go` and skips without);
 and `test_actionhead.py` need torch, transformers, peft and tokenizers
 (CPU builds are enough: a tiny random Qwen3 is built in the test) and skip
 without them. The 4-bit / Unsloth paths need a CUDA GPU and are not tested.
+
+`test_probe.py` (`flow/probe.py`, the BEAT2 probes): synthetic exports with a
+known answer. The prosody half is pure numpy and always runs; the contrastive
+`match` half needs torch (a few seconds of CPU training per variant) and
+skips without it.
