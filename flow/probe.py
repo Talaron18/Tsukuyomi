@@ -119,6 +119,16 @@ that is really speaker or recording identity.
             scheme) are in the JSON and the report, so that overfitting
             shows. The reported model is the last step (none is selected
             on the held-out windows).
+  save      match --save DIR keeps every trained variant for flow.
+            gesture_search: DIR/<variant>/model.pt (the state dict) and
+            config.json -- the canonical columns, the window / look-back /
+            token / centring settings, the motion normalisation, the
+            stored layers and the one(s) the text encoder reads, the
+            hidden-state folder's meta.json (model, layers, projection)
+            and the held-out and training clips (the library is built
+            from the training ones; the split is not recomputed). Nothing
+            in the report changes. load_encoders() reads one back: motion
+            windows and (text states, prosody) to embeddings.
   sem       --sem DIR: BEAT2's semantic annotations, found as
             DIR/**/<clip>.(txt|csv|tsv|json); the format is not known
             here, so each line is read as numbers and words: the first
@@ -137,6 +147,8 @@ Usage:
     python -m flow.probe match --export data/beat2/seed-san/action \\
         --hidden ~/tsk-runs/hidden/beat2 --out ~/tsk-runs/probe --layer 1
     python -m flow.probe all --export ... --hidden ... --out ... --limit 2000
+    python -m flow.probe match --export ... --hidden ... --out ... \\
+        --variants text+prosody --save ~/tsk-runs/probe/gs   # gesture search
 """
 
 from __future__ import annotations
@@ -1033,36 +1045,37 @@ def shuffle_map(n, seed):
     return p
 
 
-def make_batch(corpus, win, widx, text_src, norm, o, torch, device):
-    """Tensors of the windows widx (indices into win): motion [B, W, 2C],
-    pros [B, W, 3], tokens h [B, T, L, D], rel time [B, T], mask [B, T]
-    (the text of window text_src[w])."""
-    W = corpus.W
+def motion_input(y, norm, center=False):
+    """[W, 2C] float32: the encoder's motion input for a window y [W, C] of
+    the canonical columns -- normalised by norm = (mean, sd), optionally
+    centred on the window mean (--center), and the frame differences x 5
+    beside it (the first row of those 0)."""
     mean, sd = norm
-    B = len(widx)
-    nc = len(corpus.cols)
-    mot = np.zeros((B, W, 2 * nc), np.float32)
-    pr = np.zeros((B, W, 3), np.float32)
-    toks, tms = [], []
-    for b, w in enumerate(widx):
-        s = corpus.segs[win["seg"][w]]
-        a = int(win["start"][w])
-        y = (s["y"][a:a + W] - mean) / sd
-        if o.center:
-            y = y - y.mean(0)
-        mot[b, :, :nc] = y
-        mot[b, 1:, nc:] = np.diff(y, axis=0) * 5.0
-        pr[b] = s["pros"][a:a + W]
-        t = text_src[w]
-        s2 = corpus.segs[win["seg"][t]]
-        a2 = int(win["start"][t])
-        fps = s2["fps"]
-        lo, hi = a2 / fps - o.lookback, (a2 + W) / fps
-        k = np.flatnonzero((s2["tt"] >= lo) & (s2["tt"] <= hi))[-o.max_tokens:]
-        toks.append(s2["h"][k])
-        tms.append((s2["tt"][k] - a2 / fps))
+    nc = y.shape[1]
+    y = (y - mean) / sd
+    if center:
+        y = y - y.mean(0)
+    out = np.zeros((len(y), 2 * nc), np.float32)
+    out[:, :nc] = y
+    out[1:, nc:] = np.diff(y, axis=0) * 5.0
+    return out
+
+
+def window_tokens(h, tt, lo, hi, start, max_tokens):
+    """(states [n, L, D], times [n]) of the tokens a window reads: those
+    whose time is in [lo, hi] (the window's start less the look-back, its
+    end), the last max_tokens of them, with their time relative to
+    `start`."""
+    k = np.flatnonzero((tt >= lo) & (tt <= hi))[-max_tokens:]
+    return h[k], (tt[k] - start)
+
+
+def pack_inputs(mot, pr, toks, tms, L, D, torch, device):
+    """Tensors of a batch: motion [B, W, 2C] (None: no motion), pros [B, W,
+    3], tokens h [B, T, L, D], rel time [B, T], mask [B, T]."""
+    B = len(toks)
     T = max([len(x) for x in toks] + [1])
-    h = np.zeros((B, T, corpus.L, corpus.D), np.float16)
+    h = np.zeros((B, T, L, D), np.float16)
     tm = np.zeros((B, T), np.float32)
     mk = np.zeros((B, T), bool)
     for b in range(B):
@@ -1071,8 +1084,34 @@ def make_batch(corpus, win, widx, text_src, norm, o, torch, device):
         tm[b, :n] = tms[b]
         mk[b, :n] = True
     f = lambda a, dt=None: torch.as_tensor(a, dtype=dt).to(device)
-    return {"mot": f(mot), "pros": f(pr), "h": f(h).float(), "tm": f(tm),
-            "mask": f(mk)}
+    return {"mot": None if mot is None else f(mot), "pros": f(pr),
+            "h": f(h).float(), "tm": f(tm), "mask": f(mk)}
+
+
+def make_batch(corpus, win, widx, text_src, norm, o, torch, device):
+    """Tensors of the windows widx (indices into win): motion [B, W, 2C],
+    pros [B, W, 3], tokens h [B, T, L, D], rel time [B, T], mask [B, T]
+    (the text of window text_src[w])."""
+    W = corpus.W
+    B = len(widx)
+    nc = len(corpus.cols)
+    mot = np.zeros((B, W, 2 * nc), np.float32)
+    pr = np.zeros((B, W, 3), np.float32)
+    toks, tms = [], []
+    for b, w in enumerate(widx):
+        s = corpus.segs[win["seg"][w]]
+        a = int(win["start"][w])
+        mot[b] = motion_input(s["y"][a:a + W], norm, o.center)
+        pr[b] = s["pros"][a:a + W]
+        t = text_src[w]
+        s2 = corpus.segs[win["seg"][t]]
+        a2 = int(win["start"][t])
+        fps = s2["fps"]
+        h, tm = window_tokens(s2["h"], s2["tt"], a2 / fps - o.lookback,
+                              (a2 + W) / fps, a2 / fps, o.max_tokens)
+        toks.append(h)
+        tms.append(tm)
+    return pack_inputs(mot, pr, toks, tms, corpus.L, corpus.D, torch, device)
 
 
 def build_model(corpus, o, use_text, use_pros, torch):
@@ -1424,6 +1463,109 @@ def train_variant(name, corpus, win, tr, ev, norm, o, device, log=log):
     return model, res
 
 
+def save_variant(root, res, model, corpus, norm, o, tr_clips, ev_clips,
+                 log=log):
+    """<root>/<variant>/model.pt and config.json (module docstring,
+    save). Returns the folder."""
+    import torch
+    d = os.path.join(root, res["variant"])
+    os.makedirs(d, exist_ok=True)
+    torch.save({k: v.detach().cpu() for k, v in model.state_dict().items()},
+               os.path.join(d, "model.pt"))
+    cfg = {"format": "tsukuyomi.probe/1", "variant": res["variant"],
+           "text": res["text"], "prosody": res["prosody"],
+           "cols": list(corpus.cols), "D": int(corpus.D), "L": int(corpus.L),
+           "sel": [int(i) for i in corpus.sel],
+           "layer_arg": str(o.layer), "dim": int(o.dim),
+           "queries": int(o.queries), "window": int(corpus.W),
+           "hop": int(o.hop), "lookback": float(o.lookback),
+           "max_tokens": int(o.max_tokens), "center": bool(o.center),
+           "fps": float(corpus.segs[0]["fps"]), "seed": int(o.seed),
+           "steps": int(o.steps), "batch": int(o.batch),
+           "norm": {"mean": [float(x) for x in norm[0]],
+                    "sd": [float(x) for x in norm[1]]},
+           "hidden": {"dir": os.path.abspath(o.hidden),
+                      "meta": corpus.meta},
+           "export": os.path.abspath(o.export),
+           "split": o.split, "train_clips": sorted(tr_clips),
+           "eval_clips": sorted(ev_clips),
+           "eval": res.get("eval")}
+    with open(os.path.join(d, "config.json"), "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=1)
+    log(f"probe match: saved {res['variant']} -> {d}")
+    return d
+
+
+class Encoders:
+    """A saved variant (save_variant) ready to embed: motion windows (the
+    canonical columns, raw) and the conditioning (token states, prosody
+    features) to unit vectors of the probe's dim. numpy in, numpy out."""
+
+    def __init__(self, cfg, model, device, torch):
+        self.cfg, self.model, self.device, self.torch = cfg, model, device, \
+            torch
+        self.norm = (np.asarray(cfg["norm"]["mean"], np.float32),
+                     np.asarray(cfg["norm"]["sd"], np.float32))
+        self.cols = list(cfg["cols"])
+        self.W = int(cfg["window"])
+        self.fps = float(cfg["fps"])
+
+    def embed_motion(self, y, bs=512):
+        """[B, W, C] raw canonical columns -> [B, dim] unit vectors."""
+        t = self.torch
+        out = []
+        with t.no_grad():
+            for a in range(0, len(y), bs):
+                mot = np.stack([motion_input(w, self.norm, self.cfg["center"])
+                                for w in y[a:a + bs]])
+                z = self.model.em({"mot": t.as_tensor(mot).to(self.device)})
+                out.append(t.nn.functional.normalize(z, dim=-1).cpu().numpy())
+        return np.concatenate(out) if out else np.zeros(
+            (0, self.cfg["dim"]), np.float32)
+
+    def embed_cond(self, toks, tms, pros, bs=256):
+        """toks: per window [n, L, D] token states (the selected layers),
+        tms their times relative to the window start, pros [B, W, 3]
+        (flow.actionhead.pros_feat) -> [B, dim] unit vectors."""
+        t = self.torch
+        out = []
+        with t.no_grad():
+            for a in range(0, len(toks), bs):
+                b = pack_inputs(None, np.asarray(pros[a:a + bs], np.float32),
+                                toks[a:a + bs], tms[a:a + bs], self.cfg["L"],
+                                self.cfg["D"], t, self.device)
+                z = self.model.ec(b)
+                out.append(t.nn.functional.normalize(z, dim=-1).cpu().numpy())
+        return np.concatenate(out) if out else np.zeros(
+            (0, self.cfg["dim"]), np.float32)
+
+
+def load_encoders(path, variant="text+prosody", device=None):
+    """Encoders of `path`/<variant> (a --save DIR), or of `path` itself
+    when it holds config.json."""
+    need_torch()
+    import torch
+    d = path if os.path.exists(os.path.join(path, "config.json")) \
+        else os.path.join(path, variant)
+    try:
+        with open(os.path.join(d, "config.json"), encoding="utf-8") as f:
+            cfg = json.load(f)
+    except OSError:
+        have = sorted(x for x in os.listdir(path)
+                      if os.path.exists(os.path.join(path, x, "config.json"))
+                      ) if os.path.isdir(path) else []
+        raise SystemExit(f"{d}: no saved variant (probe match --save); "
+                         f"found: {have}")
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    shim = argparse.Namespace(D=cfg["D"], L=cfg["L"], cols=cfg["cols"])
+    o = argparse.Namespace(dim=cfg["dim"], queries=cfg["queries"])
+    model = build_model(shim, o, cfg["text"], cfg["prosody"], torch)
+    model.load_state_dict(torch.load(os.path.join(d, "model.pt"),
+                                     map_location="cpu"))
+    model.to(device).eval()
+    return Encoders(cfg, model, device, torch)
+
+
 def match_probe(o, log=log) -> dict:
     need_torch()
     import torch
@@ -1493,8 +1635,12 @@ def match_probe(o, log=log) -> dict:
             info["sem"] = "none found"
     results = []
     for v in o.variants_list:
-        _, res = train_variant(v, corpus, win, tr, ev, norm, o, device, log)
+        model, res = train_variant(v, corpus, win, tr, ev, norm, o, device,
+                                   log)
         results.append(res)
+        if getattr(o, "save", None):
+            save_variant(o.save, res, model, corpus, norm, o, tr_clips,
+                         ev_clips, log)
     rep = {"info": info, "variants": results}
     rep["text"] = match_lines(rep, o)
     return rep
@@ -1615,6 +1761,9 @@ def parse(argv):
     g.add_argument("--curve-n", type=int, default=200)
     g.add_argument("--device", default=None)
     g.add_argument("--sem", default=None)
+    g.add_argument("--save", default=None,
+                   help="keep the trained variants here (gesture_search "
+                        "reads them)")
     return ap.parse_args(argv)
 
 
