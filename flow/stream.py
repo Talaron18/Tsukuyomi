@@ -73,6 +73,73 @@ MOVE_TYPES = ("saccade", "head_turn", "body_shift", "brow")
 LATE_LOG = 0.1
 
 
+# Idle head drift (HeadDrift): peak degrees of yaw / pitch / tilt, and the
+# periods (s) of the three sines each axis sums. The calm idle's head holds
+# a fixation for 3 s or more with the head still in between (events.IDLE);
+# a streamer's head is never quite still. A few degrees: below what reads
+# as a gaze shift, above what the eye takes for a frozen frame.
+DRIFT_DEG = {"head_x": 2.5, "head_y": 1.5, "head_z": 2.0}
+DRIFT_PERIODS = (5.0, 13.0)
+DRIFT_WEIGHTS = (0.5, 0.3, 0.2)
+
+
+class HeadDrift:
+    """A slow, low-amplitude wander of the head over everything the idle
+    does: per axis (yaw, pitch, tilt) the sum of three sines with seeded
+    periods in `periods` seconds and seeded phases, peaking at `scale` x
+    DRIFT_DEG degrees. Smooth, never repeating in a minute, and a pure
+    function of the time (so a seed replays it).
+
+    It is added to the idle's head parameters before the moves and poses
+    are applied (MotionStream.frame), so it is there while the head rests
+    or the targets are on the face and the eyes, and a pose that targets
+    the head takes the parameter over: it moves from where the drift has
+    the head to its target and is released back to the drift, never
+    fighting it. scale 0 is no drift. Parameters in degrees (every Cubism
+    angle with a range over +-2, the VRM's); a rig whose angle is
+    normalised to +-1 is scaled by its half range over 30."""
+
+    def __init__(self, rig, seed=0, scale=1.0, periods=DRIFT_PERIODS):
+        rng = np.random.default_rng([int(seed), 4])
+        self.scale = float(scale)
+        self.axes = []                      # (pid, lo, hi, peak, T, phase)
+        pids = rig.pids
+        for r, c, _sg in rig.role_cols:
+            if r not in DRIFT_DEG:
+                continue
+            i = rig.expressive[c]
+            lo, hi = float(rig.lo[i]), float(rig.hi[i])
+            half = (hi - lo) / 2
+            peak = DRIFT_DEG[r] * (1.0 if half > 2.0 else half / 30.0)
+            T = rng.uniform(periods[0], periods[1], len(DRIFT_WEIGHTS))
+            self.axes.append((pids[i], lo, hi, peak * self.scale, T,
+                              rng.uniform(0, 2 * np.pi, len(DRIFT_WEIGHTS))))
+
+    def offsets(self, t):
+        """{parameter: the drift's offset at t seconds}."""
+        w = np.array(DRIFT_WEIGHTS)
+        return {pid: float(peak * (w * np.sin(2 * np.pi * t / T + ph)).sum())
+                for pid, _lo, _hi, peak, T, ph in self.axes}
+
+    def apply(self, t, over):
+        """over with the head parameters it holds moved by the drift, kept
+        inside their ranges."""
+        if self.scale <= 0:
+            return over
+        off = self.offsets(t)
+        for pid, lo, hi, *_ in self.axes:
+            if pid in over:
+                over[pid] = float(np.clip(over[pid] + off[pid], lo, hi))
+        return over
+
+
+def drift_from_args(a):
+    """MotionStream's head_drift for parsed arguments: the scale, or None."""
+    if not getattr(a, "head_drift", False):
+        return None
+    return float(getattr(a, "head_drift_scale", 1.0))
+
+
 class EventRig:
     """Everything runtime.main sets up for an --events run, once: columns,
     held parameters, bound roles and adapted statistics, the gesture
@@ -246,12 +313,14 @@ class MotionStream:
     tokens: a fixed token list to play instead (a --tokens file), with no
     idle generated; what the equivalence test feeds it. mouth_map: the
     rig's calibrated mouth map (flow.mouth), whose rest the mouth holds
-    between sentences. Thread safety: direct()/add_mouth() may be called
+    between sentences. head_drift: None (off, the stream of before) or the
+    HeadDrift scale (1.0: its default amplitudes). Thread safety: direct()/add_mouth() may be called
     from any thread while the render thread calls frame().
     """
 
     def __init__(self, rig, seed=0, idle=True, tokens=None, horizon=20.0,
-                 refill=10.0, mouth_map=None, log=print, autonomic=True):
+                 refill=10.0, mouth_map=None, log=print, autonomic=True,
+                 head_drift=None):
         self.rig, self.fps, self.log = rig, rig.fps, log
         self.lock = threading.Lock()
         self.horizon, self.refill = float(horizon), float(refill)
@@ -312,6 +381,8 @@ class MotionStream:
             rest = rig.mouth_curves({"fps": rig.fps, "open": [0.0],
                                      "map": mouth_map}, 1)
             self.mouth_rest = {p: float(v[0]) for p, v in rest.items()}
+        self.drift = (HeadDrift(rig, seed, head_drift)
+                      if head_drift else None)
         self.f = 0                          # the next frame to compute
         self.late = []                      # (intended, actual) directed
         self.extend(0.0)
@@ -495,6 +566,8 @@ class MotionStream:
         for p, v in gp.items():
             if p not in rig.expr_ids:
                 over[p] = v
+        if self.drift is not None:
+            over = self.drift.apply(tf, over)
         still = ()
         if self.gsearch is not None and self.gsearch.busy():
             over, parts = self.gsearch.apply(f, over, parts)

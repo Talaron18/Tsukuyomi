@@ -593,6 +593,66 @@ lower hand share than `q8`'s. Its held-out sessions are the same ones as
 request keep a hand; words that wrongly do not drop one: edit `ASK_WORDS`
 / `ASK_NOT` in `flow/dataexport.py` and run `stats` again before training.
 
+### Expression beats (r2 data)
+
+Real VTubers (Kaf, Shigure Ui) and an AI VTuber (Shizuku), all framed chest
+up, move mostly the face: several expression changes a sentence (eyes
+closed in a smile at the funny parts, mouth shapes, brows), a small head
+tilt or turn with each one, a body that is almost still and the hands out
+of the picture. The r1 replies held one expression a reply. Three changes,
+none of which touch the r1 files or the flags of a run in progress:
+
+- **Teacher prompt** (`flow.pose.system_prompt(..., prompt="beats")`;
+  `flow.dataset gen --teacher-prompt {beats,v1}`, default `beats`; `v1`
+  regenerates r1's prompt byte for byte, tested). The "How to move" part
+  gains, worded from the variables this body has (`pose.offered`; lafei has
+  no `eye.*.smile`, so it is told to close the eyes with `eye.*.open`
+  instead, and brows / blush only where they exist):
+
+      Your face does most of the talking, as a streamer's does: change it
+      several times in a reply, a beat for each thing you react to ...
+      Each beat carries a small head move in the same marker, a few degrees
+      (head.tilt, head.yaw, head.pitch between -8 and 8) ... Never write
+      that head move as a marker of its own.
+      Keep the rest of your body almost still, hands out of the picture: no
+      hand, arm or big torso moves unless the user asks you to show or do
+      something, or the moment is a big one (a greeting, a celebration), and
+      then once in a reply at most.
+
+  The rule becomes "One to three expression beats per sentence", the "use
+  your whole body" line is dropped and the placement examples are face
+  beats with their head angles. The director's own default stays `v1`
+  (`--body-prompt`): a student is served with the prompt it was trained
+  on, so serve an r2 student with `--body-prompt beats`.
+- **Measurement.** `dataexport stats` prints an "expression beats" block
+  under the manners one, per avatar and in all: beats per sentence, the face
+  and hand share of all pose targets, the share of beats with a head
+  angle, pose markers per reply, replies with a beat. A *beat* is a pose
+  marker whose targets are face variables (brow, eye, mouth, cheek, gaze)
+  and optionally `head.*`, nothing else. With manners on the rates read
+  "before manners -> after" (and "beats" in the json under `beats`, with
+  `before`). Compare r1 and r2 by running it on both roots.
+- **Export.** Manners caps pose markers at `--max-poses` (2), which would
+  cut a reply of beats to two. `--max-beats N` caps the beats on their own
+  and leaves `--max-poses` to the other markers. Default: 9 when the
+  dataset's `avatars.json` carries the beats prompt, else 0, which is
+  manners as before, so r1 exports (and the hash of a run such as q8m)
+  do not change. The trainer takes the same flag (`--max-beats`).
+
+**Idle head drift.** Before, the calm idle held the head still between
+fixations (holds of 3 s or more, `events.IDLE`), nothing moved it
+continuously, so a quiet stream looked frozen. `flow.stream.HeadDrift` adds
+a slow wander: per axis the sum of three sines (periods 5-13 s, seeded
+phases), peaking at 2.5 deg yaw, 1.5 pitch and 2 tilt. It is added to the
+head parameters before moves and poses are applied, so face-only beats
+leave it running, and a pose that targets the head moves from where the
+drift has the head to its target and releases back to it (the held target
+keeps the idle's small life under it, as for any pose). `flow.live`
+takes `--head-drift` (default on), `--no-head-drift` and
+`--head-drift-scale X` (they sit in the director's parser, which it
+shares); `MotionStream(head_drift=None)` is off, so the offline director,
+the dataset's trajectories and the action head's data are as before.
+
 ### Action head ablations on BEAT2 (2026-10)
 
 The first BEAT2 run (text only, 54 h, 27.6k segments) came out at normalised

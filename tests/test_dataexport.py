@@ -31,14 +31,16 @@ MISSED = ('Hi! [pose {"hand.R.x": 2.5, "hand.R.y": "@shoulder.y", '
 REACHED = 'Hello! [pose {"head.tilt": 8, "hold": 0.5}] Nice to see you.'
 
 
-def _run(tmp_path, reply, avatars="seed-san,Hiyori,lafei", sessions=3, turns=2):
+def _run(tmp_path, reply, avatars="seed-san,Hiyori,lafei", sessions=3, turns=2,
+         prompt="v1"):
     out = tmp_path / "run"
 
     def make(role, av):
         return CharLLM([reply]) if role == "character" else UserLLM()
     opts = ds.parse_opts(["gen", "--avatars", avatars, "--live2d-lite",
                           "--sessions", str(sessions), "--turns", str(turns),
-                          "--out", str(out), "--personas", "cheerful"])
+                          "--out", str(out), "--personas", "cheerful",
+                          "--teacher-prompt", prompt])
     ds.generate(opts, backend_factory=make, log=lambda s: None)
     return str(out), ds.iter_records(str(out))
 

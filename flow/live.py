@@ -1184,6 +1184,7 @@ def main(argv=None) -> int:
     clock = Clock()
     hub = Hub(clock)
     stream = fs.MotionStream(rig, seed=a.seed, idle=not a.no_idle,
+                             head_drift=fs.drift_from_args(a),
                              mouth_map=cal.get("map")
                              if (a.lipsync or "auto") == "auto" else None,
                              log=print)
@@ -1272,7 +1273,8 @@ def both_setup(a, perf, clock, hub):
     except ImportError:
         from flow import vrm as fv
     bm, bpath, rig, page = fv.live_setup(a)
-    stream = fs.MotionStream(rig, seed=a.seed, idle=not a.no_idle, log=print)
+    stream = fs.MotionStream(rig, seed=a.seed, idle=not a.no_idle,
+                             head_drift=fs.drift_from_args(a), log=print)
     perf.followers.append(fv.Follower(a, bm, rig, stream, log=perf.emit))
     slog = (fv.StateLog(a.record, a.fps, bpath, page["path"]) if a.record
             else None)
@@ -1304,7 +1306,8 @@ def vrm_live(a, ap) -> int:
     tts = dr.make_voice(a)
     clock = Clock()
     hub = Hub(clock)
-    stream = fs.MotionStream(rig, seed=a.seed, idle=not a.no_idle, log=print)
+    stream = fs.MotionStream(rig, seed=a.seed, idle=not a.no_idle,
+                             head_drift=fs.drift_from_args(a), log=print)
     recorder = (Recorder(a.record, a.fps, video=False) if a.record
                 else None)
     slog = (fv.StateLog(a.record, a.fps, bpath, page["path"]) if a.record

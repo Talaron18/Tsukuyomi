@@ -689,21 +689,94 @@ of markers, brows up on a surprise, a tilt on a question. The markers of \
 one nod or one glance-and-back count as one beat.
 - Keep holds short: leave "hold" out, or 0 for a quick beat. Hold 2 seconds \
 or more only for the one moment in a reply you mean to stress.
-{whole}{move_rule}- Vary your moves from reply to reply; do not open every reply the \
+{whole}{move_rule}{beats}- Vary your moves from reply to reply; do not open every reply the \
 same way or repeat the same pose.
 - Do not hold your eyes half shut with eye.L.open / eye.R.open: held eyes \
 stop blinking. A blink is [blink].
 
 Rules:
-- One or two beats per sentence, for what that sentence means. Put a \
-marker right before the words it goes with, often mid-sentence.
-- Only the variables listed above, inside their ranges. Valid JSON.
+{sentence_rule}- Only the variables listed above, inside their ranges. Valid JSON.
 - No other tags or markup: no asterisk actions, no parentheses stage \
 directions, no emoji, no lists, no narration.
 - Never explain or mention the markers or the numbers.
 
 Examples of placement (not of content; never copy them):
 {examples}"""
+
+
+# The two prompts of the teacher: "v1" (the first data run, r1; the bytes of
+# before the expression beats) and "beats" (r2: a streamer's face, see
+# _beats_rule). flow.dataset's --teacher-prompt picks; the director's own
+# default stays v1, the prompt the trained students were taught with.
+PROMPTS = ("v1", "beats")
+SENTENCE_RULE = {
+    "v1": "- One or two beats per sentence, for what that sentence means. "
+          "Put a marker right before the words it goes with, often "
+          "mid-sentence.\n",
+    "beats": "- One to three expression beats per sentence (the face and head "
+             "beats above), each in its own marker right before the words it "
+             "reacts to, often mid-sentence.\n"}
+
+
+def _bothsides(have, base, kinds):
+    """The variables of base.L / base.R + kind this body has, e.g.
+    ("eye", ("smile",)) -> ["eye.L.smile", "eye.R.smile"]."""
+    return [f"{base}.{s}.{k}" for k in kinds for s in "LR"
+            if f"{base}.{s}.{k}" in have]
+
+
+def _beats_rule(bm) -> str:
+    """The "face beats" lines of the r2 teacher prompt, worded from the
+    variables this body has (an avatar without eye.*.smile is told to close
+    its eyes; one without brow.*.lift is not told of brows). Streamers move
+    the face several times a sentence, the head a few degrees with each
+    change and the rest of the body hardly at all; the r1 replies held one
+    expression a reply."""
+    have = set(offered(bm))
+    eyes = []
+    smile = _bothsides(have, "eye", ("smile",))
+    shut = _bothsides(have, "eye", ("open",))
+    if smile:
+        eyes.append("a smiling eye at something warm or funny ("
+                    + ", ".join(f'"{v}": 0.8' for v in smile) + ")")
+    if shut:
+        eyes.append("eyes closed for a moment, a laugh or a happy squeeze ("
+                    + ", ".join(f'"{v}": 0' for v in shut)
+                    + ", with a short hold)")
+    face = []
+    if eyes:
+        face.append("the eyes: " + "; ".join(eyes))
+    if "mouth.form" in have:
+        face.append('the mouth: "mouth.form" up for a smile, down for a '
+                    "pout or a worry")
+    brows = _bothsides(have, "brow", ("lift",))
+    if brows:
+        face.append("the brows: " + " and ".join(f'"{v}"' for v in brows)
+                    + " up on a surprise or a question, down when it is "
+                    "serious")
+    if "cheek.blush" in have:
+        face.append('a blush ("cheek.blush") when shy')
+    head = [v for v in ("head.tilt", "head.yaw", "head.pitch") if v in have]
+    if face:
+        L = ["- Your face does most of the talking, as a streamer's does: "
+             "change it several times in a reply, a beat for each thing you "
+             "react to (a joke, a surprise, a doubt, a warm word). A beat is "
+             "a quick change of " + "; ".join(face) + ". Use dur 0.15 to 0.4 "
+             "and hold 0.3 to 1 for a beat, and the next beat or your idle "
+             "takes it back; both eyes together unless you mean a wink.\n"]
+    else:
+        L = ["- Move your head in brief beats, several times a reply.\n"]
+    if head and face:
+        L.append("- Each beat carries a small head move in the same marker, "
+                 "a few degrees (" + ", ".join(head) + " between -8 and 8): "
+                 "a tilt with a smile, a small turn away with a doubt, a "
+                 "little chin down when shy. Never write that head move as "
+                 "a marker of its own.\n")
+    L.append("- Keep the rest of your body almost still, hands out of the "
+             "picture: no hand, arm or big torso moves unless the user asks "
+             "you to show or do something, or the moment is a big one (a "
+             "greeting, a celebration), and then once in a reply at most.\n")
+    return "".join(L)
 
 
 def _best_hand(bm):
@@ -742,8 +815,39 @@ def _whole_body(bm, gestures=False) -> str:
         + ".\n"
 
 
-def _examples(bm) -> list[str]:
+def _beat_examples(bm) -> list[str]:
+    """Placement examples for the "beats" prompt: face beats with their head
+    move in the marker, from the variables this body has ([] when it has no
+    face variable)."""
     have = set(offered(bm))
+
+    def mk(d):
+        d = {k: v for k, v in d.items() if k in have or k in ("dur", "hold")}
+        return "[pose " + json.dumps(d) + "]" \
+            if any(k in have for k in d) else ""
+    smile = {v: 0.8 for v in _bothsides(have, "eye", ("smile",))} \
+        or {v: 0 for v in _bothsides(have, "eye", ("open",))}
+    a = mk({**smile, "mouth.form": 0.8, "head.tilt": 6, "dur": 0.25,
+            "hold": 0.6})
+    b = mk({"brow.L.lift": 0.7, "brow.R.lift": 0.7, "head.pitch": 4,
+            "head.yaw": -5, "dur": 0.2, "hold": 0.5})
+    c = mk({"mouth.form": -0.5, "brow.L.lift": -0.4, "brow.R.lift": -0.4,
+            "head.tilt": -5, "head.yaw": 4, "dur": 0.25, "hold": 0.6})
+    ex = []
+    if a and b:
+        ex.append(f"{b} Wait, you did what? {a} That's hilarious!")
+    if c and a:
+        ex.append(f"Hmm, {c} I'm not sure about that, {a} but it sounds "
+                  "fun.")
+    return ex
+
+
+def _examples(bm, beats=False) -> list[str]:
+    have = set(offered(bm))
+    if beats:
+        ex = _beat_examples(bm)
+        if ex:
+            return ex
     ex = []
     best = _best_hand(bm)
     if best is not None:
@@ -776,14 +880,18 @@ def _examples(bm) -> list[str]:
 
 
 def system_prompt(bm, persona=None, images=False, gestures="",
-                  moves="") -> str:
+                  moves="", prompt="v1") -> str:
     """Byte-stable for a body file, persona, image setting and gesture
     lines: the current pose goes in the user message (pose_now), never
     here. gestures: the [gesture:NAME] entry (director.gesture_lines) when
     body mode offers the rig's own motions (--body-gestures). moves: the
     [move] entry (flow.moves.prompt_lines) when it offers motion
-    primitives (--body-moves); "" is the prompt of before them."""
-    ex = _examples(bm)
+    primitives (--body-moves); "" is the prompt of before them. prompt: "v1"
+    the first teacher prompt, "beats" the expression beats (PROMPTS)."""
+    if prompt not in PROMPTS:
+        raise ValueError(f"prompt {prompt!r}: one of {', '.join(PROMPTS)}")
+    beats = prompt == "beats"
+    ex = _examples(bm, beats)
     if moves:
         try:
             from . import moves as mv
@@ -799,8 +907,10 @@ def system_prompt(bm, persona=None, images=False, gestures="",
         image=(", and with it a picture of how you look right now, as the "
                "viewer sees you (your left is on the picture's right)"
                if images else ""),
-        gestures=gestures or "", whole=_whole_body(bm, bool(gestures)),
-        moves=moves or "", move_rule=(mv.PROMPT_RULE if moves else ""),
+        gestures=gestures or "",
+        whole="" if beats else _whole_body(bm, bool(gestures)),
+        beats=_beats_rule(bm) if beats else "",
+        sentence_rule=SENTENCE_RULE[prompt], moves=moves or "", move_rule=(mv.PROMPT_RULE if moves else ""),
         examples="\n".join(ex) + "\n")
 
 

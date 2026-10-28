@@ -320,7 +320,8 @@ def prepare(a, bm, body_path, info=sys.stdout):
               file=info)
         return {"labels": {}, "offered": None, "descriptions": {},
                 "system": pz.system_prompt(bm, a.persona, False, "",
-                                           mlines),
+                                           mlines, getattr(a, "body_prompt",
+                                                           "v1")),
                 "motions": {}, "stats": rig.stats, "roles": rig.roles,
                 "mode": "body", "body": bm, "body_path": body_path,
                 "core": None, "images": False, "max_tag": pz.MAX_MARKER,

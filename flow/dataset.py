@@ -190,6 +190,9 @@ REPLAY_VERSION = 2
 ZERO = {"hips.x": 0.0, "hips.y": 0.0}
 USER_MAX = 300          # characters of a simulated user line at most
 SHARD_SIZE = 5000       # turn records per shard
+# The character's system prompt (flow.pose.PROMPTS): "beats" from r2 on,
+# "v1" regenerates r1.
+TEACHER_PROMPT = "beats"
 # Prices in US$ per million tokens: DeepSeek's deepseek-chat list prices
 # as last checked (2025-09: input 0.28 on a cache miss, 0.028 on a hit,
 # output 0.42). Check https://api-docs.deepseek.com/quick_start/pricing
@@ -419,6 +422,7 @@ def director_args(spec, opts, persona=None):
         argv += ["--tts", opts.tts]
     if not opts.gestures:
         argv.append("--no-body-gestures")
+    argv += ["--body-prompt", getattr(opts, "teacher_prompt", TEACHER_PROMPT)]
     a = ap.parse_args(argv)
     a.tail = opts.tail
     if opts.max_tokens:
@@ -472,7 +476,7 @@ class Avatar:
                 bm = self.bm
                 mlines, mnames = dr.move_menu(a, bm)
                 run = {"system": pz.system_prompt(bm, ptext, False, "",
-                                                  mlines),
+                                                  mlines, a.body_prompt),
                        "labels": {}, "body": bm,
                        "parser": lambda bm=bm, m=bool(mnames):
                            pz.parser_for(bm, moves=m)}
@@ -1661,6 +1665,13 @@ def add_args(ap):
                     action=argparse.BooleanOptionalAction,
                     help="offer the Live2D rig's own motions next to poses "
                          "(the director's default)")
+    ap.add_argument("--teacher-prompt", default=TEACHER_PROMPT,
+                    choices=pz.PROMPTS,
+                    help="the character's system prompt: beats [default]: "
+                         "1-3 expression beats a sentence (face, with a small "
+                         "head move in the same marker; hands only when "
+                         "asked); v1: the prompt of the first run (r1), to "
+                         "regenerate it byte for byte")
     ap.add_argument("--models", default="live2d-models:CubismWebSamples",
                     help="colon-separated folders holding .model3.json files")
     ap.add_argument("--rigs", default="rigs")

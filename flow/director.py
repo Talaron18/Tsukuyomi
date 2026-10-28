@@ -1521,6 +1521,15 @@ def add_args(ap):
     ap.add_argument("--no-idle", action="store_true",
                     help="blinks only besides the tags: for checking what "
                          "each tag does")
+    ap.add_argument("--head-drift", default=True,
+                    action=argparse.BooleanOptionalAction,
+                    help="a slow idle wander of the head, a few degrees "
+                         "(flow.stream.HeadDrift) [default on]; "
+                         "--no-head-drift: the head holds still between the "
+                         "idle's fixations")
+    ap.add_argument("--head-drift-scale", type=float, default=1.0,
+                    metavar="X", help="the drift's amplitude, x its "
+                    "defaults (2.5 deg yaw, 1.5 pitch, 2 tilt) [1]")
     ap.add_argument("--idle-profile", default="calm",
                     choices=("calm", "authored"),
                     help="the idle between and under the tags (flow.runtime "
@@ -1673,6 +1682,14 @@ def add_args(ap):
                          "... as this body can do them; flow.moves) [default "
                          "on]; --no-body-moves: the prompt and parser of "
                          "before them")
+    ap.add_argument("--body-prompt", default="v1",
+                    choices=("v1", "beats"),
+                    help="--mode body: v1 [default]: the prompt the first "
+                         "students were taught with; beats: the expression "
+                         "beats (1-3 face beats a sentence, each with a small "
+                         "head move, hands only when asked; flow.pose "
+                         "_beats_rule). A student is served with the prompt "
+                         "it was trained on")
     ap.add_argument("--body-image", action="store_true",
                     help="--mode body: send the model a picture of itself "
                          "with each line (anthropic; siliconflow and ollama "
@@ -1769,7 +1786,8 @@ def prepare_body(a, info=sys.stdout):
           + (", images" if images else ""), file=info)
     return {"labels": labels, "offered": None, "descriptions": descriptions,
             "system": pz.system_prompt(bm, a.persona, images, glines,
-                                       mlines),
+                                       mlines, getattr(a, "body_prompt",
+                                                       "v1")),
             "motions": motions, "stats": None, "roles": None,
             "mode": "body", "body": bm, "body_path": path, "core": core,
             "images": images, "max_tag": pz.MAX_MARKER,
