@@ -875,3 +875,26 @@ executes) stays the body's controller; an audio-driven generative layer
 (history + prosody, flow matching) is the candidate for background gesture
 between markers, to be judged by eye; LLM hidden states as the motion
 source are not supported by either the teacher data or BEAT2.
+
+#### Probe results (2026-10-28, runs/probe/report.txt)
+
+- **Voice vs motion in people** (segment level, within speaker): loudness
+  r ~0.21-0.28 with both gesture range and speed (speed slightly the
+  stronger: the "loudness -> amplitude" hypothesis is not confirmed, both
+  rise); pitch and pitch range ~0.15-0.20; speaking rate -> speed (0.17) >
+  range (0.13), as hypothesised; pauses -> less motion. Chinese couples
+  more strongly (loudness -> head speed 0.48). At the frame level the
+  coupling is ~0.03-0.09: voice sets how much a phrase moves, not when
+  each frame moves. Windowed lag scan is flat, hands slightly leading the
+  audio (best -0.4 to -0.7 s), as gesture studies report.
+- **Text carries motion information.** Contrastive matching, held-out
+  clips, 32 candidates (chance 0.031): text top-1 0.153 against
+  same-speaker candidates and 0.098 against the same recording; prosody
+  0.149; text + prosody 0.204 (the two add up); wrong text 0.035
+  (chance). The grid's "text adds nothing" was the per-frame regression,
+  not the text: what text predicts is the kind and amount of motion over
+  a few seconds, which per-frame error cannot score.
+- So: condition on phrase-level voice features (not per-frame loudness),
+  keep text, generate (sample) rather than regress, and score generators
+  the way text-to-motion work does: retrieval precision and embedding
+  distances with these contrastive encoders, not frame MSE.
