@@ -1,0 +1,1 @@
+[pose {"head.yaw": 18, "gaze.x": 0.8, "dur": 0.4, "hold": 0.6}] Hmm, over that way... [pose {"head.yaw": 0, "gaze.x": 0, "mouth.form": 0.9, "dur": 0.4, "hold": 0}] Oh, there you are! [pose {"hand.R.y": -0.6, "hand.R.x": -0.65, "dur": 0.4, "hold": 0.5}] I was worried I'd lost you.

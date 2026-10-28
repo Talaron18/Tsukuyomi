@@ -1,0 +1,1 @@
+[move {"name": "dance", "beats": 10, "tempo": 130}] Here we go! [pose {"mouth.form": 1, "head.tilt": 10, "dur": 0.3}] Watch my feet, I'm dancing! [pose {"hand.R.y": "@shoulder.y", "hand.R.x": -0.75, "dur": 0.4, "hold": 0.6}]

@@ -2,3 +2,127 @@
   [93m★[0m [1m[96mlive2d-py[0m  [2m·[0m  [1mNon-official live2d library[0m
       [2mversion[0m  [92m[1m0.8.1[0m
 [95m────────────────────────────────────────────────[0m
+[v3] CubismNativeSDK(5-r.5), Python(3.11.16)
+[v3] official: https://www.live2d.com/sdk/download/native/
+Live2D Cubism SDK Core Version 6.0.1
+Live2D Cubism SDK Core Version 6.0.1
+director: gesture complete [measured, same motion as home / mail / mission / mission_complete / touch_head]: left arm swings back and forth; unclear parts move; 6.5 s
+director: gesture home [measured, same motion as complete / mail / mission / mission_complete / touch_head]: left arm swings back and forth; unclear parts move; 6.5 s
+director: gesture idle [measured, same motion as wedding]: unclear parts move; eyes change; 8.0 s, calm
+director: gesture login [measured]: left arm moves widely; unclear parts move; 5.4 s
+director: gesture mail [measured, same motion as complete / home / mission / mission_complete / touch_head]: left arm swings back and forth; unclear parts move; 6.5 s
+director: gesture main_1 [measured]: unclear parts move; 2.2 s, short
+director: gesture main_2 [measured]: switches hand pose; 5.6 s, calm
+director: gesture main_3 [measured]: left arm moves; 3.0 s, short
+director: gesture mission [measured, same motion as complete / home / mail / mission_complete / touch_head]: left arm swings back and forth; unclear parts move; 6.5 s
+director: gesture mission_complete [measured, same motion as complete / home / mail / mission / touch_head]: left arm swings back and forth; unclear parts move; 6.5 s
+director: gesture touch_body [measured]: left arm moves widely; switches right arm pose; an effect plays; 2.7 s, short, lively
+director: gesture touch_head [measured, same motion as complete / home / mail / mission / mission_complete]: left arm swings back and forth; unclear parts move; 6.5 s
+director: gesture touch_special [measured]: switches hand pose; an effect plays; 6.1 s, calm
+director: gesture wedding [measured, same motion as idle]: unclear parts move; eyes change; 8.0 s, calm
+director: body mode, rigs/lafei.body.json: 20 variables, 1 arm variants, 14 gestures, motions sway bounce head_bob shimmy look_around twirl dance
+speech: voice config rigs/lafei.voice.json: ja voicevox 中国うさぎ/ノーマル; en edge en-US-AnaNeural; zh edge zh-CN-XiaoxiaoNeural
+mouth: lafei: no talking curves in 14 motions (no lip flaps on the open/vowel parameters) -> open-only on the mouth-open parameter, rest to maximum (as before)
+ollama: stop stop; usage {'prompt_eval_count': 2667, 'eval_count': 78}
+director: model 5.4s, first text after 4.8s
+director: reply: Hi! [pose {"hand.R.y": -0.40, "hand.R.x": -0.75, "mouth.form": 0.8, "dur": 0.35}] There, waving! [move {"name": "sway", "beats": 6, "tempo": 110}] How's that?
+move: sway at 3.75s, 6 beats at 110 bpm, amp 0.7 (0 solves, 0.036s)
+move: move 3.75s at "How's that?": sway 6 beats at 110 bpm, amp 0.7 [sway] 4 added, 0 played parameters
+pose: pose 1.51s at 'There, waving! H' [rest]: hand.R.y -0.40 -> -0.45 (Core -0.60) ok; hand.R.x -0.75 -> -0.80 (Core -1.08) MISS; mouth.form 0.80 -> 0.80 (Core 0.80) ok  (hand.R.x: alone it reaches -1.42 to -0.37 in this pose; hand.L.x reaches 0.44 to 0.94)
+pose: 1 markers, 2/3 targets reached, 1/3 on the Core (solve 0.01s)
+speech: 5.45s audio (en-US-AnaNeural), tag times from words -> speech.wav
+director: 30 spoken characters, 5.45s speech, 2 actions, 3 subtitles; rendering 8.52s
+director: breath gain 0.109 (lafei.body.json: ParamBreath moves 0.0690 hu, target 0.0075)
+55 params: expressive 41, physics 1, autonomic 3, mouth 3, discrete 7
+holding 4 whole-model parameters still: PARAM_ALL_moveZ, PARAM_bodyS, PARAM_moveX, PARAM_moveY
+seeded from the default pose (no clips available)
+  role body_x   -> ParamBodyAngleX  [id]
+  role body_z   -> ParamBodyAngleZ  [id]
+  role brow_l   -> ParamBrowLY  [id]
+  role brow_lx  -> ParamBrowLX  [id]
+  role brow_r   -> ParamBrowRY  [id]
+  role gaze_x   -> ParamEyeBallX  [id]
+  role gaze_y   -> ParamEyeBallY  [id]
+  role head_x   -> ParamAngleX  [id]
+  role head_y   -> ParamAngleY  [id]
+  role head_z   -> ParamAngleZ  [id]
+events: unbound roles (no standard id; --binding to add): body_y, brow_la, brow_lf, brow_ra, brow_rf, brow_rx
+events: body adapted to the rig's own motions (weights {'body_x': 0.933, 'body_z': 0.933, 'w_hold': 0.815, 'w_move': 0.904}; own holds 3 +19 censored, 3 unanimated clips, moves 47): hold 2.04s move 0.91s p_chain 0.63
+events: idle profile calm; gestures from 5 of 14 motions (by label): complete 0.0188, home* 0.0188, idle* 0.0106, login 0.0557, mail 0.0188, main_1* 0.0285, main_2* 0.0387, main_3* 0.0354, mission 0.0188, mission_complete 0.0188, touch_body 0.1524, touch_head 0.0188, touch_special 0.0219, wedding 0.0106  (* calm; mean speed/frame)
+director: 2 actions -> 2 tokens; 0 idle tokens overridden
+events: 10 roles from defaults; tokens blink 1, body_shift 2, brow 3, fixate 3, gesture 1, head_turn 1, mouth 1, move 1, pose 1, saccade 3, underlay 1
+tokens -> runs/demo_q8c/lafei_1/tokens.json
+breath: gain 0.109 (--breath-gain)
+base state from idle.motion3.json: 0 part opacities, 60 held parameters
+moves: 1 motion primitives over the idle (flow.moves)
+pose: 1 body poses over the idle (flow.pose)
+mouth: lip sync on ParamMouthOpenY
+events: underlay idle.motion3.json x0.5 during rests on 1 loose parameters: PARAM_deng_moveY
+events: 1 gesture segments from 14 motion files (arms will score as copying against the rig's own clips; novelty is judged on the role columns)
+snapping 16 switch-like parameters: PARAM_ALL_moveZ, PARAM_Angry_eye, PARAM_Arm_L_hand, PARAM_Arm_R_hand, PARAM_Hand_L1, PARAM_Hand_L3, PARAM_Hand_R1, PARAM_Hand_R3, PARAM_arm_LFX, PARAM_beixin_FX, PARAM_bodyS, PARAM_ear_FX, PARAM_eyeFX, PARAM_hand_FX, PARAM_moveX, PARAM_moveY
+dump -> runs/demo_q8c/lafei_1/plan.npz  (255 frames, 41 expressive, 0 parts, mode events seed=0)
+director: /mnt/e/Tsukuyomi/tsukivenv/bin/python -m flow.runtime --model 'live2d-models/live2d_3/model/Azue Lane(JP)/lafei/lafei.model3.json' --rig rigs/lafei.npz --events default --probe-dir out --fps 30.0 --seed 0 --seconds 8.52 --breath-gain 0.109 --tokens-in runs/demo_q8c/lafei_1/tokens.json --size 512 --out runs/demo_q8c/lafei_1/render
+[95m────────────────────────────────────────────────[0m
+  [93m★[0m [1m[96mlive2d-py[0m  [2m·[0m  [1mNon-official live2d library[0m
+      [2mversion[0m  [92m[1m0.8.1[0m
+[95m────────────────────────────────────────────────[0m
+[v3] CubismNativeSDK(5-r.5), Python(3.11.16)
+[v3] official: https://www.live2d.com/sdk/download/native/
+Live2D Cubism SDK Core Version 6.0.1
+55 params: expressive 41, physics 1, autonomic 3, mouth 3, discrete 7
+holding 4 whole-model parameters still: PARAM_ALL_moveZ, PARAM_bodyS, PARAM_moveX, PARAM_moveY
+seeded from the default pose (no clips available)
+  role body_x   -> ParamBodyAngleX  [id]
+  role body_z   -> ParamBodyAngleZ  [id]
+  role brow_l   -> ParamBrowLY  [id]
+  role brow_lx  -> ParamBrowLX  [id]
+  role brow_r   -> ParamBrowRY  [id]
+  role gaze_x   -> ParamEyeBallX  [id]
+  role gaze_y   -> ParamEyeBallY  [id]
+  role head_x   -> ParamAngleX  [id]
+  role head_y   -> ParamAngleY  [id]
+  role head_z   -> ParamAngleZ  [id]
+events: unbound roles (no standard id; --binding to add): body_y, brow_la, brow_lf, brow_ra, brow_rf, brow_rx
+events: body adapted to the rig's own motions (weights {'body_x': 0.933, 'body_z': 0.933, 'w_hold': 0.815, 'w_move': 0.904}; own holds 3 +19 censored, 3 unanimated clips, moves 47): hold 2.04s move 0.91s p_chain 0.63
+events: rendering 18 tokens from runs/demo_q8c/lafei_1/tokens.json
+events: 10 roles from defaults; tokens blink 1, body_shift 2, brow 3, fixate 3, gesture 1, head_turn 1, mouth 1, move 1, pose 1, saccade 3, underlay 1
+breath: gain 0.109 (--breath-gain)
+base state from idle.motion3.json: 0 part opacities, 60 held parameters
+moves: 1 motion primitives over the idle (flow.moves)
+pose: 1 body poses over the idle (flow.pose)
+mouth: lip sync on ParamMouthOpenY
+events: underlay idle.motion3.json x0.5 during rests on 1 loose parameters: PARAM_deng_moveY
+events: 1 gesture segments from 14 motion files (arms will score as copying against the rig's own clips; novelty is judged on the role columns)
+snapping 16 switch-like parameters: PARAM_ALL_moveZ, PARAM_Angry_eye, PARAM_Arm_L_hand, PARAM_Arm_R_hand, PARAM_Hand_L1, PARAM_Hand_L3, PARAM_Hand_R1, PARAM_Hand_R3, PARAM_arm_LFX, PARAM_beixin_FX, PARAM_bodyS, PARAM_ear_FX, PARAM_eyeFX, PARAM_hand_FX, PARAM_moveX, PARAM_moveY
+[v3][I] [Pal] Init Shader Dir: /mnt/e/Tsukuyomi/tsukivenv/lib/python3.12/site-packages/live2d/v3/
+[v3][I] [CSM][I]Live2D Cubism Core version: 06.00.0001 (100663297)
+
+[v3][I] [CSM][I]CubismFramework::StartUp() is complete.
+
+[v3][I] [CSM][I]CubismFramework::Initialize() is complete.
+
+[v3][I] allocate: cpp Model(at=0x1d9e7a20)
+[v3][I] load modelSetting: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/lafei.model3.json
+[v3][I] create model: lafei.moc3
+Live2D Cubism SDK Core Version 6.0.1
+[v3][I] load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/complete.motion3.json => [_0] 
+[v3][I] load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/home.motion3.json => [_1] 
+[v3][I] load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/idle.motion3.json => [_2] 
+[v3][I] load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/login.motion3.json => [_3] 
+[v3][I] load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/mail.motion3.json => [_4] 
+[v3][I] load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/main_1.motion3.json => [_5] 
+[v3][I] load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/main_2.motion3.json => [_6] 
+[v3][I] load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/main_3.motion3.json => [_7] 
+[v3][I] load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/mission_complete.motion3.json => [_8] 
+[v3][I] load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/mission.motion3.json => [_9] 
+[v3][I] load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/touch_body.motion3.json => [_10] 
+[v3][I] load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/touch_head.motion3.json => [_11] 
+[v3][I] load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/touch_special.motion3.json => [_12] 
+[v3][I] load motion: live2d-models/live2d_3/model/Azue Lane(JP)/lafei/motions/wedding.motion3.json => [_13] 
+backend: order=sandwich, timestep=fixed 0.0333s (native), parts=13
+rendered 255 frames -> runs/demo_q8c/lafei_1/render/
+contact sheet -> runs/demo_q8c/lafei_1/render/sheet.png
+video -> runs/demo_q8c/lafei_1/render/preview.mp4
+[v3][I] deallocate: cpp Model(at=0x1d9e7a20)
+[v3][I] deallocate: PyModelObject(at=0x7a7e0cc32f0)
+director: video with speech and subtitles -> runs/demo_q8c/lafei_1/demo.mp4

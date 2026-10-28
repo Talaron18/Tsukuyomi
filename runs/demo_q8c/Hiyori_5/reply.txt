@@ -1,0 +1,1 @@
+[pose {"head.tilt": 10, "gaze.x": 0.5, "dur": 0.3, "hold": 0.5}] 哇，你今天看起来好好哦！[pose {"hand.L.y": "@shoulder.y", "hand.L.x": 0.6, "dur": 0.4, "hold": 1}] 这件衣服真的很衬你呢。

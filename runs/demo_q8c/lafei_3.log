@@ -1,0 +1,67 @@
+[95m────────────────────────────────────────────────[0m
+  [93m★[0m [1m[96mlive2d-py[0m  [2m·[0m  [1mNon-official live2d library[0m
+      [2mversion[0m  [92m[1m0.8.1[0m
+[95m────────────────────────────────────────────────[0m
+[v3] CubismNativeSDK(5-r.5), Python(3.11.16)
+[v3] official: https://www.live2d.com/sdk/download/native/
+Live2D Cubism SDK Core Version 6.0.1
+Live2D Cubism SDK Core Version 6.0.1
+director: gesture complete [measured, same motion as home / mail / mission / mission_complete / touch_head]: left arm swings back and forth; unclear parts move; 6.5 s
+director: gesture home [measured, same motion as complete / mail / mission / mission_complete / touch_head]: left arm swings back and forth; unclear parts move; 6.5 s
+director: gesture idle [measured, same motion as wedding]: unclear parts move; eyes change; 8.0 s, calm
+director: gesture login [measured]: left arm moves widely; unclear parts move; 5.4 s
+director: gesture mail [measured, same motion as complete / home / mission / mission_complete / touch_head]: left arm swings back and forth; unclear parts move; 6.5 s
+director: gesture main_1 [measured]: unclear parts move; 2.2 s, short
+director: gesture main_2 [measured]: switches hand pose; 5.6 s, calm
+director: gesture main_3 [measured]: left arm moves; 3.0 s, short
+director: gesture mission [measured, same motion as complete / home / mail / mission_complete / touch_head]: left arm swings back and forth; unclear parts move; 6.5 s
+director: gesture mission_complete [measured, same motion as complete / home / mail / mission / touch_head]: left arm swings back and forth; unclear parts move; 6.5 s
+director: gesture touch_body [measured]: left arm moves widely; switches right arm pose; an effect plays; 2.7 s, short, lively
+director: gesture touch_head [measured, same motion as complete / home / mail / mission / mission_complete]: left arm swings back and forth; unclear parts move; 6.5 s
+director: gesture touch_special [measured]: switches hand pose; an effect plays; 6.1 s, calm
+director: gesture wedding [measured, same motion as idle]: unclear parts move; eyes change; 8.0 s, calm
+director: body mode, rigs/lafei.body.json: 20 variables, 1 arm variants, 14 gestures, motions sway bounce head_bob shimmy look_around twirl dance
+speech: voice config rigs/lafei.voice.json: ja voicevox 中国うさぎ/ノーマル; en edge en-US-AnaNeural; zh edge zh-CN-XiaoxiaoNeural
+mouth: lafei: no talking curves in 14 motions (no lip flaps on the open/vowel parameters) -> open-only on the mouth-open parameter, rest to maximum (as before)
+ollama: stop stop; usage {'prompt_eval_count': 2665, 'eval_count': 103}
+director: model 1.3s, first text after 0.5s
+director: reply: [pose {"hand.R.y": -0.3, "hand.R.x": -0.85, "head.tilt": 8, "mouth.form": 0.6, "dur": 0.5, "hold": 2}] そうだったんだ…おつかれさま。[pose {"head.yaw": -10, "dur": 0.4, "hold": 1}] ほら、ちゃんと休んで、ゆっくりでいいよ。
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/mnt/e/Tsukuyomi/flow/director.py", line 2159, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/mnt/e/Tsukuyomi/flow/director.py", line 2053, in main
+    return turn(a.say or "", a.out)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/e/Tsukuyomi/flow/director.py", line 2032, in turn
+    res = plan(a, reply, out_dir, motions, tts=tts, body=body)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/e/Tsukuyomi/flow/director.py", line 1360, in plan
+    said = sp.speak(reply["spoken"], reply["tags"], tts,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/e/Tsukuyomi/flow/speech.py", line 1480, in speak
+    res = tts.synth(body) if m is None else tts.synth(body, mood=m)
+          ^^^^^^^^^^^^^^^
+  File "/mnt/e/Tsukuyomi/flow/speech.py", line 1410, in synth
+    return self.cur.synth(text)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/e/Tsukuyomi/flow/speech.py", line 1268, in synth
+    sid = self.mood_id(mood)
+          ^^^^^^^^^^^^^^^^^^
+  File "/mnt/e/Tsukuyomi/flow/speech.py", line 1192, in mood_id
+    base = self.resolve()
+           ^^^^^^^^^^^^^^
+  File "/mnt/e/Tsukuyomi/flow/speech.py", line 1149, in resolve
+    st = self.styles()
+         ^^^^^^^^^^^^^
+  File "/mnt/e/Tsukuyomi/flow/speech.py", line 1136, in styles
+    for sp_ in self.speakers():
+               ^^^^^^^^^^^^^^^
+  File "/mnt/e/Tsukuyomi/flow/speech.py", line 1119, in speakers
+    raw = self._req("GET", "/speakers")
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/e/Tsukuyomi/flow/speech.py", line 1106, in _req
+    raise RuntimeError(
+RuntimeError: voicevox at http://127.0.0.1:50021 unreachable (<urlopen error timed out>); is the engine running? e.g. docker run --rm -p 127.0.0.1:50021:50021 voicevox/voicevox_engine:cpu-latest (image name unverified)
