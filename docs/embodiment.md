@@ -417,7 +417,9 @@ random data; the 4-bit, Unsloth and llama.cpp steps have not run at all.
   (`flow.legacy.abtest`, the `body_vs_tags.sh` layout).
 - **Action head** (`scripts/extract_hidden.py` = `python -m
   flow.train.hidden`, `python -m flow.actionhead train | eval | export`):
-  module docstrings. `export` solves a trajectory back to parameters and
+  module docstrings (motion history, prosody, layer mix, per-avatar
+  norm, the eval metrics and the ablation grid: "Action head ablations on
+  BEAT2" below). `export` solves a trajectory back to parameters and
   writes move tokens: `tokens.json` for `flow.runtime --tokens-in`
   (Live2D) and `states.json` for `flow.vrmrender`, the directed clip
   through the same path, plus a `render.sh`. Known limit: a trajectory has
@@ -519,10 +521,10 @@ minutes.
         --proj 1024 --out runs/hidden/q8
     python -m flow.actionhead train --export data/datagen/r1/export/action \
         --hidden runs/hidden/q8 --out runs/ah/q8 --steps 3000
-    python -m flow.actionhead eval --ckpt runs/ah/q8/head.pt \
+    python -m flow.actionhead eval --ckpt runs/ah/q8 \
         --export data/datagen/r1/export/action --hidden runs/hidden/q8 \
         --markers runs/sft/q8/eval/student.jsonl --data data/datagen/r1
-    python -m flow.actionhead export --ckpt runs/ah/q8/head.pt \
+    python -m flow.actionhead export --ckpt runs/ah/q8 \
         --export data/datagen/r1/export/action --hidden runs/hidden/q8 \
         --data data/datagen/r1 --id <session>/t02 --out runs/ah/q8/side
     bash runs/ah/q8/side/render.sh                  # pred/ and directed/ clips
@@ -530,6 +532,95 @@ minutes.
 The action head's markers baseline needs another model's markers (the
 student's, from the eval): on teacher text the markers played again are
 the target itself.
+
+### Action head ablations on BEAT2 (2026-10)
+
+The first BEAT2 run (text only, 54 h, 27.6k segments) came out at normalised
+MSE head 1.065, rest 1.133, mean 1.075, with the eval loss best near step
+2000 and rising after: absolute MSE from text alone measures each segment's
+posture, not the gesture (pitch / tilt / yaw: head = mean >> rest; the
+hands 5-10% under rest). So the head can now also see its own past motion
+(`--history`), the speech's prosody (`--prosody`), a learned mix of the
+stored layers (`--layer-mix`) and per-avatar statistics (`--norm avatar`),
+and `eval` scores what a gesture is: motion around the posture, velocity,
+how much motion the prediction has, and whether it lines up with the
+audio. Code and tests ran on CPU on synthetic data only; none of the
+numbers below exist yet.
+
+Hidden states with the three layers, once (WSL, repo `/mnt/e/Tsukuyomi`;
+the `=` after `--layers` is needed, a bare `-1,-8,18` is read as an
+option; `--proj 1024` projects each layer to 1024, so 3072 numbers a token
+and `--layer-mix` splits them back into three):
+
+    cd /mnt/e/Tsukuyomi
+    python scripts/extract_hidden.py --export data/beat2/seed-san/action \
+        --context none --text spoken --model ~/tsk-runs/sft/q8/merged \
+        --layers=-1,-8,18 --proj 1024 --out ~/tsk-runs/hidden/beat2
+
+The grid, one script, a log per run in `~/tsk-runs/ah/grid/<run>/`
+(`train.log`, `eval.log`, `eval.json`, `head.best.pt`), the table at the
+end (also `table.txt`):
+
+    bash scripts/ah_grid.sh                       # 5 runs x 4000 steps
+    STEPS=5000 PATIENCE=10 bash scripts/ah_grid.sh
+    EXTRA="--layer-mix" bash scripts/ah_grid.sh   # a flag on every run
+
+| run | flags | answers |
+|---|---|---|
+| a_text | (none) | the head as it was |
+| b_hist | `--history 1` | what 1 s of its own motion adds |
+| c_hist_pros | `--history 1 --prosody` | what the audio's prosody adds |
+| d_no_text | `--history 1 --prosody --no-text` | c without the text: what the text adds is c - d |
+| e_fm | c with `--objective fm` | whether sampling beats regression (it does not average several motions into a smaller one) |
+
+Each run trains `--steps` (default 4000 in the script; 3000-5000 is the
+range to try), evaluates every 100 and keeps `head.best.pt` at the best
+eval loss; `eval` uses it (`--ckpt` takes the run folder, or a file:
+`head.pt` is the last step). With a history the eval loss is on the
+middle chunk of each held-out segment after a clean history. Every run is
+scored on the same frames: the first `SKIP` s (default 1.0, the history)
+of every segment are not scored for anyone, a is not credited for them and
+b to e are not handed them as ground truth to be scored on. Run one by hand:
+
+    python -m flow.actionhead train --export data/beat2/seed-san/action \
+        --hidden ~/tsk-runs/hidden/beat2 --out ~/tsk-runs/ah/hp \
+        --steps 4000 --history 1 --prosody
+    python -m flow.actionhead eval --ckpt ~/tsk-runs/ah/hp \
+        --export data/beat2/seed-san/action --hidden ~/tsk-runs/hidden/beat2 \
+        --skip 1.0 --json ~/tsk-runs/ah/hp/eval.json
+    python -m flow.actionhead table ~/tsk-runs/ah/*/eval.json
+
+**Reading the summary** (columns: head, rest = the first frame held, mean =
+the training mean, hold = the last frame before the scored part held; lower
+is better except the ratios and correlations):
+
+- `normalised MSE` is the old number, posture included. Expect rest and
+  hold to be hard to beat; the head's win here means it knows where the
+  body is.
+- `relative MSE` is each trajectory minus its own clip mean: the motion
+  around the posture. Rest, mean and hold are constants, so they all score
+  the clip's own variance, which is the number to beat: a head under it
+  predicts motion that is right, a head over it moves wrongly (worse than
+  standing still).
+- `velocity MSE` is the same on frame differences: smooth, right-looking
+  motion that is out of step still scores badly here.
+- `std ratio` is predicted over true motion std. Near 0: the head collapsed
+  to the mean (what an MSE head does when it learns only the posture); near 1: it moves as much as the
+  real mocap; the velocity ratio under the std ratio says over-smoothing.
+  A head with a good normalised MSE and a ratio near 0 learned the posture
+  and nothing else.
+- `beat hands / head`: `corr` is the correlation of motion speed with the
+  audio's accent strength (|d rms|), `hit` the share of accents with a
+  motion-speed peak within +-0.2 s, `prec` the share of speed peaks within
+  0.2 s of an accent; each followed by the ground truth's value, which is
+  the ceiling (real people only partly gesture on the beat). The head
+  without prosody (a, b) can only be near chance here; c should approach
+  the ceiling if the audio helps, d shows how much of it is the prosody
+  and the history alone.
+- Compare c with d for the text, b with a for the history, c with b for
+  the prosody, e with c for fm; `layer mix` prints the learned layer
+  weights (layers 36, 29, 18 for `-1,-8,18`). Differences smaller than
+  two runs' spread (rerun with `--seed 1`) are not results.
 
 ## E4: BEAT2 retargeted (2026-10)
 
@@ -588,7 +679,7 @@ is the check (below).
 - **Segments**: one utterance per row (cut at 0.35 s silences between
   words, 3-15 s, 0.3 s of motion either side); `spoken` = the words joined,
   per-character times from the word times, relative to the segment.
-- **Prosody** for the head to read later (nothing reads it yet):
+- **Prosody** for the head (`flow.actionhead --prosody` reads it):
   `<key>.prosody` [frames, 3] = RMS, f0 (Hz, YIN), voiced, at the frame
   times; the row names the columns (`prosody`).
 
@@ -624,7 +715,7 @@ outputs out of git** (`--out` must be under `data/`, which is ignored).
         --layers -8 --proj 1024 --out ~/tsk-runs/hidden/beat2
     python -m flow.actionhead train --export data/beat2/seed-san/action \
         --hidden ~/tsk-runs/hidden/beat2 --out ~/tsk-runs/ah/beat2 --steps 3000
-    python -m flow.actionhead eval --ckpt ~/tsk-runs/ah/beat2/head.pt \
+    python -m flow.actionhead eval --ckpt ~/tsk-runs/ah/beat2 \
         --export data/beat2/seed-san/action --hidden ~/tsk-runs/hidden/beat2
 
 What to check first on the real data: that a clip's report says `up_axis:

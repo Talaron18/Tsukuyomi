@@ -108,8 +108,8 @@ in the format `flow.dataexport action` writes, so scripts/extract_hidden.py
                                scale), f0 in Hz (0 when unvoiced), voiced
                                (0 / 1), at frame f's time f / fps from the
                                wav (RMS over one frame, f0 YIN over 64 ms);
-                               NOT read by flow.actionhead yet -- the key
-                               the head can later read
+                               read by flow.actionhead --prosody and its
+                               beat-alignment metrics
               <key>.fingers    [frames, 30, 4] quaternions (--fingers)
             and in the row: clip, speaker, t0, t1 (clip seconds),
             prosody / joints column names. The avatar must have a

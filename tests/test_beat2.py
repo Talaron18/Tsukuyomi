@@ -915,3 +915,45 @@ def test_clip_listing_and_speakers(tmp_path):
         b2.list_clips(str(tmp_path / "wrap"))
     with pytest.raises(SystemExit, match="smplxflame_30"):
         b2.list_clips(str(tmp_path / "empty"))
+
+
+def test_head_with_history_and_prosody_on_it(exported, tmp_path):
+    """History + prosody (and prosody alone, no text) on the BEAT2-shaped
+    export: the prosody is read, the beat alignment is computed for the
+    ground truth and the head, and the summary is JSON."""
+    pytest.importorskip("torch")
+    root, _a, _s = exported
+    from flow import actionhead as ah
+    from flow.train import hidden as fh
+    stem = str(root / "out" / "action")
+    hid = hidden_for(root, fh.read_export(stem)[0])
+    d = ah.Data(stem, hid, prosody=True)
+    it = d.item(0)
+    assert it["pros"].shape == (len(it["y"]), 3) and it["pros"][:, 2].max() == 1
+    mean, std = ah.norm_stats(d, range(len(d)))
+    b = ah.batch([it], mean, std, 48, None, train=False, pros=True)
+    assert b["pros_m"].tolist() == [True] and b["pros"].abs().sum() > 0
+    assert ah.Data(stem, hid).item(0)["pros"] is None   # not asked for
+    for name, extra in (("hp", ["--history", "0.5", "--prosody"]),
+                        ("po", ["--prosody", "--no-text", "--history",
+                                "0.5"])):
+        o = ah.parse(["train", "--export", stem, "--hidden", hid, "--out",
+                      str(tmp_path / name), "--steps", "6", "--eval-every",
+                      "3", "--dim", "16", "--batch", "2", "--chunk", "48",
+                      "--eval-frac", "0", *extra])
+        ah.train(o, log=lambda s: None)
+        assert os.path.exists(tmp_path / name / "head.best.pt")
+        e = ah.evaluate(ah.parse(["eval", "--ckpt", str(tmp_path / name),
+                                  "--export", stem, "--hidden", hid,
+                                  "--steps", "2", "--skip", "0.5", "--json",
+                                  str(tmp_path / name / "eval.json")]),
+                        log=lambda s: None)
+        assert {"head", "rest", "mean", "hold"} == set(e["normalised_mse"])
+        bt = e["beat"]
+        assert set(bt) == {"gt", "head"} and set(bt["gt"]) == {"hands",
+                                                              "head"}
+        assert bt["gt"]["hands"]["segments"] >= 1
+        assert json.load(open(tmp_path / name / "eval.json"))["beat"]
+        row = ah.summary_row(e)
+        assert "beat.hands.corr.gt" in row and "nmse.hold" in row
+    assert not hasattr(ah.load(str(tmp_path / "po"))[0], "tok")
