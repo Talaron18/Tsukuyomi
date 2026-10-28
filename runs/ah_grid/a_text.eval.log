@@ -1,0 +1,31 @@
+actionhead: 3068 turns; normalised MSE head 1.06592, rest 1.24523, mean 1.07542, hold 1.10459
+  hand.L.x         head 0.13531  rest 0.16864  mean 0.13864  hold 0.15801
+  hand.L.y         head 0.32594  rest 0.3991  mean 0.33685  hold 0.33596
+  hand.L.z         head 0.073442  rest 0.088572  mean 0.07557  hold 0.077024
+  hand.R.x         head 0.17201  rest 0.21732  mean 0.1761  hold 0.19906
+  hand.R.y         head 0.38453  rest 0.45832  mean 0.3943  hold 0.38333
+  hand.R.z         head 0.074875  rest 0.094985  mean 0.077017  hold 0.085381
+  head.pitch       head 93.61  rest 33.651  mean 95.384  hold 27.848
+  head.tilt        head 40.192  rest 26.623  mean 40.384  hold 25.034
+  head.yaw         head 100.13  rest 93.166  mean 102.4  hold 85.217
+  hips.x           head 0.014656  rest 0.029955  mean 0.014641  hold 0.025375
+  hips.y           head 0.000646  rest 0.001337  mean 0.000641  hold 0.001193
+  shoulder.L.up    head 0.062282  rest 0.053398  mean 0.059552  hold 0.049933
+  shoulder.R.up    head 0.061888  rest 0.053398  mean 0.059552  hold 0.049933
+  shoulders.up     head 0.13325  rest 0.13114  mean 0.1403  hold 0.11177
+  torso.pitch      head 10.513  rest 16.829  mean 10.523  hold 14.529
+  torso.tilt       head 11.427  rest 17.198  mean 11.393  hold 15.298
+  torso.yaw        head 18.07  rest 10.932  mean 17.358  hold 10.827
+summary: 3068 eval turns, first 1 s not scored, checkpoint /home/syarol/tsk-runs/ah/grid/a_text/head.best.pt
+                              head    rest    mean    hold
+normalised MSE              1.0659  1.2452  1.0754  1.1046
+relative MSE (motion)       0.4725  0.4711  0.4711  0.4711
+velocity MSE                0.0060  0.0059  0.0059  0.0059
+std ratio (pred/true)       0.0784  0.0000  0.0000  0.0000
+velocity std ratio          0.1044  0.0000  0.0000  0.0000
+beat hands corr             0.0220  gt 0.0332
+beat hands hit              0.5958  gt 0.5734
+beat hands prec             0.7349  gt 0.7348
+beat head corr              0.0246  gt 0.0437
+beat head hit               0.6692  gt 0.6952
+beat head prec              0.7231  gt 0.7294

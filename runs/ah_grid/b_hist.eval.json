@@ -1,0 +1,628 @@
+{
+ "turns": 3068,
+ "ckpt": "/home/syarol/tsk-runs/ah/grid/b_hist/head.best.pt",
+ "skip_seconds": 1.0,
+ "history_seconds": 1.0,
+ "normalised_mse": {
+  "head": 0.89863,
+  "rest": 1.24523,
+  "mean": 1.07542,
+  "hold": 1.10459
+ },
+ "per_variable": {
+  "hand.L.x": {
+   "head": 0.1139,
+   "rest": 0.168637,
+   "mean": 0.138642,
+   "hold": 0.158007
+  },
+  "hand.L.y": {
+   "head": 0.262659,
+   "rest": 0.399105,
+   "mean": 0.336852,
+   "hold": 0.335955
+  },
+  "hand.L.z": {
+   "head": 0.058131,
+   "rest": 0.088572,
+   "mean": 0.07557,
+   "hold": 0.077024
+  },
+  "hand.R.x": {
+   "head": 0.142383,
+   "rest": 0.217324,
+   "mean": 0.176095,
+   "hold": 0.199058
+  },
+  "hand.R.y": {
+   "head": 0.282664,
+   "rest": 0.458319,
+   "mean": 0.394302,
+   "hold": 0.383327
+  },
+  "hand.R.z": {
+   "head": 0.062427,
+   "rest": 0.094985,
+   "mean": 0.077017,
+   "hold": 0.085381
+  },
+  "head.pitch": {
+   "head": 108.504397,
+   "rest": 33.651352,
+   "mean": 95.3839,
+   "hold": 27.848143
+  },
+  "head.tilt": {
+   "head": 30.574423,
+   "rest": 26.622852,
+   "mean": 40.383542,
+   "hold": 25.034001
+  },
+  "head.yaw": {
+   "head": 72.521919,
+   "rest": 93.166204,
+   "mean": 102.395377,
+   "hold": 85.216952
+  },
+  "hips.x": {
+   "head": 0.013447,
+   "rest": 0.029955,
+   "mean": 0.014641,
+   "hold": 0.025375
+  },
+  "hips.y": {
+   "head": 0.000593,
+   "rest": 0.001337,
+   "mean": 0.000641,
+   "hold": 0.001193
+  },
+  "shoulder.L.up": {
+   "head": 0.035615,
+   "rest": 0.053398,
+   "mean": 0.059552,
+   "hold": 0.049933
+  },
+  "shoulder.R.up": {
+   "head": 0.035698,
+   "rest": 0.053398,
+   "mean": 0.059552,
+   "hold": 0.049933
+  },
+  "shoulders.up": {
+   "head": 0.118534,
+   "rest": 0.131135,
+   "mean": 0.140302,
+   "hold": 0.111772
+  },
+  "torso.pitch": {
+   "head": 8.774536,
+   "rest": 16.829096,
+   "mean": 10.522714,
+   "hold": 14.528524
+  },
+  "torso.tilt": {
+   "head": 9.613299,
+   "rest": 17.197908,
+   "mean": 11.392508,
+   "hold": 15.297784
+  },
+  "torso.yaw": {
+   "head": 23.556619,
+   "rest": 10.932247,
+   "mean": 17.358452,
+   "hold": 10.827394
+  }
+ },
+ "relative_mse": {
+  "head": 0.49637534868084937,
+  "rest": 0.47113846511706914,
+  "mean": 0.47113846511706914,
+  "hold": 0.47113846511706914
+ },
+ "velocity_mse": {
+  "head": 0.0066017249948408276,
+  "rest": 0.005948810901739064,
+  "mean": 0.005948810901739064,
+  "hold": 0.005948810901739064
+ },
+ "std_ratio": {
+  "head": 0.4176301772307362,
+  "rest": 0.0,
+  "mean": 0.0,
+  "hold": 0.0
+ },
+ "velocity_std_ratio": {
+  "head": 0.3436781519073502,
+  "rest": 0.0,
+  "mean": 0.0,
+  "hold": 0.0
+ },
+ "per_variable_motion": {
+  "hand.L.x": {
+   "relative_mse": {
+    "head": 0.4561,
+    "rest": 0.45752,
+    "mean": 0.45752,
+    "hold": 0.45752
+   },
+   "velocity_mse": {
+    "head": 0.00561,
+    "rest": 0.00511,
+    "mean": 0.00511,
+    "hold": 0.00511
+   },
+   "std_ratio": {
+    "head": 0.34041,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   },
+   "velocity_std_ratio": {
+    "head": 0.32447,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   }
+  },
+  "hand.L.y": {
+   "relative_mse": {
+    "head": 0.47089,
+    "rest": 0.44983,
+    "mean": 0.44983,
+    "hold": 0.44983
+   },
+   "velocity_mse": {
+    "head": 0.00444,
+    "rest": 0.00393,
+    "mean": 0.00393,
+    "hold": 0.00393
+   },
+   "std_ratio": {
+    "head": 0.43746,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   },
+   "velocity_std_ratio": {
+    "head": 0.3758,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   }
+  },
+  "hand.L.z": {
+   "relative_mse": {
+    "head": 0.54537,
+    "rest": 0.53411,
+    "mean": 0.53411,
+    "hold": 0.53411
+   },
+   "velocity_mse": {
+    "head": 0.00949,
+    "rest": 0.00918,
+    "mean": 0.00918,
+    "hold": 0.00918
+   },
+   "std_ratio": {
+    "head": 0.32698,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   },
+   "velocity_std_ratio": {
+    "head": 0.19803,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   }
+  },
+  "hand.R.x": {
+   "relative_mse": {
+    "head": 0.53326,
+    "rest": 0.54172,
+    "mean": 0.54172,
+    "hold": 0.54172
+   },
+   "velocity_mse": {
+    "head": 0.00623,
+    "rest": 0.00594,
+    "mean": 0.00594,
+    "hold": 0.00594
+   },
+   "std_ratio": {
+    "head": 0.28807,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   },
+   "velocity_std_ratio": {
+    "head": 0.23949,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   }
+  },
+  "hand.R.y": {
+   "relative_mse": {
+    "head": 0.45901,
+    "rest": 0.45916,
+    "mean": 0.45916,
+    "hold": 0.45916
+   },
+   "velocity_mse": {
+    "head": 0.00471,
+    "rest": 0.00437,
+    "mean": 0.00437,
+    "hold": 0.00437
+   },
+   "std_ratio": {
+    "head": 0.35039,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   },
+   "velocity_std_ratio": {
+    "head": 0.29369,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   }
+  },
+  "hand.R.z": {
+   "relative_mse": {
+    "head": 0.58393,
+    "rest": 0.58477,
+    "mean": 0.58477,
+    "hold": 0.58477
+   },
+   "velocity_mse": {
+    "head": 0.01152,
+    "rest": 0.01126,
+    "mean": 0.01126,
+    "hold": 0.01126
+   },
+   "std_ratio": {
+    "head": 0.28486,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   },
+   "velocity_std_ratio": {
+    "head": 0.16299,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   }
+  },
+  "head.pitch": {
+   "relative_mse": {
+    "head": 0.3846,
+    "rest": 0.13665,
+    "mean": 0.13665,
+    "hold": 0.13665
+   },
+   "velocity_mse": {
+    "head": 0.00497,
+    "rest": 0.00246,
+    "mean": 0.00246,
+    "hold": 0.00246
+   },
+   "std_ratio": {
+    "head": 1.37116,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   },
+   "velocity_std_ratio": {
+    "head": 1.00821,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   }
+  },
+  "head.tilt": {
+   "relative_mse": {
+    "head": 0.31875,
+    "rest": 0.24859,
+    "mean": 0.24859,
+    "hold": 0.24859
+   },
+   "velocity_mse": {
+    "head": 0.00353,
+    "rest": 0.00285,
+    "mean": 0.00285,
+    "hold": 0.00285
+   },
+   "std_ratio": {
+    "head": 0.61918,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   },
+   "velocity_std_ratio": {
+    "head": 0.49721,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   }
+  },
+  "head.yaw": {
+   "relative_mse": {
+    "head": 0.4591,
+    "rest": 0.44865,
+    "mean": 0.44865,
+    "hold": 0.44865
+   },
+   "velocity_mse": {
+    "head": 0.00486,
+    "rest": 0.00409,
+    "mean": 0.00409,
+    "hold": 0.00409
+   },
+   "std_ratio": {
+    "head": 0.36845,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   },
+   "velocity_std_ratio": {
+    "head": 0.44117,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   }
+  },
+  "hips.x": {
+   "relative_mse": {
+    "head": 0.72706,
+    "rest": 0.79274,
+    "mean": 0.79274,
+    "hold": 0.79274
+   },
+   "velocity_mse": {
+    "head": 0.00524,
+    "rest": 0.00487,
+    "mean": 0.00487,
+    "hold": 0.00487
+   },
+   "std_ratio": {
+    "head": 0.28392,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   },
+   "velocity_std_ratio": {
+    "head": 0.32762,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   }
+  },
+  "hips.y": {
+   "relative_mse": {
+    "head": 0.78115,
+    "rest": 0.84347,
+    "mean": 0.84347,
+    "hold": 0.84347
+   },
+   "velocity_mse": {
+    "head": 0.01378,
+    "rest": 0.0136,
+    "mean": 0.0136,
+    "hold": 0.0136
+   },
+   "std_ratio": {
+    "head": 0.22578,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   },
+   "velocity_std_ratio": {
+    "head": 0.14877,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   }
+  },
+  "shoulder.L.up": {
+   "relative_mse": {
+    "head": 0.32324,
+    "rest": 0.32954,
+    "mean": 0.32954,
+    "hold": 0.32954
+   },
+   "velocity_mse": {
+    "head": 0.00435,
+    "rest": 0.00413,
+    "mean": 0.00413,
+    "hold": 0.00413
+   },
+   "std_ratio": {
+    "head": 0.3221,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   },
+   "velocity_std_ratio": {
+    "head": 0.24528,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   }
+  },
+  "shoulder.R.up": {
+   "relative_mse": {
+    "head": 0.32222,
+    "rest": 0.32954,
+    "mean": 0.32954,
+    "hold": 0.32954
+   },
+   "velocity_mse": {
+    "head": 0.00436,
+    "rest": 0.00413,
+    "mean": 0.00413,
+    "hold": 0.00413
+   },
+   "std_ratio": {
+    "head": 0.31889,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   },
+   "velocity_std_ratio": {
+    "head": 0.2506,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   }
+  },
+  "shoulders.up": {
+   "relative_mse": {
+    "head": 0.51014,
+    "rest": 0.47871,
+    "mean": 0.47871,
+    "hold": 0.47871
+   },
+   "velocity_mse": {
+    "head": 0.00613,
+    "rest": 0.00539,
+    "mean": 0.00539,
+    "hold": 0.00539
+   },
+   "std_ratio": {
+    "head": 0.43135,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   },
+   "velocity_std_ratio": {
+    "head": 0.37904,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   }
+  },
+  "torso.pitch": {
+   "relative_mse": {
+    "head": 0.53871,
+    "rest": 0.57936,
+    "mean": 0.57936,
+    "hold": 0.57936
+   },
+   "velocity_mse": {
+    "head": 0.01,
+    "rest": 0.00982,
+    "mean": 0.00982,
+    "hold": 0.00982
+   },
+   "std_ratio": {
+    "head": 0.25989,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   },
+   "velocity_std_ratio": {
+    "head": 0.15703,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   }
+  },
+  "torso.tilt": {
+   "relative_mse": {
+    "head": 0.50836,
+    "rest": 0.52802,
+    "mean": 0.52802,
+    "hold": 0.52802
+   },
+   "velocity_mse": {
+    "head": 0.00624,
+    "rest": 0.00559,
+    "mean": 0.00559,
+    "hold": 0.00559
+   },
+   "std_ratio": {
+    "head": 0.33697,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   },
+   "velocity_std_ratio": {
+    "head": 0.35784,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   }
+  },
+  "torso.yaw": {
+   "relative_mse": {
+    "head": 0.51647,
+    "rest": 0.26697,
+    "mean": 0.26697,
+    "hold": 0.26697
+   },
+   "velocity_mse": {
+    "head": 0.00677,
+    "rest": 0.00441,
+    "mean": 0.00441,
+    "hold": 0.00441
+   },
+   "std_ratio": {
+    "head": 1.01694,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   },
+   "velocity_std_ratio": {
+    "head": 0.7385,
+    "rest": 0.0,
+    "mean": 0.0,
+    "hold": 0.0
+   }
+  }
+ },
+ "beat": {
+  "gt": {
+   "hands": {
+    "corr": 0.033220967566197704,
+    "consistency": 0.5734174497531007,
+    "precision": 0.7348025833943671,
+    "segments": 3068
+   },
+   "head": {
+    "corr": 0.04372872875609294,
+    "consistency": 0.6952321183795478,
+    "precision": 0.7293855230968485,
+    "segments": 3068
+   }
+  },
+  "head": {
+   "hands": {
+    "corr": 0.03845053039438896,
+    "consistency": 0.6572806394609503,
+    "precision": 0.7374195630303145,
+    "segments": 3068
+   },
+   "head": {
+    "corr": 0.018658942033138847,
+    "consistency": 0.5884791332925964,
+    "precision": 0.737502160120473,
+    "segments": 3068
+   }
+  }
+ },
+ "layer_mix": null,
+ "options": {
+  "d_in": 3072,
+  "n_vars": 27,
+  "n_avatars": 2,
+  "d": 128,
+  "layers": 2,
+  "heads": 4,
+  "lookahead": 1.0,
+  "objective": "mse",
+  "dropout": 0.1,
+  "history": 30
+ },
+ "norm": "pooled"
+}
