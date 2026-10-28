@@ -964,6 +964,16 @@ def test_demo_of_a_held_out_segment(world, bm, tmp_path):
     with pytest.raises(SystemExit):
         a.id = "nope"
         gs.demo_segment(a, log=lambda s: None)
+    # another avatar of yours: its own body file, not the export's
+    a.id = seg
+    a.vrm = os.path.join(ROOT, "assets", "vrm", "three-vrm-girl.vrm")
+    a.body = None
+    a.out = str(tmp_path / "girl")
+    gs.demo_segment(a, log=lambda s: None)
+    g = json.loads((tmp_path / "girl" / "beat2.3_sp3_3_1_1__s00" /
+                    "truth.states.json").read_text())
+    assert g["body"].endswith("three-vrm-girl.body.json")
+    assert g["vrm"].endswith("three-vrm-girl.vrm") and len(g["states"]) == 180
 
 
 # ------------------------------------------------ the text states (torch)
@@ -1011,6 +1021,48 @@ def test_text_states_are_those_flow_train_hidden_stores(exported, tmp_path):
     (tmp_path / "h2" / "meta.json").write_text(json.dumps(meta))
     gs.TextStates(lm, str(tmp_path / "h2"), [0], log=msgs.append)
     assert any("--context turn" in m for m in msgs)
+
+
+def test_a_sentence_is_made_to_look_like_the_librarys_texts():
+    """BEAT2's words are what the TextGrid says (no punctuation, lower
+    case, if the export's texts are): a TTS sentence is brought to that
+    before the text model reads it, its characters' times kept."""
+    form = gs.text_form([{"spoken": "hello there how are you"},
+                         {"spoken": "nice to meet you i am here"}])
+    assert form == {"lower": 1.0, "punct": 0.0}
+    mixed = gs.text_form([{"spoken": "Hello, there. How are you?"}])
+    assert mixed["lower"] < 0.95 and mixed["punct"] > 0.1
+    assert gs.text_form([{"spoken": "你好吗"}]) == {"lower": 0.0,
+                                                    "punct": 0.0}
+    t, keep = gs.normalise_text("Hello,  World! It's 5-6 \u2026", form)
+    assert t == "hello world it's 5-6"
+    assert list("Hello,  World! It's 5-6 \u2026"[i] for i in keep[:5]) == \
+        list("Hello")
+    assert "W" == "Hello,  World! It's 5-6 \u2026"[keep[6]]
+    assert gs.normalise_text("Hi, You!", mixed)[0] == "Hi, You!"
+    assert gs.normalise_text("Hi, You!", None)[0] == "Hi, You!"
+    t, keep = gs.normalise_text("\uff28\uff49 there?", form)       # NFKC
+    assert t == "hi there" and len(keep) == len(t)
+    # through the queries: the model gets the normalised text, and a token
+    # is timed from where its word is spoken in the original
+    spoken, said = said_of(["Hello, there World!"], cps=10.0)
+    seen = []
+
+    def spy(text):
+        seen.append(text)
+        return fake_text(text)
+    q, = gs.sentence_queries(spoken, said["spans"], said["audio"],
+                             said["sr"], spy, form=form)
+    assert seen == ["hello there world"]
+    t0 = q.t0
+    word = spoken.index("World")
+    assert q.tt[2] == pytest.approx(said["spans"][word][0] - t0, abs=1e-3)
+    assert q.tt[1] == pytest.approx(said["spans"][spoken.index("there")][0]
+                                    - t0, abs=1e-3)
+    seen.clear()
+    gs.sentence_queries(spoken, said["spans"], said["audio"], said["sr"],
+                        spy)
+    assert seen == ["Hello, there World!"]
 
 
 def test_sentences_become_queries_on_the_audio_clock():

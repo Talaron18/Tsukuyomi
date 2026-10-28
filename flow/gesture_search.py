@@ -114,6 +114,7 @@ import math
 import os
 import sys
 import time
+import unicodedata
 from collections import Counter, deque
 from dataclasses import dataclass
 
@@ -276,6 +277,26 @@ class Library:
         return cls({k: z[k] for k in z.files}, meta)
 
 
+def text_form(rows, n=5000):
+    """{"lower", "punct"} of the export's spoken texts: the share of cased
+    letters that are lowercase, the share of non-space characters that are
+    punctuation -- what a sentence is made to look like before the text
+    model reads it (normalise_text)."""
+    step = max(len(rows) // n, 1)
+    low = cased = punct = chars = 0
+    for r in rows[::step]:
+        for ch in unicodedata.normalize("NFKC", r.get("spoken") or ""):
+            if ch.isspace():
+                continue
+            chars += 1
+            punct += unicodedata.category(ch).startswith("P")
+            if ch.lower() != ch.upper():
+                cased += 1
+                low += ch.islower()
+    return {"lower": round(low / cased, 4) if cased else 0.0,
+            "punct": round(punct / chars, 4) if chars else 1.0}
+
+
 def build(export, encoders, out, hop=15, variant="text+prosody", device=None,
           limit=0, allow_outside=False, log=log):
     """The library of the export's windows (module docstring, library) in
@@ -372,6 +393,7 @@ def build(export, encoders, out, hop=15, variant="text+prosody", device=None,
             "encoders": os.path.abspath(encoders), "variant": variant,
             "export": os.path.abspath(export),
             "held_out_clips": sorted(held), "skipped": dict(skipped),
+            "text_form": text_form(rows),
             "windows": len(wseg), "segments": len(seg_ids),
             "licence": "derived from BEAT2: research only, never commit"}
     lib = Library({"emb": np.concatenate(emb), "win_seg": np.array(wseg),
@@ -482,11 +504,44 @@ def reply_prosody(audio, sr, fps, rms_ref=None):
     return p
 
 
+def normalise_text(text, form):
+    """(text', keep): a TTS sentence as the encoder's text looked --
+    `form` is the library's text_form: lowercased when the export's texts
+    are (the TextGrid's words), punctuation dropped when they have next to
+    none (not an apostrophe or hyphen inside a word), NFKC, single spaces.
+    keep[i] is the index in `text` of text'[i], so the characters' times
+    stay on their characters. No form: the text as it is."""
+    if not form:
+        return text, np.arange(len(text))
+    lower = form.get("lower", 0.0) > 0.95
+    bare = form.get("punct", 1.0) < 0.01
+    out, keep = [], []
+    n = len(text)
+    for i, ch in enumerate(text):
+        for c in unicodedata.normalize("NFKC", ch):
+            if bare and unicodedata.category(c).startswith("P") and not (
+                    c in "'\u2019-" and 0 < i < n - 1
+                    and text[i - 1].isalnum() and text[i + 1].isalnum()):
+                continue
+            if c.isspace():
+                if not out or out[-1] == " ":
+                    continue
+                c = " "
+            for x in (c.lower() if lower else c):
+                out.append(x)
+                keep.append(i)
+    while out and out[-1] == " ":
+        out.pop()
+        keep.pop()
+    return "".join(out), np.array(keep, int)
+
+
 def sentence_queries(spoken, spans, audio, sr, text_states, fps=30.0,
-                     pad=0.3, rms_ref=None, t_offset=0.0):
+                     pad=0.3, rms_ref=None, t_offset=0.0, form=None):
     """[Query] one per sentence of a reply: `spans` the characters' (start,
     end) seconds in the audio (speech.speak), text_states(sentence) ->
-    (states, spans)."""
+    (states, spans); the sentence is made to look like the library's texts
+    first (normalise_text)."""
     pros = reply_prosody(audio, sr, fps, rms_ref)
     out = []
     for a, b in sp.sentences(spoken):
@@ -499,8 +554,11 @@ def sentence_queries(spoken, spans, audio, sr, text_states, fps=30.0,
         f1 = int(math.ceil((last + pad) * fps))
         t0 = f0 / fps
         chars = (sp_ - t0).astype(np.float32)
-        h, tok = text_states(text)
-        tt = ah.token_times(tok, chars, last - t0)
+        norm, keep = normalise_text(text, form)
+        if not any(ch.isalnum() for ch in norm):
+            continue
+        h, tok = text_states(norm)
+        tt = ah.token_times(tok, chars[keep], last - t0)
         p = np.zeros((f1 - f0, 3), np.float32)
         seg = pros[f0:f1]
         p[:len(seg)] = seg
@@ -930,7 +988,8 @@ class GestureSearch:
                              "(--gs-model)")
         qs = sentence_queries(spoken, said["spans"], said["audio"],
                               said["sr"], self.text, self.fps, self.p.pad,
-                              self.lib.rms_ref, t_offset)
+                              self.lib.rms_ref, t_offset,
+                              self.lib.meta.get("text_form"))
         return self.plan(qs, random)
 
 
@@ -1314,6 +1373,23 @@ def mouth_of(pros):
     return np.clip(pros[:, 0] / ref, 0, 1) * 0.8
 
 
+def truth_states(av, z, row, fingers=True):
+    """[state] of the segment's recorded joints on `av`
+    (beat2.segment_states); the stored fingers only for the avatar the
+    export was made for (their bones are that avatar's)."""
+    if fingers:
+        return b2.segment_states(av, z, row)[0]
+    key = row["key"]
+    joints = z[key + ".joints"].astype(np.float32)
+    traj = z[key + ".traj"].astype(np.float32)
+    hips = np.zeros((len(joints), 2), np.float32)
+    for c, v in enumerate(row["vars"]):
+        if v in ("hips.x", "hips.y"):
+            hips[:, ("hips.x", "hips.y").index(v)] = np.nan_to_num(traj[:, c])
+    return b2.states_of(av, joints, hips, z[key + ".prosody"].astype(
+        np.float32))
+
+
 def play_states(bm, rig, tokens, n, mouth, seed=0, gs=None):
     """[state] of n frames of the VRM idle with these gesture tokens (and
     no markers), the mouth following `mouth` [n]."""
@@ -1387,7 +1463,14 @@ def demo_segment(a, log=log):
     if os.path.exists(meta_path):
         with open(meta_path, encoding="utf-8") as f:
             meta = json.load(f)
-    av = b2.Avatar(a.vrm or meta.get("vrm"), a.body or meta.get("body"))
+    own = not a.vrm
+    if own:
+        av = b2.Avatar(meta.get("vrm"), a.body or meta.get("body"))
+    else:
+        # Another avatar: its own body file (built beside the others in
+        # rigs/ when there is none), as the director resolves it.
+        _bm, bpath = fv.body_for(a.vrm, a.body, log=lambda s: None)
+        av = b2.Avatar(a.vrm, bpath)
     bm = av.bm
     hid = a.hidden or cfg["hidden"]["dir"]
     z = np.load(npz)
@@ -1411,7 +1494,7 @@ def demo_segment(a, log=log):
         "idle": play_states(bm, rig, [], n, mouth, a.seed),
         "random": play_states(bm, rig, tok_r, n, mouth, a.seed, gs),
         "retrieved": play_states(bm, rig, tok_s, n, mouth, a.seed, gs),
-        "truth": b2.segment_states(av, z, row)[0][:n]}
+        "truth": truth_states(av, z, row, own)[:n]}
     d = os.path.join(a.out, b2.key_of(a.id))
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, "report.json"), "w", encoding="utf-8") as f:

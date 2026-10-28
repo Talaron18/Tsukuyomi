@@ -935,6 +935,12 @@ How it works (the module docstring has the details):
   what `hidden` stores); prosody from the sentence's TTS audio at 30 fps
   (`flow.beat2.prosody`) after its loudness is set to the library's (TTS and
   microphone levels differ by more than the encoder's input tolerates);
+  the sentence itself is made to look like the export's texts first (BEAT2's
+  words are the TextGrid's: `build` records whether they are lowercase and
+  have punctuation -- `text_form` in the library's `meta.json` -- and a
+  sentence is lowercased / stripped of punctuation accordingly, NFKC, the
+  characters' times kept on their characters; a library without `text_form`
+  leaves the text as it is);
   windows of 3 s every 2 s over the sentence plus 0.3 s either side, each
   embedded as the probe embeds a window (silence past the audio).
 - **Choice**: cosine to the library's motion embeddings (optionally
@@ -1030,7 +1036,12 @@ The two VRMs of yours are not in the repo: the paths above are where they
 are expected (`vrm/` is ignored); their body files are built on first use
 (`rigs/<name>.body.json`).
 
-What to check first on the real library: that `eval` says retrieved
+What to check first on the real library: that step 1's held-out text+
+prosody top-1 (32 candidates) is the old report's 0.204 -- if not, the
+flags (`--layer`, `--limit`, `--seed`, `--eval-frac`) differ from that run
+and the held-out clips are not the same ones; that `meta.json`'s
+`text_form` is what you expect of the transcripts (lowercase, no
+punctuation: otherwise TTS sentences are read as they are); that `eval` says retrieved
 windows are closer to the true motion than random ones by clearly more than
 chance (0.5; the probe's text+prosody top-1 of 32 was 0.204 against 0.031,
 so expect a modest margin: what text and voice predict is the kind and
