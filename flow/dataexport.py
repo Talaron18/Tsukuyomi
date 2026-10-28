@@ -41,6 +41,27 @@ Quality filters, stats and exporters for flow.dataset's turn records.
   dedupe     user lines normalised (case, punctuation, spaces) and compared
              by character-trigram Jaccard (>= --dup-jaccard) within an
              avatar x persona; the first one is kept.
+  manners    --manners (default on for sft and stats; --no-manners for the
+             output of before; --max-poses N, default 2): the teacher writes
+             about 2.3 pose markers a reply and a third of them move a hand,
+             and the student copies it -- arms up "for no reason" (lafei's
+             can only swing out sideways) -- where streamers move the head,
+             the face, the gaze and a little torso, and the hands rarely and
+             on purpose. Per kept turn it is decided whether the user asked
+             for a body action (the topic is pose / show / invite, or the
+             line has a word of ASK_WORDS in en / ja / zh) and recorded for
+             `stats`. Not asked: each [pose {...}] keeps head, gaze, brow,
+             eye, mouth and cheek targets, torso yaw / pitch / tilt within
+             TORSO_SMALL degrees, dur and hold; hands, arms, shoulders, a
+             bigger torso move and composites go, a marker left with no
+             target goes whole; [move] markers other than the head-only ones
+             (HEAD_MOVES) and every [gesture:NAME] go; [blink] and [pause]
+             stay. Asked: the body markers stay. Either way at most
+             --max-poses pose markers stay, the first ones, but those with
+             body targets first on an asked turn. It runs on the corrected
+             reply (after --correct-misses), on history turns too, and the
+             spoken text is checked with the pose parser: a turn whose
+             spoken text would change is left as it was and counted.
   stats      counts by avatar / persona / language / topic / marker tag,
              reach and MISS rates, a histogram of the targeted variables,
              tokens and cost from the usage fields, speech seconds, latency,
@@ -72,7 +93,7 @@ Usage:
     python -m flow.dataexport stats data/datagen/pilot
     python -m flow.dataexport sft data/datagen/pilot --out sft.jsonl
     python -m flow.dataexport sft data/datagen/pilot --out sft.jsonl \\
-        --avatar-weight lafei=2 --no-correct-misses
+        --avatar-weight lafei=2 --no-correct-misses --no-manners
     python -m flow.dataexport action data/datagen/pilot --out action
 """
 
@@ -228,7 +249,7 @@ def annotate(records, max_miss=MAX_MISS, dup=DUP_JACCARD, keep_lite=False,
 
 # --------------------------------------------------------------- stats
 
-def stats(records, notes, prices=None, counts=None) -> dict:
+def stats(records, notes, prices=None, counts=None, mcounts=None) -> dict:
     s = {"turns": len(records), "kept": sum(k for _, k in notes.values()),
          "sessions": len({r["session"] for r in records})}
     c = defaultdict(Counter)
@@ -286,6 +307,8 @@ def stats(records, notes, prices=None, counts=None) -> dict:
                                                2)}
     if counts is not None:
         s["corrections"] = counts
+    if mcounts is not None:
+        s["manners"] = mcounts
     if s["turns"]:
         s["cost_per_turn_usd"] = round(cost / s["turns"], 7)
     return s
@@ -312,6 +335,8 @@ def stats_text(s) -> str:
         for a, v in c["by_avatar"].items():
             out.append(f"  {a:14s} {v['markers']} markers, {v['targets']} "
                        f"targets corrected, {v['skipped']} skipped")
+    if s.get("manners") is not None:
+        out += manners_lines(s["manners"])
     if s["variables"]:
         top = max(s["variables"].values())
         out.append("targeted variables:")
@@ -496,6 +521,352 @@ def correction_line(c) -> str:
                if c["skipped"] else ""))
 
 
+# ------------------------------------------------------ streamer manners
+
+# Whether the user asked for a body action. A turn is "asked" when its topic
+# is one of ASK_TOPICS (flow/datagen.personas.json: show = point, wave, raise
+# a hand; pose = a pose, a bow, a dance; invite = come along) or its user line
+# matches a pattern of ASK_WORDS. Heuristic and meant to be extended: the
+# patterns are regular expressions (case-insensitive), all three languages are
+# tried on every line (users mix them), and a line is first stripped of the
+# ASK_NOT phrases, words that contain a trigger without asking for a movement
+# (ja 相手 "partner" has 手; zh 举例 "for example" has 举; en "on the other
+# hand"). "look" and "turn" count only where they are an instruction ("look
+# at", "turn around"): "you look cute" asks for nothing. The head and the eyes
+# are kept on every turn, asked or not, so a request to look somewhere is no
+# reason to keep a hand.
+ASK_TOPICS = ("pose", "show", "invite")
+ASK_WORDS = {
+    "en": [r"\bwav(?:e|es|ed|ing)\b", r"\brais(?:e|es|ed|ing)\b",
+           r"\bhands?\b", r"\barms?\b", r"\bfingers?\b",
+           r"\bpoint(?:s|ed|ing)? (?:to|at|out|over|where|it)\b",
+           r"\bpointing\b", r"\bclap", r"\bdanc(?:e|es|ed|ing)\b",
+           r"\bcheer(?:s|ing)?\b(?! (?:me )?up)", r"\bhug", r"\bcross(?:ed)?\b",
+           r"\bstretch", r"\bbow(?:s|ed|ing)?\b", r"\bnod(?:s|ded|ding)?\b",
+           r"\blook (?:at|over|there|here|left|right|up|down|around|behind"
+           r"|this way|that way|back)\b",
+           r"\bturn (?:around|left|right|your|back|over|away)\b",
+           r"\bshow (?:me|us|how)\b", r"\bstrike\b", r"\bpose\b",
+           r"\bspin", r"\bjump", r"\bpeace sign\b", r"\bthumbs?\b",
+           r"\bhigh[- ]?five\b", r"\bshrug", r"\bsalut", r"\bflex",
+           r"\btouch (?:your|the)\b", r"\bhold up\b", r"\bmimic me\b"],
+    "ja": ["手", "振っ", "振る", "振り向", "上げ", "指", "踊", "拍手", "腕",
+           "ポーズ", "ハグ", "抱", "見せ", "ピース", "万歳", "ばんざい",
+           "お辞儀", "おじぎ", "伸び", "ストレッチ", "ジャンプ", "うなず",
+           "頷", "敬礼", "回って", "くるっと", "ぐるっと", "こっち見", "こっちを見",
+           "あっち", "あそこ見", "向いて", "ふりふり"],
+    "zh": ["手", "挥", "举", "指", "跳舞", "跳个", "跳一", "跳起", "拍手", "拍照",
+           "拍拍", "拍一", "抱", "鞠躬", "点头", "伸懒腰", "伸个懒腰", "敬礼",
+           "耸肩", "叉腰", "比心", "比耶", "姿势", "姿勢", "摆个", "招手",
+           "转身", "转圈", "转一圈", "转个", "转过", "转头", "转向", "转一下",
+           "看我", "看这", "看那", "看镜头", "看左", "看右", "看上", "看下",
+           "看向", "看一下", "看看"],
+}
+ASK_NOT = [
+    r"on the other hand", r"second[- ]hand", r"hand(?:s)? down", r"by hand",
+    r"upper hand", r"out of hand", r"\bin hand\b", r"hands[- ]on",
+    r"相手", r"上手", r"下手", r"助手", r"苦手", r"歌手", r"選手", r"手伝",
+    r"手紙", r"手作り", r"手間", r"手術", r"手に入", r"手前", r"手軽", r"得手",
+    r"運転手", r"入手", r"投手", r"打手", r"騎手", r"手帳", r"手段", r"手続",
+    r"申し上げ", r"取り上げ", r"盛り上げ", r"仕上げ", r"買い上げ", r"染め上げ",
+    r"目指", r"指導", r"指示", r"指摘", r"指定", r"指名", r"指針", r"指令",
+    r"指揮", r"指標", r"腕前", r"腕時計", r"抱負", r"振り返", r"抱え込",
+    r"手机", r"歌手", r"对手", r"手段", r"助手", r"高手", r"手艺", r"手续",
+    r"手术", r"手表", r"手套", r"选手", r"新手", r"手头", r"举例", r"举办",
+    r"举行", r"举报", r"举止", r"指导", r"指示", r"指出", r"指定", r"指望",
+    r"指标", r"指南", r"指责", r"指挥", r"抱歉", r"抱怨", r"抱负",
+    r"看看你", r"看看这个", r"看看吧"]
+_ASK = [re.compile(p, re.I) for ps in ASK_WORDS.values() for p in ps]
+_NOT = [re.compile(p, re.I) for p in ASK_NOT]
+
+# What a streamer keeps on a turn nobody asked for a gesture on: the head, the
+# eyes, the face, and a small torso lean. Everything else in a pose marker
+# (hands, arms, shoulders, a bigger torso move, hips, composites such as
+# "hands": "@together") is a body gesture and goes. TORSO_SMALL: the largest
+# |value| (degrees) of torso.yaw / pitch / tilt kept; torso.forward and an
+# "@anchor" torso value go.
+KEEP_PREFIX = ("head.", "gaze.", "brow.", "eye.", "mouth.", "cheek.")
+TORSO_SMALL = 6.0
+# Moves whose figure is the head alone (flow.moves PRIMS kind "head"; the
+# aliases nod, nod_along, bop, look resolve to them). The others sway, bounce,
+# shimmy, clap, cheer, wave, twirl and dance move the trunk or the arms. A
+# [gesture:NAME] plays the rig's own motion, which on the Cubism samples and
+# the Azur Lane rigs is the arms and legs (flow.gestures describes the arms
+# first); records do not say which, so an unasked gesture is always dropped.
+HEAD_MOVES = ("head_bob", "look_around")
+MAX_POSES = 2
+_SPEC = ("dur", "duration", "hold")
+_ARM_KEYS = ("hand", "hands", "arm", "forearm", "elbow", "wrist")
+
+
+def asked_line(line) -> bool:
+    """True when a user line matches ASK_WORDS (after ASK_NOT is cut out)."""
+    s = unicodedata.normalize("NFKC", line or "")
+    for p in _NOT:
+        s = p.sub(" ", s)
+    return any(p.search(s) for p in _ASK)
+
+
+def asked_for(r):
+    """(asked, by) for a record: by is "topic", "keyword", "topic+keyword"
+    or None."""
+    by = []
+    if r.get("topic") in ASK_TOPICS:
+        by.append("topic")
+    if asked_line(r.get("user")):
+        by.append("keyword")
+    return bool(by), "+".join(by) or None
+
+
+def keep_key(key, value) -> bool:
+    """True when a pose target survives on a turn with no gesture asked."""
+    if key.startswith(KEEP_PREFIX):
+        return True
+    if key in ("torso.yaw", "torso.pitch", "torso.tilt"):
+        try:
+            return abs(float(value)) <= TORSO_SMALL
+        except (TypeError, ValueError):
+            return False
+    return False
+
+
+def is_hand(key) -> bool:
+    return key.split(".")[0] in _ARM_KEYS
+
+
+class _AnyGesture(set):
+    """Every [gesture:NAME] is a marker here: the labels are the rig's."""
+
+    def __contains__(self, x):
+        return True
+
+    def __bool__(self):
+        return True
+
+
+def _parser():
+    try:
+        from . import moves as mv
+    except ImportError:
+        from flow import moves as mv
+    p = pz.PoseParser(moves=[*mv.PRIMS, "dance"])
+    p.gestures = _AnyGesture()
+    return p
+
+
+def marker_spans(text):
+    """[(start, end, tag)] for every marker the body-mode parser takes from
+    a raw reply (pose, move, gesture, blink, pause): text[start:end] with its
+    brackets, tag the parser's dict. Found as pose_spans finds them."""
+    p = _parser()
+    out, start = [], 0
+    for i, ch in enumerate(text):
+        c = ch.translate(pz.dr._FULLWIDTH)
+        was = p._buf is not None
+        restart = was and c == "[" and p._depth == 0 and not p._instr
+        done = p.feed(ch)
+        if (not was or restart) and p._buf is not None:
+            start = i
+        for t in done:
+            out.append((start, i + 1, t))
+    return out
+
+
+def spoken_of(text) -> str:
+    p = _parser()
+    p.feed(text)
+    p.close()
+    return p.spoken
+
+
+def _pose_dict(text, a, b, targets):
+    """The marker's JSON as an ordered {stripped key: value} (the values as
+    written), or the parser's targets when it cannot be read again."""
+    seg = text[a:b].translate(pz.dr._FULLWIDTH)[1:-1].strip()
+    m = re.match(r"(?is)pose\b\s*:?\s*(.*)$", seg)
+    try:
+        d, _ = pz.loads_lenient(m.group(1) if m else seg)
+    except ValueError:
+        return dict(targets)
+    return {str(k).strip(): v for k, v in d.items()}
+
+
+def _cut(s, a, b, repl=""):
+    """s with s[a:b] replaced; a removal takes the spaces after it too when
+    spaces (or the start) are before, so no double space is left."""
+    if not repl and (a == 0 or s[a - 1] in " \t\n") and b < len(s) \
+            and s[b] in " \t":
+        while b < len(s) and s[b] in " \t":
+            b += 1
+    return s[:a] + repl + s[b:]
+
+
+def manners_reply(text, asked, max_poses=MAX_POSES):
+    """The reply with a streamer's manners (module docstring): dict with
+    "reply" (the text; as it was when nothing changed), "skipped" (None, or
+    why the text was left alone: "spoken" / "reparse") and counters: poses
+    and targets and hand targets before / after, markers_emptied (pose
+    markers left with no target), markers_capped, targets_removed, moves /
+    gestures removed, body_before / body_after (a pose, move or gesture left
+    in the reply)."""
+    spans = marker_spans(text)
+    poses, other = [], []
+    for a, b, t in spans:
+        if t["tag"] == pz.POSE:
+            tg = t["arg"]["targets"]
+            d = _pose_dict(text, a, b, tg)
+            keys = [k for k in tg]
+            if asked:
+                kept = keys
+            else:
+                kept = [k for k in keys if keep_key(k, tg[k])]
+            poses.append({"a": a, "b": b, "d": d, "keys": keys, "kept": kept,
+                          "body": any(not keep_key(k, tg[k]) for k in keys)})
+        else:
+            other.append((a, b, t))
+    c = Counter(poses_before=len(poses),
+                targets_before=sum(len(p["keys"]) for p in poses),
+                hand_before=sum(is_hand(k) for p in poses for k in p["keys"]),
+                body_before=int(bool(poses or any(
+                    t["tag"] in ("move", "gesture") for _, _, t in other))))
+    gone = []                               # (a, b) markers to cut out
+    live = []
+    for p in poses:
+        if p["kept"]:
+            live.append(p)
+        else:
+            gone.append(p)
+            c["markers_emptied"] += 1
+    if len(live) > max_poses:
+        # The markers asking for the body come first, then the early ones.
+        rank = sorted(range(len(live)), key=lambda i: (
+            not (asked and live[i]["body"]), i))
+        drop = set(rank[max_poses:])
+        for i in sorted(drop):
+            gone.append(live[i])
+            c["markers_capped"] += 1
+        live = [p for i, p in enumerate(live) if i not in drop]
+    edits = [(p["a"], p["b"], "") for p in gone]
+    for p in live:
+        if len(p["kept"]) != len(p["keys"]):
+            d = {k: v for k, v in p["d"].items()
+                 if k in p["kept"] or k in _SPEC}
+            edits.append((p["a"], p["b"], "[pose "
+                          + json.dumps(d, ensure_ascii=False) + "]"))
+    if not asked:
+        for a, b, t in other:
+            name = t["tag"]
+            if name == "gesture" or (name == "move" and t["arg"].get("name")
+                                     not in HEAD_MOVES):
+                edits.append((a, b, ""))
+                c["moves_removed" if name == "move" else
+                  "gestures_removed"] += 1
+    c["poses_after"] = len(live)
+    c["targets_after"] = sum(len(p["kept"]) for p in live)
+    c["hand_after"] = sum(is_hand(k) for p in live for k in p["kept"])
+    c["targets_removed"] = c["targets_before"] - c["targets_after"]
+    kept_moves = sum(1 for _, _, t in other if t["tag"] in ("move", "gesture")
+                     ) - c["moves_removed"] - c["gestures_removed"]
+    c["body_after"] = int(bool(live or kept_moves))
+    res = {"reply": text, "skipped": None, "c": c}
+    if not edits:
+        return res
+    new = text
+    for a, b, repl in sorted(edits, reverse=True):
+        new = _cut(new, a, b, repl)
+    want = spoken_of(text)
+    if spoken_of(new) != want:
+        # Spaces cut a different way, or not at all.
+        new = text
+        for a, b, repl in sorted(edits, reverse=True):
+            new = new[:a] + repl + new[b:]
+        if spoken_of(new) != want:
+            res["skipped"] = "spoken"
+            return res
+    after = [t for _, _, t in marker_spans(new)]
+    if sum(t["tag"] == pz.POSE for t in after) != len(live):
+        res["skipped"] = "reparse"
+        return res
+    res["reply"] = new
+    return res
+
+
+_MCOUNT = ("poses_before", "poses_after", "targets_before", "targets_after",
+           "targets_removed", "hand_before", "hand_after", "markers_emptied",
+           "markers_capped", "moves_removed", "gestures_removed",
+           "body_before", "body_after")
+
+
+def manners(records, fix=None, max_poses=MAX_POSES, count=None):
+    """({id: {"reply"}}, counts): `--manners` for the records' replies
+    (corrected ones when `fix`, correct_misses' first result, has them), only
+    the turns whose reply changed in the first. counts: per avatar
+    {turns, asked, asked_topic, asked_keyword, unasked, changed, skipped, and
+    the _MCOUNT counters} summed over the turns in `count` (a set of ids;
+    None: all), "by" {id: how the turn was judged asked, or None}, "skipped"
+    {reason: n}. Refused turns are left out."""
+    out = {}
+    c = {"by_avatar": {}, "by": {}, "skipped": Counter(), "max_poses":
+         max_poses}
+    for r in records:
+        if r.get("refused"):
+            continue
+        text = (fix or {}).get(r["id"], {}).get("reply",
+                                                r.get("reply_raw") or "")
+        asked, by = asked_for(r)
+        res = manners_reply(text, asked, max_poses)
+        if res["reply"] != text:
+            out[r["id"]] = {"reply": res["reply"]}
+        if count is not None and r["id"] not in count:
+            continue
+        a = c["by_avatar"].setdefault(r["avatar"]["name"], Counter())
+        a["turns"] += 1
+        a["asked" if asked else "unasked"] += 1
+        a["asked_topic"] += bool(by and "topic" in by)
+        a["asked_keyword"] += bool(by and "keyword" in by)
+        c["by"][r["id"]] = by
+        if res["skipped"]:
+            a["skipped"] += 1
+            c["skipped"][res["skipped"]] += 1
+            continue
+        a["changed"] += res["reply"] != text
+        for k in _MCOUNT:
+            a[k] += res["c"].get(k, 0)
+    c["by_avatar"] = {k: dict(v) for k, v in sorted(c["by_avatar"].items())}
+    c["skipped"] = dict(c["skipped"])
+    tot = Counter()
+    for v in c["by_avatar"].values():
+        tot.update(v)
+    c["total"] = dict(tot)
+    return out, c
+
+
+def manners_lines(c) -> list:
+    """The stats text for manners' counts."""
+    def row(v):
+        n = max(1, v.get("turns", 0))
+        hb = v.get("hand_before", 0) / max(1, v.get("targets_before", 0))
+        ha = v.get("hand_after", 0) / max(1, v.get("targets_after", 0))
+        return (f"{v.get('asked', 0)} asked ({v.get('asked_topic', 0)} by "
+                f"topic, {v.get('asked_keyword', 0)} by words) / "
+                f"{v.get('unasked', 0)} not; poses per reply "
+                f"{v.get('poses_before', 0) / n:.2f} -> "
+                f"{v.get('poses_after', 0) / n:.2f}; hand share of targets "
+                f"{hb:.0%} -> {ha:.0%}; removed {v.get('targets_removed', 0)}"
+                f" targets, {v.get('markers_emptied', 0)} emptied + "
+                f"{v.get('markers_capped', 0)} capped markers, "
+                f"{v.get('moves_removed', 0)} moves, "
+                f"{v.get('gestures_removed', 0)} gestures; replies with no "
+                f"body marker {n - v.get('body_before', 0)} -> "
+                f"{n - v.get('body_after', 0)} of {n}"
+                + (f"; {v['skipped']} left as they were"
+                   if v.get("skipped") else ""))
+    out = [f"manners (at most {c['max_poses']} poses): " + row(c["total"])]
+    for a, v in c["by_avatar"].items():
+        out.append(f"  {a:14s} " + row(v))
+    return out
+
+
 def parse_weights(specs, avatars=None) -> dict:
     """{avatar: n} from --avatar-weight values ("lafei=2" or
     "lafei=2,Hiyori=3"); an avatar the data lacks (a typo) or a weight
@@ -564,8 +935,8 @@ def _repeat(exs, n):
 def sft_examples(root, records, notes, per="session", meta=False, fix=None,
                  weights=None):
     """The SFT examples (dicts with "messages"). `fix`: correct_misses'
-    first result (the replies it rewrote stand in for reply_raw, history
-    included); `weights` {avatar: n}: that avatar's examples n times each,
+    first result, with manners' over it when both are on (the replies they
+    rewrote stand in for reply_raw, history included); `weights` {avatar: n}: that avatar's examples n times each,
     one after the other."""
     reg = load_registry(root)
     prompts = reg["prompts"]
@@ -605,10 +976,21 @@ def sft_examples(root, records, notes, per="session", meta=False, fix=None,
             if not kept or any(x in f for x in SFT_HARD):
                 continue
             msgs = list(base)
-            for h in r.get("history") or ():
+            hist = r.get("history") or ()
+            # The history is the earlier turns of the session that were not
+            # refused: tied to their records by order when the replies
+            # agree (two turns may repeat a reply and differ in the fix),
+            # else by the reply text.
+            prev = [x for x in recs if x["turn"] < r["turn"]
+                    and not x.get("refused")]
+            tied = len(prev) == len(hist) and all(
+                x["reply_raw"] == h["reply"] for x, h in zip(prev, hist))
+            for i, h in enumerate(hist):
+                reply = (fix[prev[i]["id"]]["reply"]
+                         if tied and prev[i]["id"] in (fix or ())
+                         else fixed.get(h["reply"], h["reply"]))
                 msgs.append({"role": "user", "content": h["user_content"]})
-                msgs.append({"role": "assistant",
-                             "content": fixed.get(h["reply"], h["reply"]),
+                msgs.append({"role": "assistant", "content": reply,
                              "weight": 0})
             msgs += _turn_msgs(r, fix)
             ex = {"messages": msgs}
@@ -682,6 +1064,15 @@ def main(argv=None) -> int:
                            action=argparse.BooleanOptionalAction,
                            help="write each missed pose target as the "
                                 "value reached [on]")
+            p.add_argument("--manners", default=True,
+                           action=argparse.BooleanOptionalAction,
+                           help="streamer manners: on a turn that asked for "
+                                "no body action, no hand / arm / shoulder "
+                                "targets, arm moves or gestures, and at most "
+                                "--max-poses pose markers per reply [on]")
+            p.add_argument("--max-poses", type=int, default=MAX_POSES,
+                           help=f"manners: pose markers kept per reply "
+                                f"[{MAX_POSES}]")
         if name == "stats":
             p.add_argument("--json", default=None)
         if name == "sft":
@@ -706,8 +1097,12 @@ def main(argv=None) -> int:
     fix, counts = (correct_misses(recs) if a.cmd != "action"
                    and a.correct_misses else ({}, None))
     notes = annotate(recs, a.max_miss, a.dup_jaccard, a.keep_lite, fix)
+    mfix, mcounts = ({}, None)
+    if a.cmd != "action" and a.manners:
+        mfix, mcounts = manners(recs, fix, a.max_poses,
+                                {i for i, (_, k) in notes.items() if k})
     if a.cmd == "stats":
-        s = stats(recs, notes, counts=counts)
+        s = stats(recs, notes, counts=counts, mcounts=mcounts)
         print(stats_text(s))
         if a.json:
             with open(a.json, "w", encoding="utf-8") as fh:
@@ -717,10 +1112,12 @@ def main(argv=None) -> int:
         w = parse_weights(a.avatar_weight,
                           {r["avatar"]["name"] for r in recs})
         n = write_jsonl(a.out, sft_examples(a.root, recs, notes, a.per,
-                                            a.meta, fix, w))
+                                            a.meta, {**fix, **mfix}, w))
         print(f"{n} examples -> {a.out}")
         if counts:
             print(correction_line(counts))
+        if mcounts:
+            print("\n".join(manners_lines(mcounts)))
         return 0
     n = action_pairs(a.root, recs, notes, a.out, a.traj)
     print(f"{n} pairs -> {a.out}.jsonl, {a.out}.npz")
