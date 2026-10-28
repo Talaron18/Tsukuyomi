@@ -41,3 +41,11 @@ without them. The 4-bit / Unsloth paths need a CUDA GPU and are not tested.
 known answer. The prosody half is pure numpy and always runs; the contrastive
 `match` half needs torch (a few seconds of CPU training per variant) and
 skips without it.
+
+`test_gesture_search.py` (`flow/gesture_search.py`, gesture search for VRM
+avatars): the selection, the layer, the body checks and the unchanged
+default path are numpy and always run; the rest (the probe's saved
+encoders, the library, retrieval, eval, the director and the demos, the
+text states on the tiny random model) trains tiny encoders for a few
+seconds on a synthetic export and needs torch (the text states also
+transformers and tokenizers, the side-by-side render Chromium).

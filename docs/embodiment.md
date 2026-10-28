@@ -898,3 +898,170 @@ source are not supported by either the teacher data or BEAT2.
   keep text, generate (sample) rather than regress, and score generators
   the way text-to-motion work does: retrieval precision and embedding
   distances with these contrastive encoders, not frame MSE.
+
+### Gesture search (2026-10)
+
+`flow/gesture_search.py`: between and under the model's explicit markers, a
+VRM avatar plays real human co-speech motion retrieved from the BEAT2
+library. It is the use the probe results point to ("condition on phrase-
+level features, keep text, retrieve or sample, judge by retrieval"), built
+on the contrastive encoders instead of a regression head. Built and tested
+on synthetic BEAT2-shaped data (`tests/test_gesture_search.py`: tiny
+encoders trained on a toy export where the text names the arm's swing); it
+has not run on the real library, so the first run on the GPU machine is the
+check (below).
+
+How it works (the module docstring has the details):
+
+- **Encoders kept.** `flow.probe match --save DIR` writes each trained
+  variant (state dict, motion normalisation, columns, window / look-back /
+  token settings, the layers the text encoder reads, the hidden folder's
+  `meta.json`, the held-out and training clips). The report is unchanged
+  without it. `flow.probe.load_encoders` embeds motion windows and
+  (token states, prosody) from a saved folder.
+- **Library** (`build`): every 3 s window of the export (hop 0.5 s) except
+  the probe's held-out clips, embedded from the canonical `.traj` columns as
+  the probe's motion encoder reads them; the 23 fitted joints (`.joints`)
+  stored once per segment, a window is (segment, start); start / end poses,
+  speaker, clip, language per window; the median pose and the recordings'
+  median voiced RMS. About 0.35 KB per window (a 128-d fp16 embedding and
+  two poses); the joints (46 bytes a frame) are stored once, not per
+  window. Under `data/gesture_lib/` (gitignored).
+- **Query** (per sentence of the TTS reply): text states as `flow.train.
+  hidden` made them for the probe -- same model, `--context none`, the
+  spoken text, the stored layers, the stored projection, fp16, then the
+  probe's layer selection -- run in the director's process
+  (`TextStates`; `tests/test_gesture_search.py` checks bit equality with
+  what `hidden` stores); prosody from the sentence's TTS audio at 30 fps
+  (`flow.beat2.prosody`) after its loudness is set to the library's (TTS and
+  microphone levels differ by more than the encoder's input tolerates);
+  windows of 3 s every 2 s over the sentence plus 0.3 s either side, each
+  embedded as the probe embeds a window (silence past the audio).
+- **Choice**: cosine to the library's motion embeddings (optionally
+  one speaker / language), the best 48 scored cosine - 0.25 x continuity -
+  a small price for each recent pick from the same clip, one of the best 6
+  drawn with a softmax at temperature 0.05 (`--gs-temperature 0`: the best;
+  `--gs-seed`). Continuity: at the moment the cross-fade starts, the arm
+  joints (share of their range) and the palms (hu, the target body's
+  forward kinematics) of the candidate against the pose the track is in.
+  A window overlapping a recent pick of the same recording is out.
+- **Body**: the arms (upper arm, forearm, wrist, shoulders) are absolute,
+  scaled about the body's rest pose (`--gs-amp`) and clamped to its limits;
+  `--gs-parts full` adds the head and torso as the window's deviation from
+  the library's median pose, added to the idle's head and trunk (so the
+  idle's own head moves keep going). Each chosen window goes through the
+  body's collision model; where an arm is deeper than 0.04 hu in the trunk,
+  head or the other arm it is solved again with `beat2.fix_contacts` (the
+  collision-aware IK); a window still deeper than 0.08 hu is skipped for
+  the next best. The cross-faded track is checked once more (a blend of
+  joint angles is not collision-free by itself). Retargeting to another
+  VRM is applying the same joint names to its body (clamped, collisions
+  re-checked): `tests` run a Seed-san window on the three-vrm-girl body.
+  Live2D is out of scope (its arms are drawings).
+- **Play**: one `"gsearch"` token per run of sentences closer than 1 s: the
+  windows cross-faded over 0.4 s (minimum jerk, the later window taking
+  over as it fades in), eased in and out over 0.4 s. `GestureLayer` sits in
+  `MotionStream.frame` after the idle and the mouth, before moves and
+  poses: a pose or move that plays an arm takes it exactly as it takes it
+  from the idle, the gesture ducking out of those parameters before the
+  marker starts (0.4 s) and back in after its hold; nothing of the
+  gesture shows in a held pose (the layer reports the parameters it plays
+  as `holding`, so the pose layer's "life" ignores them). Without
+  `--gesture-search` none of this is imported: `tests` compare the plan's
+  tokens, states, subtitles and actions byte for byte with the module made
+  unimportable.
+
+Director flags (`--avatar vrm`; they need `--tts`, the prosody is the
+audio's): `--gesture-search LIB --gs-encoders DIR [--gs-model PATH]
+[--gs-hidden DIR] [--gs-amp 1] [--gs-seed 0] [--gs-parts hands|full]
+[--gs-speaker NAME] [--gs-temperature 0.05] [--gs-topk 6] [--gs-4bit]
+[--gs-device auto|cuda|cpu] [--gs-baseline]`. `--gs-baseline` also writes
+`states_markers.json`, the same turn without the retrieved motion
+(`demo --say` uses it). The text model is loaded once per session, on the
+first sentence. `flow.live` does not take the flags yet (its `Follower`
+plans per sentence and has the audio: `GestureSearch.plan` takes queries,
+so it is the place to hook it).
+
+On the GPU machine (WSL, repo at `/mnt/e/Tsukuyomi`; the export
+`data/beat2/seed-san/action`, the hidden folder `~/tsk-runs/hidden/beat2`
+extracted with layers [36, 29, 18], `--proj 1024`,
+`--text spoken --context none`, the merged model `~/tsk-runs/sft/q8/merged`):
+
+    cd /mnt/e/Tsukuyomi
+    # 1. the text+prosody encoders again, kept (the settings of the report
+    #    you want to match: --layer 1 is the stored layer 29; the split
+    #    follows from --seed / --eval-frac / --limit and is recorded; --out
+    #    is another folder so the earlier report.txt / report.json stay)
+    python -m flow.probe match --export data/beat2/seed-san/action \
+        --hidden ~/tsk-runs/hidden/beat2 --out ~/tsk-runs/probe-gs \
+        --layer 1 --variants text+prosody --save ~/tsk-runs/probe/gs
+    # 2. the library (BEAT2-derived: research only, stays under data/)
+    python -m flow.gesture_search build --export data/beat2/seed-san/action \
+        --encoders ~/tsk-runs/probe/gs --out data/gesture_lib/seed-san
+    # 3. retrieval precision and motion statistics on the held-out clips
+    python -m flow.gesture_search eval --export data/beat2/seed-san/action \
+        --encoders ~/tsk-runs/probe/gs --lib data/gesture_lib/seed-san
+    # 4. held-out segments side by side: idle | random windows | retrieved |
+    #    ground truth, the recorded audio on it
+    python -m flow.gesture_search ids --export data/beat2/seed-san/action \
+        --encoders ~/tsk-runs/probe/gs
+    python -m flow.gesture_search demo --id beat2.<clip>/s03 \
+        --export data/beat2/seed-san/action --encoders ~/tsk-runs/probe/gs \
+        --lib data/gesture_lib/seed-san --beat2 ~/BEAT2 --out runs/gs/held
+    python -m flow.gesture_search demo --id beat2.<clip>/s03 ... \
+        --vrm vrm/toukai_teio.vrm --out runs/gs/toukai     # a body of yours
+    # 5. a free sentence through the director: markers only | markers + search
+    python -m flow.gesture_search demo --say "Come here, I want to show you something." \
+        --export data/beat2/seed-san/action --encoders ~/tsk-runs/probe/gs \
+        --lib data/gesture_lib/seed-san --out runs/gs/say-oguri \
+        --gs-model ~/tsk-runs/sft/q8/merged --gs-hidden ~/tsk-runs/hidden/beat2 \
+        --avatar vrm --vrm vrm/oguri_cap.vrm --mode body --backend ollama \
+        --tts voicevox --size 384
+    # the same inside a normal director run
+    python -m flow.director --avatar vrm --vrm vrm/toukai_teio.vrm --mode body \
+        --backend ollama --tts voicevox --say "..." --out runs/gs/turn --render \
+        --gesture-search data/gesture_lib/seed-san \
+        --gs-encoders ~/tsk-runs/probe/gs --gs-model ~/tsk-runs/sft/q8/merged
+
+`demo --say` takes the director's own flags as they are (everything it does
+not know, `--mode`, `--backend`, `--tts`, `--vrm`, ...) and `--gs-model`
+for the text model (`--model` stays the director's language model).
+The two VRMs of yours are not in the repo: the paths above are where they
+are expected (`vrm/` is ignored); their body files are built on first use
+(`rigs/<name>.body.json`).
+
+What to check first on the real library: that `eval` says retrieved
+windows are closer to the true motion than random ones by clearly more than
+chance (0.5; the probe's text+prosody top-1 of 32 was 0.204 against 0.031,
+so expect a modest margin: what text and voice predict is the kind and
+amount of motion over a few seconds, not the gesture), the speaker-
+normalised amplitude and speed (retrieved close to the truth, a random
+window's correlation with the truth near 0), then the demo by eye -- the
+cross-fades and the arms against the body -- and the prosody gain (the
+library's median voiced RMS is in `meta.json`; a TTS voice far from it is
+the first suspect if every sentence retrieves the same still gesture).
+
+Cautions:
+- The library is BEAT2-derived (retargeted mocap): research use under
+  BEAT2's licence, kept out of git (`build --out` must be under `data/`).
+- Text states: the hidden folder does not record whether `--load-4bit` was
+  used; query with the same precision (`--gs-4bit` only if extraction used
+  it), or the states shift. `--context none` states are what the probe was
+  trained on; a hidden folder made with `--context turn` is said to differ.
+- Latency: one forward of the text model per sentence in the director's
+  process (a sentence is ~10-40 tokens: tens of ms on a GPU for an 8B model
+  in bf16, seconds on CPU -- an estimate, not measured on the real model,
+  only on a tiny one here) plus the encoders (milliseconds) and the checks
+  of the chosen windows (about 40 ms per window measured on Seed-san, 0.3-
+  0.5 s when the contact fix runs). Offline this is paid once per reply,
+  before the render; the model load (tens of seconds) once per session. The model is 16 GB in bf16: next to Ollama on one 24 GB card use
+  `--gs-4bit` (and extract the hidden states the same way) or run the
+  search on another GPU / the CPU (`--gs-device`); the encoders and the
+  library (200-300 MB of embeddings for ~400k windows, in RAM) are small.
+- Continuity artefacts: the cross-fade blends joint angles, so two windows
+  that differ much at the fade can pass through a pose neither has (the
+  track is re-checked for collisions and solved again where it goes into the
+  body, but a bent wrist or an elbow swinging through is not a collision);
+  the continuity weight (0.25) is a first guess, untested on real data.
+  The first window of a run eases in from the rest pose, so a window that
+  starts with the hands high is penalised by the same cost.
