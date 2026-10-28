@@ -534,18 +534,22 @@ WIN_TARGETS = ["hand_amp", "head_amp", "hand_speed", "head_speed"]
 def analyse_segments(rows, npz_path, o, log=log):
     """The per-segment arrays and window arrays of the prosody probe."""
     z = np.load(npz_path)
+    files = set(z.files)            # `in z.files` is a scan of a list
     nrow = len(rows)
     # The eval-style speed divides each column by its pooled std: taken
-    # over about 2000 segments.
-    acc_ = {c: np.zeros(3) for c in CANON}
+    # over about 2000 segments, for the columns actionhead's beat groups
+    # use (every hand.* and head.* variable of the row).
+    acc_ = {}
     for r in rows[::max(nrow // 2000, 1)]:
         k = r["key"] + ".traj"
-        if k not in z.files:
+        if k not in files:
             continue
         t = z[k].astype(np.float64)
-        for c, j in columns(r["vars"], CANON).items():
-            v = t[:, j][np.isfinite(t[:, j])]
-            acc_[c] += (len(v), v.sum(), (v * v).sum())
+        for j, c in enumerate(r["vars"]):
+            if c.startswith(("hand.", "head.")):
+                v = t[:, j][np.isfinite(t[:, j])]
+                acc_[c] = acc_.get(c, 0) + np.array(
+                    [len(v), v.sum(), (v * v).sum()])
     sd = {}
     for c, (n_, s1_, s2_) in acc_.items():
         v = max(s2_ / n_ - (s1_ / n_) ** 2, 0) if n_ else 0.0
@@ -564,7 +568,7 @@ def analyse_segments(rows, npz_path, o, log=log):
     gid = lambda d, k: d.setdefault(k, len(d))
     for i, r in enumerate(rows):
         k = r["key"]
-        if k + ".traj" not in z.files or k + ".prosody" not in z.files:
+        if k + ".traj" not in files or k + ".prosody" not in files:
             continue
         y = z[k + ".traj"].astype(np.float32)
         pros = z[k + ".prosody"].astype(np.float32)
@@ -573,7 +577,7 @@ def analyse_segments(rows, npz_path, o, log=log):
         cols = columns(r["vars"], CANON)
         fps = float(r.get("fps") or FPS)
         lang = lang_of(r)
-        chars = z[k + ".chars"] if k + ".chars" in z.files else np.zeros((0, 2))
+        chars = z[k + ".chars"] if k + ".chars" in files else np.zeros((0, 2))
         sp_, cl_, lg_ = gid(spk_id, speaker_name(r)), gid(
             clip_id, clip_of(r)), gid(lang_id, lang)
         vf = voice_features(pros, r.get("spoken", ""), chars, lang, o)
@@ -595,8 +599,8 @@ def analyse_segments(rows, npz_path, o, log=log):
             m = np.isfinite(yy)
             names = {c: j for j, c in enumerate(r["vars"])}
             sdv = np.array([sd.get(c, 1.0) for c in r["vars"]], np.float32)
-            for tag, grp in (("hands", HANDS), ("head", HEAD)):
-                cs = [names[c] for c in grp if c in names]
+            for tag, pre in (("hands", "hand."), ("head", "head.")):
+                cs = [j for c, j in names.items() if c.startswith(pre)]
                 sp = ah.motion_speed(np.nan_to_num(yy), m, cs, sdv, fps) \
                     if cs else None
                 if sp is not None and len(sp) >= 5:
@@ -910,8 +914,20 @@ class Corpus:
             self.meta = json.load(f)
         layers = self.meta.get("layers") or []
         self.sel = self._layers(o.layer, layers, idx)
-        self.cols = [c for c in CANON]
+        files = set(z.files)
         need_pros = any("prosody" in v for v in o.variants_list)
+        # The canonical columns every row has (all 12 on the seed-san
+        # export); no hand column anywhere is an error.
+        have = [set(columns(r["vars"], CANON)) for r in rows
+                if r["key"] + ".traj" in files]
+        shared = set.intersection(*have) if have else set()
+        self.cols = [c for c in CANON if c in shared]
+        if not any(c.startswith("hand.") for c in self.cols):
+            raise SystemExit("flow.probe match: no hand column is in every "
+                             f"row (canonical: {CANON})")
+        if len(self.cols) < len(CANON):
+            log("probe match: columns used: " + ", ".join(self.cols)
+                + " (the others are missing from some rows)")
         self.segs = []
         by_shard = {}
         for r in rows:
@@ -921,23 +937,21 @@ class Corpus:
             for r in rs:
                 e = idx[r["id"]]
                 k = r["key"]
-                if k + ".traj" not in z.files:
+                if k + ".traj" not in files:
                     continue
-                if need_pros and k + ".prosody" not in z.files:
+                if need_pros and k + ".prosody" not in files:
                     continue
-                cmap = columns(r["vars"], CANON)
-                if len(cmap) < len(CANON):
-                    continue
+                cmap = columns(r["vars"], self.cols)
                 tr = z[k + ".traj"].astype(np.float32)
-                y = tr[:, [cmap[c] for c in CANON]]
+                y = tr[:, [cmap[c] for c in self.cols]]
                 pros = z[k + ".prosody"].astype(np.float32) \
-                    if k + ".prosody" in z.files else np.zeros(
+                    if k + ".prosody" in files else np.zeros(
                         (len(tr), 3), np.float32)
                 if len(pros) != len(tr) or len(tr) < self.W:
                     continue
                 h = sh[e["key"] + ".h"]
                 h = h[:, self.sel] if h.ndim == 3 else h[:, None]
-                chars = z[k + ".chars"] if k + ".chars" in z.files \
+                chars = z[k + ".chars"] if k + ".chars" in files \
                     else np.zeros((0, 2), np.float32)
                 tt = ah.token_times(sh[e["key"] + ".spoken"], chars,
                                     r.get("speech_seconds") or 0.0)
@@ -1026,7 +1040,8 @@ def make_batch(corpus, win, widx, text_src, norm, o, torch, device):
     W = corpus.W
     mean, sd = norm
     B = len(widx)
-    mot = np.zeros((B, W, 2 * len(CANON)), np.float32)
+    nc = len(corpus.cols)
+    mot = np.zeros((B, W, 2 * nc), np.float32)
     pr = np.zeros((B, W, 3), np.float32)
     toks, tms = [], []
     for b, w in enumerate(widx):
@@ -1035,8 +1050,8 @@ def make_batch(corpus, win, widx, text_src, norm, o, torch, device):
         y = (s["y"][a:a + W] - mean) / sd
         if o.center:
             y = y - y.mean(0)
-        mot[b, :, :len(CANON)] = y
-        mot[b, 1:, len(CANON):] = np.diff(y, axis=0) * 5.0
+        mot[b, :, :nc] = y
+        mot[b, 1:, nc:] = np.diff(y, axis=0) * 5.0
         pr[b] = s["pros"][a:a + W]
         t = text_src[w]
         s2 = corpus.segs[win["seg"][t]]
@@ -1063,7 +1078,7 @@ def make_batch(corpus, win, widx, text_src, norm, o, torch, device):
 def build_model(corpus, o, use_text, use_pros, torch):
     nn = torch.nn
     dim = o.dim
-    C2 = 2 * len(CANON)
+    C2 = 2 * len(corpus.cols)
 
     def conv(cin):
         return nn.Sequential(
@@ -1193,7 +1208,8 @@ def retrieval(zm, zc, pos, q, neg, torch):
     ni = torch.as_tensor([[pos[j] for j in r] for r in neg])
     cand = torch.cat([qi[:, None], ni], 1)
     sims = torch.einsum("qd,qkd->qk", zc[qi], zm[cand])
-    return (sims[:, 1:] > sims[:, :1]).sum(1).numpy()
+    # >=: a tie with the positive counts against it
+    return (sims[:, 1:] >= sims[:, :1]).sum(1).numpy()
 
 
 def acc_ci(hit, clip, B=1000, seed=0):
@@ -1210,9 +1226,12 @@ def acc_ci(hit, clip, B=1000, seed=0):
             float(np.percentile(b, 97.5)))
 
 
-def read_sem(root, clips, log=log):
+def read_sem(root, clips, log=log, info=None):
     """{clip: [(start, end)]} of the semantic intervals in root (module
-    docstring), {} when nothing parses."""
+    docstring), {} when nothing parses. info (a dict) gets `sample`, the
+    first parsed file's first lines and the intervals read from them (the
+    first two numbers of a line are taken as start and end: a bad guess
+    shows there), and the counts."""
     out, files, parsed = {}, 0, 0
     quiet = {"beat", "none", "neutral", "idle", "other", "nan", ""}
     for c in clips:
@@ -1221,6 +1240,7 @@ def read_sem(root, clips, log=log):
                 continue
             files += 1
             iv = []
+            lines = []
             try:
                 with open(p, encoding="utf-8", errors="replace") as f:
                     txt = f.read()
@@ -1251,8 +1271,15 @@ def read_sem(root, clips, log=log):
             if iv:
                 parsed += 1
                 out.setdefault(c, []).extend(iv)
+                if info is not None and "sample" not in info:
+                    info["sample"] = {"file": os.path.basename(p),
+                                      "lines": [x[:100] for x in lines[:3]],
+                                      "intervals": iv[:3]}
     log(f"probe match: --sem {root}: {files} candidate files, {parsed} with "
         f"semantic intervals")
+    if info is not None:
+        info.update(files=files, parsed=parsed,
+                    intervals=sum(len(v) for v in out.values()))
     return out
 
 
@@ -1438,10 +1465,28 @@ def match_probe(o, log=log) -> dict:
             "steps": o.steps, "batch": o.batch}
     log(f"probe match: {info}")
     if o.sem:
-        sem = read_sem(o.sem, corpus.clips, log)
+        si = {}
+        sem = read_sem(o.sem, corpus.clips, log, si)
         if sem:
             o._sem_flags = sem_flags(win, corpus, sem, corpus.W)
             info["semantic_windows_eval"] = int(o._sem_flags[ev].sum())
+            # a bad parse (an index column taken for a time) shows as
+            # intervals past the end of their clip
+            dur = {}
+            for sg in corpus.segs:
+                dur[sg["clip"]] = max(dur.get(sg["clip"], 0.0), sg["t0"]
+                                      + len(sg["y"]) / sg["fps"])
+            iv = [(e, dur.get(c, 0.0)) for c, v in sem.items()
+                  for _, e in v]
+            late = sum(e > d + 1.0 for e, d in iv) / max(len(iv), 1)
+            si["share_past_clip_end"] = round(late, 3)
+            if late > 0.2:
+                si["warning"] = (f"{late:.0%} of the intervals end after "
+                                 "their clip: the columns were probably "
+                                 "misread")
+            info["sem"] = si
+            log(f"probe match: --sem sample {si.get('sample')}"
+                + (f" WARNING {si['warning']}" if "warning" in si else ""))
         else:
             log("probe match: no semantic annotations found or parsed; "
                 "--sem skipped")
@@ -1493,6 +1538,15 @@ def match_lines(rep, o):
             f"{'-' if c['train_top1'] is None else format(c['train_top1'], '.2f')}/"
             f"{'-' if c['eval_top1'] is None else format(c['eval_top1'], '.2f')}"
             for c in r["curve"]))
+    si = i.get("sem")
+    if isinstance(si, dict):
+        L += ["", f"--sem: {si.get('files')} files, {si.get('parsed')} parsed,"
+              f" {si.get('intervals')} semantic intervals; first file "
+              f"{si.get('sample')}"]
+        if "warning" in si:
+            L.append("  WARNING: " + si["warning"])
+    elif si:
+        L += ["", f"--sem: {si}"]
     sem = [r for r in rep["variants"]
            if any("semantic" in r["eval"][s] for s in SCHEMES)]
     if sem:

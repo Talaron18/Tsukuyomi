@@ -31,6 +31,7 @@ import numpy as np
 import pytest
 
 from flow import probe as pr
+from tests.test_beat2 import exported, hidden_for  # noqa: F401  (fixture)
 
 FPS = 30
 
@@ -407,3 +408,44 @@ def test_semantic_reader_is_defensive(tmp_path):
     assert got == {"a": [(2.0, 3.5)], "b": [(1.0, 2.0)]}
     assert pr.read_sem(str(tmp_path / "none"), ["a"],
                        log=lambda s: None) == {}
+
+
+# ----------------------------------------- the real flow.beat2 export
+
+def test_the_probes_read_a_real_beat2_export(exported, tmp_path):
+    """Columns as the retargeter writes them for seed-san (not hand-made):
+    all twelve canonical ones are there, the prosody probe reads the
+    segments (too few for correlations: it says so) and the match corpus
+    makes windows and batches from them."""
+    root, _a, _s = exported
+    stem = str(root / "out" / "action")
+    from flow.train import hidden as fh
+    rows, npz = pr.read_rows(stem)
+    assert len(rows) == 3 and set(pr.CANON) <= set(rows[0]["vars"])
+    o = pr.parse(["prosody", "--export", stem, "--out", str(tmp_path),
+                  "--boot", "50"])
+    A = pr.analyse_segments(rows, npz, o, log=lambda s: None)
+    assert A["used"] == 3 and A["win"]["loud"].size > 0
+    assert np.isfinite(A["seg"]["hand_std"]).all()
+    assert np.isfinite(A["seg"]["head_v"]).all()
+    assert {c for c in A["sd"] if c.startswith("hand.")} >= {"hand.L.z"}
+    rep = pr.prosody_probe(o, log=lambda s: None)
+    assert rep["segments"] == 3 and "too few" in rep["text"][-1]
+    hid = hidden_for(root, fh.read_export(stem)[0])
+    m = pr.parse(["match", "--export", stem, "--hidden", hid, "--out",
+                  str(tmp_path), "--layer", "0", "--hop", "15"])
+    m.variants_list = ["text", "text+prosody"]
+    rows, npz = pr.read_rows(stem, hidden=hid)
+    c = pr.Corpus(rows, npz, hid, m, log=lambda s: None)
+    assert c.cols == pr.CANON and len(c.segs) == 3 and c.D == 12
+    win = c.windows(set(c.clips))
+    assert len(win["seg"]) > 10
+    try:
+        import torch
+    except ImportError:                     # the batch needs torch
+        return
+    mean, sd = pr.motion_stats(c, win)
+    b = pr.make_batch(c, win, np.arange(4), np.arange(len(win["seg"])),
+                      (mean, sd), m, torch, "cpu")
+    assert b["mot"].shape == (4, 90, 24) and b["h"].shape[2:] == (1, 12)
+    assert torch.isfinite(b["mot"]).all()

@@ -652,9 +652,14 @@ takes an index into the stored layers (1 = layer 29, the default), a layer
 number, or `all` (a learned mix, three times the RAM; estimate: the states of
 one layer are ~3 GB). `--limit N` keeps whole clips until N segments are in.
 The budget of `match` is `--steps 3000 x --batch 128` per variant, six
-variants; the estimate on a 3090 Ti is 15-25 minutes plus the loading of
-the shards (not measured: it was only run on CPU). `prosody` is numpy and
-takes minutes.
+variants. Measured on CPU with random states (D = 1024, 128 windows of
+~20 tokens): assembling a batch takes 10 ms for one layer, 20 ms for all
+three, 60 ms at 48 tokens a window; scoring 256 windows 0.04-0.15 s. That
+is the cost that stays on the CPU on a GPU machine, so a variant is about
+2-6 minutes (3000 steps, 12 curve checks, the final scoring), the six of
+them 15-25 minutes for one layer and up to ~40 with `--layer all`, plus
+loading the shards. An estimate from those numbers, not a run on the 3090
+Ti. `prosody` is numpy and takes minutes.
 
 **prosody** (the ground truth only). Per segment, six voice features
 (loudness, its range, voiced share, f0 and its range, speaking rate in
