@@ -10,7 +10,12 @@ same system prompt and user turns (flow.dataexport sft), on one 24 GB GPU.
             folder, --correct-misses [default; --no-correct-misses] writes
             each pose target the solver missed as the value it reached
             (flow.dataexport: the avatar's reach is what is taught), and
-            --avatar-weight NAME=N repeats an avatar's examples N times.
+            --avatar-weight NAME=N repeats an avatar's examples N times,
+            and --manners [default; --no-manners] gives the replies a
+            streamer's manners (no hands, arm moves or gestures on a turn
+            that asked for none; at most --max-poses [2] pose markers).
+            The text changes, so the data hash does: begin the run in a
+            new --out.
             An sft.jsonl is taken as it was exported.
   split     by session, never by turn: a session is held out when the
             first 8 hex of sha256("<seed>:<session>") / 2^32 is below
@@ -106,11 +111,14 @@ def log(s):
 # ---------------------------------------------------------------- data
 
 def load_examples(data, per="session", max_miss=None, keep_lite=False,
-                  correct_misses=True, avatar_weight=None):
+                  correct_misses=True, avatar_weight=None, manners=True,
+                  max_poses=None):
     """The SFT examples ({"messages", "meta"}) from an sft.jsonl or a
     flow.dataset folder (exported here with flow.dataexport's filters,
     missed pose targets corrected to the value reached, and the avatars in
-    `avatar_weight` ["NAME=N", ...] repeated; an sft.jsonl is as exported)."""
+    `avatar_weight` ["NAME=N", ...] repeated, and with `manners` the
+    streamer manners of flow.dataexport applied; an sft.jsonl is as
+    exported)."""
     if os.path.isdir(data):
         try:
             from .. import dataexport as dx
@@ -126,13 +134,20 @@ def load_examples(data, per="session", max_miss=None, keep_lite=False,
                             else dx.MAX_MISS, keep_lite=keep_lite, fix=fix)
         w = dx.parse_weights(avatar_weight, {r["avatar"]["name"]
                                              for r in recs})
+        mfix = {}
+        if manners:
+            mfix, mcounts = dx.manners(
+                recs, fix, max_poses or dx.MAX_POSES,
+                {i for i, (_, k) in notes.items() if k})
+            for line in dx.manners_lines(mcounts):
+                log(line)
         if counts:
             log(dx.correction_line(counts))
         if w:
             log("avatar weights: " + ", ".join(f"{a} x{n}"
                                                for a, n in w.items()))
         return dx.sft_examples(data, recs, notes, per=per, meta=True,
-                               fix=fix, weights=w)
+                               fix={**fix, **mfix}, weights=w)
     out = []
     with open(data, encoding="utf-8") as fh:
         for line in fh:
@@ -590,7 +605,8 @@ def prepare(o, tok):
     """Examples -> split -> rows; writes split.json and lengths.json."""
     exs = [clean(e) for e in load_examples(
         o.data, o.per, correct_misses=o.correct_misses,
-        avatar_weight=o.avatar_weight)]
+        avatar_weight=o.avatar_weight, manners=o.manners,
+        max_poses=o.max_poses)]
     if not exs:
         raise SystemExit(f"no examples in {o.data}")
     train, ev, info = split(exs, o.eval_frac, o.split_seed, o.split_by_row)
@@ -810,7 +826,8 @@ def stats(o) -> dict:
     tok = load_tokenizer(o.base)
     exs = [clean(e) for e in load_examples(
         o.data, o.per, correct_misses=o.correct_misses,
-        avatar_weight=o.avatar_weight)]
+        avatar_weight=o.avatar_weight, manners=o.manners,
+        max_poses=o.max_poses)]
     rep = length_report(tok, exs, o.family)
     print(report_text(rep, o.family))
     probs = check_template(tok, o.family, exs[0]) if exs else []
@@ -837,6 +854,17 @@ def add_data_args(p):
                    action=argparse.BooleanOptionalAction,
                    help="with a dataset folder: write each missed pose "
                         "target as the value the solver reached [on]")
+    p.add_argument("--manners", default=True,
+                   action=argparse.BooleanOptionalAction,
+                   help="with a dataset folder: streamer manners (flow."
+                        "dataexport): on a turn that asked for no body "
+                        "action, no hand / arm / shoulder targets, arm "
+                        "moves or gestures, and at most --max-poses pose "
+                        "markers a reply [on]. It changes the training "
+                        "text, so the data hash changes: a run that began "
+                        "without it needs a new --out (or --restart)")
+    p.add_argument("--max-poses", type=int, default=None, metavar="N",
+                   help="manners: pose markers kept per reply [2]")
     p.add_argument("--avatar-weight", action="append", default=[],
                    metavar="NAME=N",
                    help="with a dataset folder: repeat that avatar's "

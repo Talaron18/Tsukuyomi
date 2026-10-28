@@ -273,3 +273,224 @@ def test_cli_and_trainer_loading(missed, tmp_path, capsys):
     ns = sft.parse(["stats", "--data", out, "--no-correct-misses",
                     "--avatar-weight", "lafei=2"])
     assert ns.correct_misses is False and ns.avatar_weight == ["lafei=2"]
+
+
+# ------------------------------------------------------------ manners
+
+BUSY = ('Hi! [pose {"hand.R.y": 1.2, "head.tilt": 8, "dur": 0.5}] ok. '
+        '[pose {"hand.L.x": 0.4, "shoulders.up": 0.5}] Look '
+        '[pose {"gaze.x": -0.5, "torso.tilt": 4, "torso.yaw": 15}] there. '
+        '[move {"name": "wave"}][gesture:home] [move {"name": "head_bob"}] '
+        'Yes [blink] [pause:0.3] done.')
+
+
+def _kinds(text):
+    return [(t["tag"], t["arg"] if t["tag"] != "pose"
+             else sorted(t["arg"]["targets"]))
+            for _a, _b, t in dx.marker_spans(text)]
+
+
+def test_unasked_turn_loses_hands_keeps_head_and_face():
+    res = dx.manners_reply(BUSY, False, max_poses=5)
+    out = res["reply"]
+    assert res["skipped"] is None
+    assert '[pose {"head.tilt": 8, "dur": 0.5}] ok.' in out
+    assert '[pose {"gaze.x": -0.5, "torso.tilt": 4}]' in out
+    assert "hand." not in out and "shoulders" not in out
+    assert "torso.yaw" not in out                    # 15 deg: not small
+    c = res["c"]
+    assert c["hand_before"] == 2 and c["hand_after"] == 0
+    assert c["markers_emptied"] == 1 and c["targets_removed"] == 4
+    # The empty marker is gone, with no double space where it stood.
+    assert "ok. Look" in out and "  " not in out
+    assert dx.spoken_of(out) == dx.spoken_of(BUSY)
+
+
+def test_arm_moves_and_gestures_go_head_moves_and_blinks_stay():
+    out = dx.manners_reply(BUSY, False, max_poses=5)["reply"]
+    assert [k for k, _ in _kinds(out) if k != "pose"] == [
+        "move", "blink", "pause"]
+    assert '[move {"name": "head_bob"}]' in out
+    assert "wave" not in out and "gesture" not in out
+    c = dx.manners_reply(BUSY, False, max_poses=5)["c"]
+    assert c["moves_removed"] == 1 and c["gestures_removed"] == 1
+    # An alias of a head move is a head move.
+    assert '[move {"name": "nod"}]' in dx.manners_reply(
+        'Yes [move {"name": "nod"}] ok', False)["reply"]
+
+
+def test_asked_turn_keeps_the_body_but_still_caps():
+    res = dx.manners_reply(BUSY, True, max_poses=5)
+    assert res["reply"] == BUSY and res["c"]["targets_removed"] == 0
+    res = dx.manners_reply(BUSY, True, max_poses=2)
+    out = res["reply"]
+    # The two markers with hand targets stay; the gaze one is capped.
+    assert out.count("[pose") == 2 and "gaze.x" not in out
+    assert "hand.R.y" in out and "hand.L.x" in out
+    assert "[move" in out and "[gesture:home]" in out
+    assert res["c"]["markers_capped"] == 1
+    assert dx.spoken_of(out) == dx.spoken_of(BUSY)
+
+
+def test_cap_keeps_the_first_markers_when_unasked():
+    text = ('A [pose {"head.yaw": 5}] b [pose {"head.yaw": 6}] c '
+            '[pose {"head.yaw": 7}] d [pose {"head.yaw": 8}] e')
+    out = dx.manners_reply(text, False, max_poses=2)["reply"]
+    assert out == 'A [pose {"head.yaw": 5}] b [pose {"head.yaw": 6}] c d e'
+    assert dx.manners_reply(text, False, max_poses=9)["reply"] == text
+
+
+def test_marker_forms_and_the_untouched_ones():
+    # [pose: {...}], a bare [{...}] and fullwidth brackets are markers too; a
+    # marker with nothing to drop is not rewritten.
+    text = 'Hi [pose: {"hand.R.y": 1, "head.yaw": 3}] you［pose {"head.pitch": 2}］ hey'
+    out = dx.manners_reply(text, False)["reply"]
+    assert out == 'Hi [pose {"head.yaw": 3}] you［pose {"head.pitch": 2}］ hey'
+    # Hands only, at the start and the end of the reply.
+    assert dx.manners_reply('[pose {"hand.R.y": 1}] Hello there. '
+                            '[pose {"hands": "@together"}]', False)[
+        "reply"] == "Hello there. "
+    # Text with no markers, and a marker the parser drops, stay as written.
+    for t in ("Just words.", 'Hm [pose {"hand.R.y": }] ok', "[wink] ok"):
+        assert dx.manners_reply(t, False)["reply"] == t
+
+
+def test_the_ask_signals():
+    asked = ["Can you wave to my friend?", "Raise your right hand!",
+             "Strike a cute pose", "Give me a hug", "Please bow",
+             "look at the door", "turn around for me", "show me how big",
+             "Can you point to the door?", "Let's dance together",
+             "手を振って！", "ちょっと踊ってみて！", "腕を上げて", "指さして",
+             "拍手して", "ハグして", "请挥挥手", "举起你的手", "跳舞给我看",
+             "转个圈", "抱抱我", "看这边", "指一下门在哪"]
+    quiet = ["What did you have for lunch today?", "You look really cute",
+             "It's my turn to pay", "What's the point?", "On the other hand...",
+             "cheer me up", "I ate the cake you were saving. Sorry.",
+             "相手の気持ちが分からない", "上手だね！", "おはよう！今日も元気？",
+             "嗨，好久不见！", "比如说，举例来说", "对不起，我很抱歉", "手机没电了",
+             "I got promoted today!", "Want to go to the beach with me?"]
+    for t in asked:
+        assert dx.asked_line(t), t
+    for t in quiet:
+        assert not dx.asked_line(t), t
+    # By topic, with or without the words.
+    for topic in ("pose", "show", "invite"):
+        assert dx.asked_for({"topic": topic, "user": "ok"}) == (True, "topic")
+    assert dx.asked_for({"topic": "pose", "user": "wave!"}) == (
+        True, "topic+keyword")
+    assert dx.asked_for({"topic": "greeting", "user": "wave!"}) == (
+        True, "keyword")
+    assert dx.asked_for({"topic": "emotion", "user": "sad"}) == (False, None)
+
+
+def _first(recs, avatar="Hiyori"):
+    return [r for r in recs if r["avatar"]["name"] == avatar][0]
+
+
+def test_manners_on_records(missed):
+    _out, recs = missed
+    recs = copy.deepcopy(recs)
+    for r in recs:
+        r["topic"], r["user"] = "small_talk", "Hello there"
+    one = _first(recs)
+    two = copy.deepcopy(one)
+    two["id"], two["topic"] = one["id"] + "x", "pose"
+    fix, _c = dx.correct_misses(recs)
+    mfix, c = dx.manners(recs + [two], fix, 2)
+    # It starts from the corrected reply, and the original is untouched.
+    assert "hand." not in mfix[one["id"]]["reply"]
+    assert "head.tilt" in mfix[one["id"]]["reply"]
+    assert "hand.R.x" in mfix[two["id"]]["reply"]
+    assert one["reply_raw"] == MISSED
+    assert dx.spoken_of(mfix[one["id"]]["reply"]) == one["spoken"]
+    a = c["by_avatar"]["Hiyori"]
+    assert a["asked"] == 1 and a["asked_topic"] == 1
+    assert a["unasked"] == a["turns"] - 1 and a["hand_after"] > 0
+    assert c["by"][one["id"]] is None and c["by"][two["id"]] == "topic"
+    assert c["skipped"] == {}
+    # The count set limits the statistics, not the rewriting.
+    mfix2, c2 = dx.manners(recs, fix, 2, count={one["id"]})
+    assert mfix2 == {k: v for k, v in mfix.items() if k != two["id"]}
+    assert c2["total"]["turns"] == 1
+    lines = dx.manners_lines(c)
+    assert "hand share of targets" in lines[0] and len(lines) > 1
+
+
+def test_stats_carry_the_manners_counts(missed):
+    _out, recs = missed
+    notes = dx.annotate(recs)
+    _m, c = dx.manners(recs, None, 2)
+    s = dx.stats(recs, notes, mcounts=c)
+    assert s["manners"]["total"]["turns"] == len(recs)
+    assert "manners (at most 2 poses)" in dx.stats_text(s)
+    json.dumps(s)
+
+
+def test_a_turn_whose_spoken_text_would_change_is_left(monkeypatch):
+    monkeypatch.setattr(dx, "spoken_of", lambda t: str(len(t)))
+    res = dx.manners_reply(BUSY, False)
+    assert res["reply"] == BUSY and res["skipped"] == "spoken"
+
+
+def test_history_turns_are_transformed_per_turn(missed):
+    out, recs = missed
+    recs = copy.deepcopy(recs)
+    lines = ["Hello there", "Tell me about your day", "Which tea is best?",
+             "Nice weather, isn't it", "I like rainy mornings", "Any plans?"]
+    for r, line in zip(recs, lines):
+        r["topic"], r["user"] = "small_talk", line
+    fix, _ = dx.correct_misses(recs)
+    notes = dx.annotate(recs, keep_lite=True, fix=fix)
+    mfix, _ = dx.manners(recs, fix, 2)
+    ex = dx.sft_examples(out, recs, notes, per="turn", fix={**fix, **mfix})
+    texts = [m["content"] for e in ex for m in e["messages"]
+             if m["role"] == "assistant"]
+    assert texts and not any("hand." in t for t in texts)
+    hist = [m for e in ex for m in e["messages"] if m.get("weight") == 0]
+    assert hist
+    ses = dx.sft_examples(out, recs, notes, per="session", fix={**fix, **mfix})
+    assert not any("hand." in m["content"] for e in ses
+                   for m in e["messages"] if m["role"] == "assistant")
+
+
+def test_flags_off_reproduce_the_old_export(missed, tmp_path, capsys):
+    out, recs = missed
+    for per in ("session", "turn"):
+        old = tmp_path / f"old-{per}.jsonl"
+        new = tmp_path / f"new-{per}.jsonl"
+        on = tmp_path / f"on-{per}.jsonl"
+        assert dx.main(["sft", out, "--out", str(new), "--per", per,
+                        "--no-manners"]) == 0
+        notes = dx.annotate(recs, fix=dx.correct_misses(recs)[0])
+        rows = dx.sft_examples(out, recs, notes, per, False,
+                               dx.correct_misses(recs)[0], {})
+        dx.write_jsonl(str(old), rows)
+        assert old.read_bytes() == new.read_bytes()
+        assert dx.main(["sft", out, "--out", str(on), "--per", per]) == 0
+        assert on.read_bytes() != new.read_bytes()
+        assert dx.main(["sft", out, "--out", str(on), "--per", per,
+                        "--max-poses", "9", "--no-manners"]) == 0
+        assert on.read_bytes() == new.read_bytes()
+    capsys.readouterr()
+    assert dx.main(["stats", out]) == 0
+    assert "manners (at most 2 poses)" in capsys.readouterr().out
+    assert dx.main(["stats", out, "--no-manners"]) == 0
+    assert "manners" not in capsys.readouterr().out
+
+
+def test_the_trainer_passes_manners_through_and_the_hash_changes(missed):
+    from flow.train import sft
+    out, _recs = missed
+    on = sft.load_examples(out, "session", keep_lite=True)
+    off = sft.load_examples(out, "session", keep_lite=True, manners=False)
+    capped = sft.load_examples(out, "session", keep_lite=True, max_poses=1)
+    # The data hash is of the token ids: other text, other hash.
+    dump = lambda e: json.dumps(e, sort_keys=True)
+    assert dump(on) != dump(off) and dump(on) != dump(capped)
+    assert dump(off) == dump(
+        sft.load_examples(out, "session", keep_lite=True, manners=False))
+    p = sft.argparse.ArgumentParser()
+    sft.add_data_args(p)
+    o = p.parse_args(["--data", out])
+    assert o.manners is True and o.max_poses is None
+    assert p.parse_args(["--data", out, "--no-manners"]).manners is False

@@ -403,6 +403,34 @@ random data; the 4-bit, Unsloth and llama.cpp steps have not run at all.
   where hands that would pass through the body come back shifted again);
   the action export keeps what was played. `--avatar-weight lafei=2`
   repeats an avatar's sessions in the export (also `scripts/train_sft.py`).
+- **Streamer manners** (`flow.dataexport --manners`, on by default for
+  `sft`, `stats` and the trainer's dataset-folder loading; `--no-manners`
+  for the export of before, byte for byte; `--max-poses N`, default 2):
+  user feedback on renders of the first student was arms raised "for no
+  reason" (worst on lafei, whose arm can only swing out sideways). The
+  teacher writes ~2.3 pose markers a reply and about a third of them move
+  a hand; the student copied that, where streamers move head, face, gaze
+  and a little torso, and the hands rarely and on purpose. The export
+  decides per turn whether the user asked for a body action (the topic is
+  `pose`, `show` or `invite`, or the line matches the en / ja / zh word
+  lists `ASK_WORDS`, with `ASK_NOT` cutting false friends such as 相手,
+  举例, "on the other hand"; the decision is counted by `stats`). Not
+  asked: pose markers keep head, gaze, brow, eye, mouth and cheek targets,
+  torso yaw / pitch / tilt up to 6 degrees, `dur` and `hold`; hand, arm,
+  shoulder and bigger torso targets and composites (`"hands":
+  "@together"`) go, and a marker with nothing left is removed with its
+  extra space; `[move]` other than `head_bob` / `look_around` (and their
+  aliases nod, bop, look) and every `[gesture:NAME]` go (a directed
+  gesture plays the arms on the Cubism rigs); `[blink]` and `[pause]`
+  stay. Asked: the body markers stay. Either way at most `--max-poses`
+  pose markers a reply stay (the first; markers with body targets first
+  on an asked turn). It runs after `--correct-misses`, on history turns of
+  a per-turn export too, and a turn whose spoken text would change (the
+  pose parser's reading, before and after) is left alone and counted. It
+  changes the training text, so a run needs a new `--out`. No record of
+  the real teacher data was at hand when it was written: the word lists
+  were checked against the personas file's topic examples and the tests'
+  mocked records only; read `stats` on r1 first (below).
 - **Serving**: Ollama (the GGUF and the Modelfile) through the existing
   `--backend ollama`, or `--backend hf` (transformers + the adapter,
   `TextIteratorStreamer`) in `flow.director` and `flow.live`.
@@ -532,6 +560,38 @@ minutes.
 The action head's markers baseline needs another model's markers (the
 student's, from the eval): on teacher text the markers played again are
 the target itself.
+
+### Retraining with streamer manners (the GPU machine)
+
+WSL, repo at `/mnt/e/Tsukuyomi`, data `data/datagen/r1` (the first student
+was `~/tsk-runs/sft/q8`). First what the transform does to the data: the
+turns asked / not asked per avatar, pose markers per reply before and
+after, the hand share of targets, the moves and gestures dropped, the
+replies left with no body marker:
+
+    cd /mnt/e/Tsukuyomi
+    python -m flow.dataexport stats data/datagen/r1 --json ~/tsk-runs/manners-stats.json
+    # per turn: "manners"."by" in the json (topic / keyword / topic+keyword / null)
+    python -m flow.dataexport stats data/datagen/r1 --no-manners   # the old numbers
+
+Then the run (manners and correct-misses are on by default; a new `--out`,
+the data hash differs from `q8`'s), and the rest as in "The sequence on the
+server":
+
+    python scripts/train_sft.py train --data data/datagen/r1 \
+        --out ~/tsk-runs/sft/q8m --base Qwen/Qwen3-8B --avatar-weight lafei=2
+    python scripts/train_sft.py merge --run ~/tsk-runs/sft/q8m
+    python scripts/train_sft.py gguf --run ~/tsk-runs/sft/q8m --llama-cpp ~/llama.cpp
+    python scripts/train_sft.py modelfile --run ~/tsk-runs/sft/q8m --name tsk-q8m --create
+    RUN=~/tsk-runs/sft/q8m STUDENT_MODEL=tsk-q8m TEACHER=0 bash scripts/eval_sft.sh
+    python -m flow.live --mode body --model-json <rig>.model3.json \
+        --rig rigs/Hiyori.npz --backend ollama --model tsk-q8m --tts auto
+
+The eval's markers-per-turn table should show fewer pose markers and a
+lower hand share than `q8`'s. Its held-out sessions are the same ones as
+`q8`'s (the split is by session hash). Words that wrongly count as a
+request keep a hand; words that wrongly do not drop one: edit `ASK_WORDS`
+/ `ASK_NOT` in `flow/dataexport.py` and run `stats` again before training.
 
 ### Action head ablations on BEAT2 (2026-10)
 
