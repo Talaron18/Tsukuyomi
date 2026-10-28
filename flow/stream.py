@@ -298,6 +298,9 @@ class MotionStream:
         self.moves = mv.MoveLayer(rig.fps, dict(zip(rig.pids,
                                                    rig.dflt.tolist())),
                                   rig.base_parts)
+        # Gesture search (flow.gesture_search): a GestureLayer set by the
+        # caller of a VRM stream; None: nothing of it runs.
+        self.gsearch = None
         self.last = (dict(rig.base_params), dict(rig.base_parts or {}))
         self.switches = rig.switches()
         self.auto = (rt.Autonomic(rig.fps, np.random.default_rng([seed, 3]),
@@ -364,6 +367,8 @@ class MotionStream:
                     k["follows"] = None
                 toks.append(k)
             n0 = len(self.pending)
+            if self.gsearch is not None:
+                self.gsearch.note(toks)
             self._merge([], toks)
             return n0 + len(toks) - len(self.pending)
 
@@ -437,6 +442,8 @@ class MotionStream:
                 self.poses.commit(k)
             elif typ == "move":
                 self.moves.commit(k)
+            elif typ == "gsearch" and self.gsearch is not None:
+                self.gsearch.commit(k)
 
     # ------------------------------------------------------------- frames
 
@@ -489,9 +496,13 @@ class MotionStream:
             if p not in rig.expr_ids:
                 over[p] = v
         still = ()
+        if self.gsearch is not None and self.gsearch.busy():
+            over, parts = self.gsearch.apply(f, over, parts)
+            still = self.gsearch.holding
         if self.moves.busy():
             over, parts = self.moves.apply(f, over, parts)
-            still = self.moves.holding
+            still = self.moves.holding if not still else (
+                set(still) | self.moves.holding)
         if self.poses.busy():
             over, parts = self.poses.apply(f, over, parts, still)
             for p in self.poses.written:

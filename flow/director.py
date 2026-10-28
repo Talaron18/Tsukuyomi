@@ -1954,9 +1954,62 @@ def self_check(a, body, backend, system, messages, reply, out_dir, motions,
     return out
 
 
+def add_gs_args(ap):
+    """--gesture-search and its knobs (flow.gesture_search; VRM avatars).
+    All off by default: without --gesture-search nothing of it is
+    imported or run."""
+    g = ap.add_argument_group("gesture search (--avatar vrm)")
+    g.add_argument("--gesture-search", default=None, metavar="DIR",
+                   help="play real co-speech motion retrieved from this "
+                        "library (python -m flow.gesture_search build) "
+                        "under the markers; needs --tts")
+    g.add_argument("--gs-encoders", default=None, metavar="DIR",
+                   help="the probe's saved encoders (flow.probe match "
+                        "--save)")
+    g.add_argument("--gs-model", default=None, metavar="PATH",
+                   help="the local model the hidden states came from "
+                        "[the hidden folder's meta.json]")
+    g.add_argument("--gs-hidden", default=None, metavar="DIR",
+                   help="the hidden-state folder (meta.json, proj.npy) "
+                        "[the encoders' record]")
+    g.add_argument("--gs-variant", default="text+prosody")
+    g.add_argument("--gs-amp", type=float, default=1.0,
+                   help="arm amplitude about the rest pose [1]")
+    g.add_argument("--gs-seed", type=int, default=0)
+    g.add_argument("--gs-parts", default="hands", choices=("hands", "full"),
+                   help="hands: the arms; full: also head and torso [hands]")
+    g.add_argument("--gs-speaker", default=None,
+                   help="only this library speaker (comma-separated)")
+    g.add_argument("--gs-temperature", type=float, default=0.05,
+                   help="0: always the best window [0.05]")
+    g.add_argument("--gs-topk", type=int, default=6)
+    g.add_argument("--gs-4bit", action="store_true",
+                   help="load the text model in 4 bit (use the precision "
+                        "the hidden states were extracted at)")
+    g.add_argument("--gs-device", default="auto",
+                   help="auto | cuda | cpu: the text model and encoders")
+    g.add_argument("--gs-baseline", action="store_true",
+                   help="also write states_markers.json: the same turn "
+                        "without the retrieved motion")
+
+
+def gs_setup(a, ap, bm, log=print):
+    """The GestureSearch of the --gesture-search flags (None without)."""
+    if not a.gesture_search:
+        return None
+    if not a.gs_encoders:
+        ap.error("--gesture-search needs --gs-encoders")
+    try:
+        from . import gesture_search as gsm
+    except ImportError:
+        from flow import gesture_search as gsm
+    return gsm.GestureSearch.from_args(a, bm, log)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     add_args(ap)
+    add_gs_args(ap)
     ap.add_argument("--say", default=None, help="the user's message")
     ap.add_argument("--tail", type=float, default=1.5,
                     help="seconds rendered after the last speech or motion")
@@ -1991,6 +2044,9 @@ def main(argv=None) -> int:
             ap.error("--body-check is Live2D only")
         return vrm_main(a, ap)
     check_live2d_args(a, ap)
+    if a.gesture_search:
+        print("director: --gesture-search is for VRM avatars (Live2D arms "
+              "are drawings, not joints); ignored", file=sys.stderr)
     if a.gestures and not os.path.exists(a.gestures):
         ap.error(f"--gestures {a.gestures}: no such file")
     info = sys.stderr if a.print_system else sys.stdout
@@ -2108,6 +2164,13 @@ def vrm_main(a, ap) -> int:
     tts = make_voice(a)
     messages = []
     body = run if run.get("mode") == "body" else None
+    gs = gs_setup(a, ap, bm)
+    if gs is not None:
+        run["gsearch"] = gs
+        if tts is None:
+            print("director: --gesture-search needs the spoken audio "
+                  "(--tts edge|voicevox|...); turns play without it",
+                  file=sys.stderr)
 
     def turn(text, out_dir):
         if body is None:

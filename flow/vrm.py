@@ -34,6 +34,11 @@ does in headless Chromium.
             frame]} (and "t0": the stream time of frame 0) -- what
             flow.vrmrender renders and what a live session records.
 
+  search    --gesture-search (flow.gesture_search): real co-speech motion
+            retrieved per sentence from a BEAT2 library, played by a
+            GestureLayer under the poses and moves (MotionStream.gsearch);
+            nothing of it runs, or is imported, without the flag.
+
 Offline (flow.director --avatar vrm) a reply is planned as on Live2D --
 tags or pose markers, TTS timing, subtitles -- and the stream is run for its
 length into states.json; --render makes render/preview.mp4 and demo.mp4.
@@ -361,6 +366,7 @@ def plan(a, reply, out_dir, run, log=print, tts=None):
             fh.write(text)
     extra = {}
     mouth = None
+    said = None
     if tts is not None and reply["spoken"]:
         moods = None
         if getattr(a, "mood", None) != "off":
@@ -424,11 +430,38 @@ def plan(a, reply, out_dir, run, log=print, tts=None):
         directed += pz.tokens(poses, rig.roles, pz.arm_params(bm))
     if mvs:
         directed += mv.tokens(mvs)
+    gs = run.get("gsearch")
+    gs_base = None
+    if gs is not None:
+        # Gesture search (flow.gesture_search): the retrieved motion under
+        # the markers; needs the TTS audio (prosody, word times).
+        if said is None:
+            log("gesture search: needs the spoken audio (--tts); this turn "
+                "plays without it")
+        else:
+            gs_base = list(directed)
+            stream.gsearch = gs.layer(dict(zip(rig.pids, rig.dflt.tolist())))
+            toks, rep = gs.plan_reply(reply["spoken"], said)
+            directed += toks
+            extra["gesture_search"] = {"tracks": rep, "stats": dict(gs.stats),
+                                       "seed": gs.p.seed, "amp": gs.p.amp,
+                                       "parts": gs.p.parts}
+            log(f"gesture search: {len(toks)} tracks, "
+                f"{sum(len(r['windows']) for r in rep)} windows")
     stream.direct(directed)
     n = int(round(seconds, 2) * fps) + 1
     if mouth is not None:
         stream.add_mouth(0, mouth, len(mouth["open"]))
     states = stream_states(stream, bm, n)
+    states_base = None
+    if gs_base is not None and getattr(a, "gs_baseline", False):
+        # The same turn without the retrieved motion (the demo's other
+        # panel): a stream of its own with the same seeds.
+        s2 = fs.MotionStream(rig, seed=a.seed, idle=not a.no_idle, log=log)
+        s2.direct(gs_base)
+        if mouth is not None:
+            s2.add_mouth(0, mouth, len(mouth["open"]))
+        states_base = stream_states(s2, bm, n)
     segs = dr.subtitles(reply["spoken"], spans)
     with open(os.path.join(out_dir, "actions.json"), "w",
               encoding="utf-8") as fh:
@@ -449,6 +482,11 @@ def plan(a, reply, out_dir, run, log=print, tts=None):
                        os.path.abspath(run["body_path"]),
                        os.path.abspath(a.vrm) if getattr(a, "vrm", None)
                        else None)
+    if states_base is not None:
+        save_states(os.path.join(out_dir, "states_markers.json"),
+                    states_base, fps, os.path.abspath(run["body_path"]),
+                    os.path.abspath(a.vrm) if getattr(a, "vrm", None)
+                    else None)
     log(f"director: {len(reply['spoken'])} spoken characters, {end:.2f}s "
         f"speech, {len(acts)} actions, {len(segs)} subtitles; {n} VRM "
         f"states -> {path}")
