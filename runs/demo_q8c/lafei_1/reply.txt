@@ -1,1 +1,1 @@
-Hi! [pose {"hand.R.y": -0.40, "hand.R.x": -0.75, "mouth.form": 0.8, "dur": 0.35}] There, waving! [move {"name": "sway", "beats": 6, "tempo": 110}] How's that?
+Hi! [pose {"hand.R.y": -0.4, "hand.R.x": -0.7, "mouth.form": 0.8, "dur": 0.4, "hold": 0}] Wave with me! [pose {"hand.R.y": -0.9, "hand.R.x": -0.9, "dur": 0.3, "hold": 0}] There we go, that's my wave.
