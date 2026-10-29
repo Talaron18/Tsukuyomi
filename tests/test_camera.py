@@ -217,6 +217,17 @@ def test_budget_line_says_what_the_body_can_do():
     assert "3 hand moves" in seed and "in bust" not in seed   # always full
 
 
+def test_a_body_whose_hands_reach_nothing_gets_no_hand_moves():
+    # A face-tracking rig: arms only sway with the body's physics.
+    zero = {"all": 0.0, "bust": 0.0, "low": 0.0, "high": 0.0, "drawings": 1}
+    with mock.patch.object(fr, "hand_reach", lambda bm, w=None: zero):
+        b = fr.budget(_bm("Hiyori"))
+        line = pz.budget_line(_bm("Hiyori"))
+    assert b["tier"] == "limited" and b["hand_moves"] == {"bust": 0, "full": 0}
+    assert "arms do not move" in line and "no hand moves" in line
+    assert "at most" not in line
+
+
 # ------------------------------------------------------------ the camera
 
 VIEWS = {"bust": (2.0, 0.1, -0.3), "full": (1.0, 0.0, 0.0)}

@@ -946,7 +946,12 @@ def budget_line(bm) -> str:
     arms = (f"a hand reaches about {pct} of the places a hand goes when "
             f"talking, through {_times(r['drawings'], 'arm drawing')}")
     face = f"{_times(b['face'], 'face control')} offered"
-    if b["tier"] == "limited":
+    if r["all"] <= 0:
+        what = (f"your arms do not move on their own (no control reaches a "
+                f"place a hand goes when talking; they only sway with the "
+                f"body) and you have {face}: the face and head carry the "
+                "whole performance, with no hand moves")
+    elif b["tier"] == "limited":
         what = (f"your arms are limited ({arms}) and you have {face}: carry "
                 "the performance with the face and head, and move a hand "
                 "rarely, at most "

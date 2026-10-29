@@ -254,7 +254,8 @@ def budget(bm, above=ABOVE, below=BELOW) -> dict:
                     or "moderate"
       hand_moves    most hand moves a reply per framing, {"bust", "full"}:
                     limited 1 / 1, moderate 1 / 2, capable 1 / 3; 0 in
-                    bust where a hand reaches nothing the picture shows
+                    bust where a hand reaches nothing the picture shows,
+                    0 / 0 for a body whose hands reach nothing
       window        the bust picture (window())
       rest_visible  {side: the resting hand is in the bust picture}
       frames        the framings it can switch between
@@ -268,7 +269,10 @@ def budget(bm, above=ABOVE, below=BELOW) -> dict:
     r = hand_reach(bm, w)
     tier = ("limited" if r["all"] < LIMITED else
             "capable" if r["all"] >= CAPABLE else "moderate")
-    full = {"limited": 1, "moderate": 2, "capable": 3}[tier]
+    # No reach at all (a face-tracking rig whose arms only sway with the
+    # body): no hand move in either framing.
+    full = 0 if r["all"] <= 0 else {"limited": 1, "moderate": 2,
+                                    "capable": 3}[tier]
     return {"kind": "vrm" if hasattr(bm, "vrm") else "live2d",
             "face": sum(v.startswith(FACE_PREFIX) for v in off),
             "offered": len(off),
