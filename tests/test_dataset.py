@@ -126,7 +126,11 @@ def test_record_schema(run):
             r["avatar"]["body"])
         assert r["avatar"]["prompt_sha"] in reg["prompts"]
         assert len(r["history"]) == r["turn"] - 1
-        assert r["user_content"] == r["user"] + "\n" + av["pose_now"]
+        want = r["user"] + "\n" + av["pose_now"]
+        if r.get("framing"):             # the beats prompt: the camera line
+            assert r["user_content"].startswith(want + "\n(camera: ")
+        else:
+            assert r["user_content"] == want
         assert "[" not in r["user"] and not r["user"].startswith("User")
         assert r["spoken"] == "Hello! Nice to see you. Look there."
         # Markers: char offsets into the spoken text, times in order.

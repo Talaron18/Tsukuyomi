@@ -384,6 +384,7 @@ class MotionStream:
         self.drift = (HeadDrift(rig, seed, head_drift)
                       if head_drift else None)
         self.f = 0                          # the next frame to compute
+        self.camera = None                  # flow.framing.Camera, or off
         self.late = []                      # (intended, actual) directed
         self.extend(0.0)
 
@@ -513,6 +514,8 @@ class MotionStream:
                 self.poses.commit(k)
             elif typ == "move":
                 self.moves.commit(k)
+            elif typ == "frame" and self.camera is not None:
+                self.camera.commit_token(k)
             elif typ == "gsearch" and self.gsearch is not None:
                 self.gsearch.commit(k)
 

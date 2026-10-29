@@ -1189,6 +1189,8 @@ def length(acts, end, motions, tail):
         d = 2.0
         if x["tag"] == "gesture" and labels.get(x["arg"]) in motions:
             d = min(motions[labels[x["arg"]]], GESTURE_MAX)
+        elif x["tag"] == "frame":
+            d = 0.6         # flow.framing.VIEW_EASE
         last = max(last, x["t"] + d)
     return last + tail
 
@@ -1654,7 +1656,10 @@ def add_args(ap):
     ap.add_argument("--size", type=int, default=512)
     ap.add_argument("--frame", default="bust", choices=("bust", "full"),
                     help="Live2D renders: bust = head and chest (flow."
-                         "framing), full = the whole canvas [bust]")
+                         "framing), full = the whole canvas [bust]; the "
+                         "framing at the start, a [frame] marker of the "
+                         "beats prompt switches it (and the next turn "
+                         "starts where it ended)")
     ap.add_argument("--gestures", default=None, metavar="FILE.json",
                     help="per-rig gesture descriptions: a JSON object label "
                          "-> text, or label -> {\"desc\": text, \"hide\": "
@@ -1687,7 +1692,8 @@ def add_args(ap):
                     help="--mode body: v1 [default]: the prompt the first "
                          "students were taught with; beats: the expression "
                          "beats (1-3 face beats a sentence, each with a small "
-                         "head move, hands only when asked; flow.pose "
+                         "head move, a hand at the moments that call for one, "
+                         "the camera line and [frame] markers; flow.pose "
                          "_beats_rule). A student is served with the prompt "
                          "it was trained on")
     ap.add_argument("--body-image", action="store_true",
@@ -1791,8 +1797,9 @@ def prepare_body(a, info=sys.stdout):
             "motions": motions, "stats": None, "roles": None,
             "mode": "body", "body": bm, "body_path": path, "core": core,
             "images": images, "max_tag": pz.MAX_MARKER,
-            "parser": lambda: pz.parser_for(bm, gestures=labels,
-                                            moves=bool(mnames))}
+            "parser": lambda: pz.parser_for(
+                bm, gestures=labels, moves=bool(mnames),
+                frames=getattr(a, "body_prompt", "v1") == "beats")}
 
 
 def _quiet_stdout(info):
@@ -2101,8 +2108,13 @@ def main(argv=None) -> int:
             if body["images"]:
                 os.makedirs(out_dir, exist_ok=True)
                 img = snapshot(a, body, os.path.join(out_dir, "seen.png"))
+            # The beats prompt also shows the framing the turn starts in
+            # (a.frame, carried from the last [frame] marker).
+            cam = (pz.camera_now(body["body"], a.frame)
+                   if a.body_prompt == "beats" else "")
             messages.append(pz.user_message(
-                text + "\n" + pz.pose_now(body["body"]), a.backend, img))
+                text + "\n" + pz.pose_now(body["body"])
+                + ("\n" + cam if cam else ""), a.backend, img))
             parser = body["parser"]()
         reply = ask(backend, system, messages, labels, offered=offered,
                     parser=parser)
@@ -2110,6 +2122,10 @@ def main(argv=None) -> int:
         res = plan(a, reply, out_dir, motions, tts=tts, body=body)
         if body is not None:
             messages[-1] = pz.text_only(messages[-1])
+            if a.body_prompt == "beats" and not reply["refused"]:
+                # The next turn starts, and is shown, in the framing this
+                # one ended in.
+                a.frame = pz.fr.last_frame(reply["tags"], a.frame)
         if res is None:
             messages.pop()            # a refused turn is not history
             return 3
@@ -2199,8 +2215,12 @@ def vrm_main(a, ap) -> int:
             messages.append({"role": "user", "content": text})
             parser = None
         else:
+            # A VRM is drawn at one camera: always full (beats prompt).
+            cam = (pz.camera_now(bm, "full")
+                   if a.body_prompt == "beats" else "")
             messages.append(pz.user_message(
-                text + "\n" + pz.pose_now(bm), a.backend, None))
+                text + "\n" + pz.pose_now(bm) + ("\n" + cam if cam else ""),
+                a.backend, None))
             parser = body["parser"]()
         reply = ask(backend, run["system"], messages, {},
                     offered=run["offered"], parser=parser)

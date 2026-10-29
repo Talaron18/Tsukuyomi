@@ -101,6 +101,7 @@ import numpy as np
 
 try:
     from . import director as dr
+    from . import framing as fr
     from . import moves as mv
     from . import pose as pz
     from . import speech as sp
@@ -108,6 +109,7 @@ try:
 except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from flow import director as dr
+    from flow import framing as fr
     from flow import moves as mv
     from flow import pose as pz
     from flow import speech as sp
@@ -569,6 +571,13 @@ class Performer:
         # picture a vision backend gets.
         self.body = run if run.get("mode") == "body" else None
         self.snap = None
+        # The framing now (flow.framing), shown to a beats-prompt model with
+        # each line and moved by its [frame] markers; None: not shown (v1
+        # prompt). A body whose framing cannot switch (a VRM) stays full.
+        self.framing = None
+        if self.body is not None and getattr(a, "body_prompt", "v1") == "beats":
+            self.framing = (getattr(a, "frame", "full")
+                            if fr.can_frame(self.body["body"]) else "full")
         # --avatar both: the VRM follows every sentence (VRMFollower).
         self.followers = []
 
@@ -668,6 +677,8 @@ class Performer:
                    "stop_reason": info["stop"]}
         if lat:
             summary["first_audio_after"] = lat[0]["audio_at"]
+        if self.framing is not None:
+            summary["framing"] = self.framing
         self.hub.event("reply", **summary)
         if self.recorder is not None:
             self.recorder.turn(summary)
@@ -768,6 +779,16 @@ class Performer:
         directed = dr.realize(shifted, self.rig.stats, list(self.rig.roles),
                               self.rig.motion_seconds, self.rng,
                               self.stream.pose(), settle=self.rig.settle)
+        if self.framing is not None:
+            # [frame] markers: the camera's ease at the marker's time; the
+            # next turn's camera line shows where it ends.
+            fts = fr.frame_tokens(shifted)
+            if fts:
+                directed += fts
+                self.framing = fr.last_frame(acts, self.framing)
+                self.emit(f"live: turn {n}.{k} camera -> "
+                          + ", ".join(f"{x['view']} at {x['t']:.2f}s"
+                                      for x in fts))
         if poses:
             for k_ in pz.tokens(poses, self.rig.roles, arms):
                 k_["t"] = round(float(k_["t"]) + t_start, 4)
@@ -857,8 +878,10 @@ class Performer:
                 Image.fromarray(np.asarray(frame)).convert("RGB").save(
                     buf, "PNG")
                 img = buf.getvalue()
-        return pz.user_message(text + "\n" + pz.pose_now(bm, vals, parts),
-                               self.a.backend, img)
+        cam = (f"\n{pz.camera_now(bm, self.framing)}"
+               if self.framing is not None else "")
+        return pz.user_message(text + "\n" + pz.pose_now(bm, vals, parts)
+                               + cam, self.a.backend, img)
 
     def lang_of(self, spoken):
         """The language to speak this sentence in. Offline, the voice is
@@ -948,6 +971,10 @@ class FakeBackend:
         self.size, self.cost = size, cost
         self.dt = None
         self.n = 0
+        self.views = []                    # set_view calls, in order
+
+    def set_view(self, scale=1.0, offset_x=0.0, offset_y=0.0):
+        self.views.append((scale, offset_x, offset_y))
 
     def render(self, overrides=None, parts=None):
         if self.cost:
@@ -975,6 +1002,7 @@ class RenderLoop:
         self.report = report
         self.rendered = self.skipped = 0
         self.last_img = None                   # body mode's self-image
+        self.view = None                       # the last set_view state
         self.f = 0
         self.cost = deque(maxlen=300)          # seconds per rendered frame
 
@@ -1001,6 +1029,12 @@ class RenderLoop:
             if self.absent:
                 over = {p: v for p, v in over.items() if p not in self.absent}
             self.backend.dt = dt0 * (skip + 1)
+            cam = getattr(self.stream, "camera", None)
+            if cam is not None and hasattr(self.backend, "set_view"):
+                v = cam.at(self.f / self.fps)
+                if v != self.view:
+                    self.backend.set_view(*v)
+                    self.view = v
             img = self.backend.render(over, parts=parts)
             self.last_img = img
             self.backend.dt = dt0
@@ -1233,18 +1267,24 @@ def main(argv=None) -> int:
                 print("live: vrm states -> " + vrm_side["log"].close())
 
     if a.renderer == "none":
+        if perf.framing is not None:
+            # No GL, no body frame to place a window by: a stand-in zoom,
+            # so [frame] markers still run through the pipeline.
+            stream.camera = fr.Camera({"bust": (1.7, 0.0, 0.1),
+                                       "full": (1.0, 0.0, 0.0)}, a.frame)
         serve(FakeBackend(a.size))
         return 0
     Live2DBackend, _ = fs.rt._backend()
     with Live2DBackend(a.model_json, size=a.size, bg=bg,
                        strip_dynamics=False, fps=a.fps) as be:
         be.calibrate()
-        if getattr(a, "frame", "full") == "bust":
+        if getattr(a, "frame", "full") == "bust" or perf.framing is not None:
             from flow import framing
-            v = framing.bust_view(be, framing.body_path_for(
-                a.rig, a.model_json), a.model_json)
-            if v:
-                be.set_view(*v)
+            stream.camera = framing.camera_for(
+                be, framing.body_path_for(a.rig, a.model_json), a.model_json,
+                getattr(a, "frame", "full"))
+            if stream.camera is None and perf.framing is not None:
+                perf.framing = "full"        # no bust view: stays full
         print("backend: " + ", ".join(
             f"{k}={be._api_report[k]}" for k in ("order", "timestep", "parts")
             if k in be._api_report))

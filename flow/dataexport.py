@@ -73,6 +73,26 @@ Quality filters, stats and exporters for flow.dataset's turn records.
              capped at N a reply on their own and --max-poses counts the
              other pose markers only; 0 is manners as before, a beat a pose
              marker like any, so a reply of beats keeps 2.
+  hands      --max-hands N [default: N = MAX_HANDS (1) when the dataset's
+             avatars.json holds the beats prompt; -1 or other data: the
+             manners above strip every unasked hand target]. The beats
+             teacher chooses its moments for a hand (a greeting, a
+             celebration, a size, a pointing, an emphasis), so manners keeps
+             hand and arm targets where nothing was asked and caps the
+             markers that move a hand (a pose with a hand target, a [move]
+             other than the head ones, a [gesture]) at N a reply, the first
+             ones; later ones lose their hand targets / go. Shoulders and a
+             bigger torso move still go. In bust framing (the turn's
+             "framing" start in the record, followed along the reply by its
+             [frame] markers) hand targets that would be out of the picture
+             -- where the hand ends up against the window of
+             flow.framing.window, landmarks and window from avatars.json --
+             are stripped, asked or not. [frame] markers are kept.
+  framing    `stats` per avatar and per framing a turn starts in: beats per
+             sentence, face and hand share of targets, hand-moving poses and
+             [frame] markers per reply, switches; and the motion budget of
+             each avatar (avatars.json "budget"). Only for records that
+             carry a framing (the beats prompt), so r1 stats read as before.
   stats      counts by avatar / persona / language / topic / marker tag,
              reach and MISS rates, a histogram of the targeted variables,
              tokens and cost from the usage fields, speech seconds, latency,
@@ -123,10 +143,12 @@ import numpy as np
 
 try:
     from . import dataset as ds
+    from . import framing as fr
     from . import pose as pz
 except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from flow import dataset as ds
+    from flow import framing as fr
     from flow import pose as pz
 
 HARD = ("refused", "empty", "cutoff", "parse", "no_body", "miss", "dup",
@@ -209,7 +231,8 @@ def flag(r, max_miss=MAX_MISS) -> list[str]:
                      and "not a body-mode marker" in w)]
     if parse:
         f.append("parse")
-    marks = [m for m in r.get("markers") or () if m["tag"] != "pause"]
+    marks = [m for m in r.get("markers") or ()
+             if m["tag"] not in ("pause", "frame")]
     if not marks and not r.get("refused"):
         f.append("no_body")
     reach = r.get("reach") or {}
@@ -261,7 +284,7 @@ def annotate(records, max_miss=MAX_MISS, dup=DUP_JACCARD, keep_lite=False,
 # --------------------------------------------------------------- stats
 
 def stats(records, notes, prices=None, counts=None, mcounts=None,
-          bcounts=None, bbefore=None) -> dict:
+          bcounts=None, bbefore=None, fcounts=None, budget=None) -> dict:
     s = {"turns": len(records), "kept": sum(k for _, k in notes.values()),
          "sessions": len({r["session"] for r in records})}
     c = defaultdict(Counter)
@@ -323,6 +346,10 @@ def stats(records, notes, prices=None, counts=None, mcounts=None,
         s["manners"] = mcounts
     if bcounts is not None:
         s["beats"] = dict(bcounts, before=bbefore)
+    if fcounts:
+        s["framing"] = fcounts
+    if budget:
+        s["budget"] = budget
     if s["turns"]:
         s["cost_per_turn_usd"] = round(cost / s["turns"], 7)
     return s
@@ -354,6 +381,11 @@ def stats_text(s) -> str:
     if s.get("beats") is not None:
         b = dict(s["beats"])
         out += beats_lines(b, b.pop("before", None))
+    if s.get("framing"):
+        out += framing_lines(s["framing"])
+    if s.get("budget"):
+        out += budget_lines({"avatars": {k: {"budget": v} for k, v in
+                                         s["budget"].items()}})
     if s["variables"]:
         top = max(s["variables"].values())
         out.append("targeted variables:")
@@ -685,14 +717,14 @@ def _parser():
         from . import moves as mv
     except ImportError:
         from flow import moves as mv
-    p = pz.PoseParser(moves=[*mv.PRIMS, "dance"])
+    p = pz.PoseParser(moves=[*mv.PRIMS, "dance"], frames=True)
     p.gestures = _AnyGesture()
     return p
 
 
 def marker_spans(text):
     """[(start, end, tag)] for every marker the body-mode parser takes from
-    a raw reply (pose, move, gesture, blink, pause): text[start:end] with its
+    a raw reply (pose, move, gesture, frame, blink, pause): text[start:end] with its
     brackets, tag the parser's dict. Found as pose_spans finds them."""
     p = _parser()
     out, start = [], 0
@@ -737,7 +769,65 @@ def _cut(s, a, b, repl=""):
     return s[:a] + repl + s[b:]
 
 
-def manners_reply(text, asked, max_poses=MAX_POSES, max_beats=0):
+def _ref(value, key, landmarks):
+    """A pose target's number: a number as written, or an "@landmark" /
+    "@landmark.y+0.1" reference resolved as body.BodyModel.resolve does
+    (None when it cannot be)."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    if not (isinstance(value, str) and value.startswith("@")):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+    m = re.match(r"@([\w.]+?)([+-][\d.]+)?$", value.translate(pz.dr._FULLWIDTH))
+    if not m:
+        return None
+    name, offs, axis = m.group(1), m.group(2), None
+    if name not in landmarks and name[-2:] in (".x", ".y"):
+        name, axis = name[:-2], name[-1]
+    val = landmarks.get(name)
+    if val is None:
+        return None
+    if isinstance(val, list):
+        val = val[0 if (axis or key[-1]) == "x" else 1]
+    return float(val) + float(offs or 0)
+
+
+def hidden_sides(targets, view) -> set:
+    """The hands ("L" / "R") a pose with these targets would move out of
+    the bust picture: where the hand ends up (the marker's hand.X.x /
+    hand.X.y, the resting position for the one it leaves out) is outside
+    view["window"] (flow.framing.window). Targets that cannot be resolved
+    are taken as seen."""
+    lm, win = view.get("landmarks") or {}, view.get("window")
+    out = set()
+    if not win:
+        return out
+    for s in "LR":
+        if not any(k.startswith(f"hand.{s}.") for k in targets):
+            continue
+        rest = lm.get(f"hand.{s}")
+        pos = []
+        for ax, i in (("x", 0), ("y", 1)):
+            k = f"hand.{s}.{ax}"
+            v = _ref(targets[k], k, lm) if k in targets else (
+                float(rest[i]) if isinstance(rest, list) else None)
+            pos.append(v)
+        if None in pos:
+            continue
+        if not fr.visible(pos[0], pos[1], win):
+            out.add(s)
+    return out
+
+
+def _side_of(key):
+    p = key.split(".")
+    return p[1] if len(p) > 2 and p[0] == "hand" else None
+
+
+def manners_reply(text, asked, max_poses=MAX_POSES, max_beats=0,
+                  max_hands=None, framing=None, view=None):
     """The reply with a streamer's manners (module docstring): dict with
     "reply" (the text; as it was when nothing changed), "skipped" (None, or
     why the text was left alone: "spoken" / "reparse") and counters: poses
@@ -745,20 +835,43 @@ def manners_reply(text, asked, max_poses=MAX_POSES, max_beats=0):
     markers left with no target), markers_capped, targets_removed, moves /
     gestures removed, body_before / body_after (a pose, move or gesture left
     in the reply). max_beats > 0: the expression beats (is_beat) are capped
-    on their own, max_poses counts the other pose markers."""
+    on their own, max_poses counts the other pose markers.
+
+    max_hands (not None; data of the beats prompt): hand and arm targets
+    are kept where the turn asked for none, at most max_hands markers a
+    reply that move a hand (a pose with a hand target, a [move] other than
+    the head ones, a [gesture]); the later ones lose their hand targets /
+    go. `framing` (the turn's start) and `view` {"landmarks", "window"}:
+    in bust (the [frame] markers followed along the reply) a hand target
+    that would be out of the picture is stripped, asked or not
+    (hidden_sides)."""
     spans = marker_spans(text)
+    hands_mode = max_hands is not None
     poses, other = [], []
+    cur = framing or "full"
     for a, b, t in spans:
-        if t["tag"] == pz.POSE:
+        if t["tag"] == pz.FRAME:
+            cur = t["arg"]
+            other.append((a, b, t))
+        elif t["tag"] == pz.POSE:
             tg = t["arg"]["targets"]
             d = _pose_dict(text, a, b, tg)
             keys = [k for k in tg]
             if asked:
                 kept = keys
+            elif hands_mode:
+                kept = [k for k in keys if keep_key(k, tg[k]) or is_hand(k)]
             else:
                 kept = [k for k in keys if keep_key(k, tg[k])]
+            hid = 0
+            if hands_mode and cur == "bust" and view:
+                side = hidden_sides(tg, view)
+                gone_k = [k for k in kept if _side_of(k) in side]
+                hid = len(gone_k)
+                kept = [k for k in kept if k not in gone_k]
             poses.append({"a": a, "b": b, "d": d, "keys": keys, "kept": kept,
                           "body": any(not keep_key(k, tg[k]) for k in keys),
+                          "hidden": hid,
                           "beat": bool(max_beats) and is_beat(kept)})
         else:
             other.append((a, b, t))
@@ -766,7 +879,25 @@ def manners_reply(text, asked, max_poses=MAX_POSES, max_beats=0):
                 targets_before=sum(len(p["keys"]) for p in poses),
                 hand_before=sum(is_hand(k) for p in poses for k in p["keys"]),
                 body_before=int(bool(poses or any(
-                    t["tag"] in ("move", "gesture") for _, _, t in other))))
+                    t["tag"] in ("move", "gesture") for _, _, t in other))),
+                hands_hidden=sum(p["hidden"] for p in poses))
+    cut = set()                             # (a, b) of moves / gestures cut
+    if hands_mode and not asked:
+        movers = [(p["a"], p) for p in poses
+                  if any(is_hand(k) for k in p["kept"])]
+        movers += [(a, (a, b, t)) for a, b, t in other
+                   if t["tag"] == "gesture" or (
+                       t["tag"] == "move"
+                       and t["arg"].get("name") not in HEAD_MOVES)]
+        for n, (_a, m) in enumerate(sorted(movers, key=lambda x: x[0])):
+            if n < max_hands:
+                continue
+            c["hands_capped"] += 1
+            if isinstance(m, dict):
+                m["kept"] = [k for k in m["kept"] if not is_hand(k)]
+                m["beat"] = bool(max_beats) and is_beat(m["kept"])
+            else:
+                cut.add((m[0], m[1]))
     gone = []                               # (a, b) markers to cut out
     live = []
     for p in poses:
@@ -796,7 +927,13 @@ def manners_reply(text, asked, max_poses=MAX_POSES, max_beats=0):
                  if k in p["kept"] or k in _SPEC}
             edits.append((p["a"], p["b"], "[pose "
                           + json.dumps(d, ensure_ascii=False) + "]"))
-    if not asked:
+    if hands_mode:
+        for a, b, t in other:
+            if (a, b) in cut:
+                edits.append((a, b, ""))
+                c["moves_removed" if t["tag"] == "move" else
+                  "gestures_removed"] += 1
+    elif not asked:
         for a, b, t in other:
             name = t["tag"]
             if name == "gesture" or (name == "move" and t["arg"].get("name")
@@ -837,28 +974,32 @@ def manners_reply(text, asked, max_poses=MAX_POSES, max_beats=0):
 _MCOUNT = ("poses_before", "poses_after", "targets_before", "targets_after",
            "targets_removed", "hand_before", "hand_after", "markers_emptied",
            "markers_capped", "moves_removed", "gestures_removed",
-           "body_before", "body_after")
+           "body_before", "body_after", "hands_hidden", "hands_capped")
 
 
 def manners(records, fix=None, max_poses=MAX_POSES, count=None,
-            max_beats=0):
+            max_beats=0, max_hands=None, views=None):
     """({id: {"reply"}}, counts): `--manners` for the records' replies
     (corrected ones when `fix`, correct_misses' first result, has them), only
     the turns whose reply changed in the first. counts: per avatar
     {turns, asked, asked_topic, asked_keyword, unasked, changed, skipped, and
     the _MCOUNT counters} summed over the turns in `count` (a set of ids;
     None: all), "by" {id: how the turn was judged asked, or None}, "skipped"
-    {reason: n}. Refused turns are left out. max_beats: manners_reply's."""
+    {reason: n}. Refused turns are left out. max_beats, max_hands:
+    manners_reply's; views {avatar: {"landmarks", "window"}} (avatars.json:
+    view_of) and each record's framing start tell it what bust hides."""
     out = {}
     c = {"by_avatar": {}, "by": {}, "skipped": Counter(), "max_poses":
-         max_poses, "max_beats": max_beats}
+         max_poses, "max_beats": max_beats, "max_hands": max_hands}
     for r in records:
         if r.get("refused"):
             continue
         text = (fix or {}).get(r["id"], {}).get("reply",
                                                 r.get("reply_raw") or "")
         asked, by = asked_for(r)
-        res = manners_reply(text, asked, max_poses, max_beats)
+        res = manners_reply(text, asked, max_poses, max_beats, max_hands,
+                            (r.get("framing") or {}).get("start"),
+                            (views or {}).get(r["avatar"]["name"]))
         if res["reply"] != text:
             out[r["id"]] = {"reply": res["reply"]}
         if count is not None and r["id"] not in count:
@@ -905,9 +1046,17 @@ def manners_lines(c) -> list:
                 f"{n - v.get('body_after', 0)} of {n}"
                 + (f"; {v['skipped']} left as they were"
                    if v.get("skipped") else ""))
+    hands = c.get("max_hands")
     out = [f"manners (at most {c['max_poses']} poses"
            + (f", {c['max_beats']} beats" if c.get("max_beats") else "")
+           + (f", {hands} hand-moving markers" if hands is not None else "")
            + "): " + row(c["total"])]
+    if hands is not None:
+        t = c["total"]
+        out.append(f"  hands kept where not asked, capped at {hands}: "
+                   f"{t.get('hands_capped', 0)} markers over the cap, "
+                   f"{t.get('hands_hidden', 0)} hand targets out of the bust "
+                   "picture stripped")
     for a, v in c["by_avatar"].items():
         out.append(f"  {a:14s} " + row(v))
     return out
@@ -995,6 +1144,122 @@ def beats_lines(c, before=None) -> list:
                                      (before or {}).get("total"))]
     for a, v in c["by_avatar"].items():
         out.append(f"  {a:14s} " + row(v, pre.get(a)))
+    return out
+
+
+_FCOUNT = ("turns", "sentences", "poses", "beats", "targets", "face_targets",
+           "hand_targets", "hand_poses", "frame_markers", "switches")
+
+
+def frame_counts(text, start) -> Counter:
+    """Counters over one reply that started in framing `start` (_FCOUNT):
+    beat_counts', pose markers with a hand target, [frame] markers and the
+    ones that change the framing."""
+    c = beat_counts(text)
+    tags = []
+    for _a, _b, t in marker_spans(text):
+        if t["tag"] == pz.POSE and any(is_hand(k) for k in t["arg"]["targets"]):
+            c["hand_poses"] += 1
+        elif t["tag"] == pz.FRAME:
+            c["frame_markers"] += 1
+        tags.append(t)
+    c["switches"] = fr.switches(tags, start)
+    return Counter({k: v for k, v in c.items() if k in _FCOUNT})
+
+
+def framing(records, texts=None, count=None) -> dict:
+    """Per avatar and per framing the turn started in ("bust" / "full"; the
+    records of the beats prompt carry it), the _FCOUNT counters over the
+    replies (the corrected / manners texts in `texts`), turns in `count`
+    only; {} when no record has a framing. "total" sums the avatars."""
+    by = {}
+    for r in records:
+        f = r.get("framing")
+        if not f or r.get("refused") or (count is not None
+                                         and r["id"] not in count):
+            continue
+        text = (texts or {}).get(r["id"], {}).get("reply",
+                                                  r.get("reply_raw") or "")
+        a = by.setdefault(r["avatar"]["name"], {}).setdefault(
+            f["start"], Counter())
+        a["turns"] += 1
+        a.update(frame_counts(text, f["start"]))
+    if not by:
+        return {}
+    tot = {}
+    for views in by.values():
+        for k, v in views.items():
+            tot.setdefault(k, Counter()).update(v)
+    return {"by_avatar": {a: {k: dict(v) for k, v in sorted(vs.items())}
+                          for a, vs in sorted(by.items())},
+            "total": {k: dict(v) for k, v in sorted(tot.items())}}
+
+
+def framing_lines(c) -> list:
+    """The stats text for framing()'s counts: per avatar and per starting
+    framing the turns, beats per sentence, face and hand share of targets,
+    hand-moving poses and [frame] markers per reply, and the switches."""
+    def row(v):
+        n = max(1, v.get("turns", 0))
+        t = max(1, v.get("targets", 0))
+        return (f"{v.get('turns', 0)} turns: beats/sentence "
+                f"{v.get('beats', 0) / max(1, v.get('sentences', 0)):.2f}, "
+                f"face {v.get('face_targets', 0) / t:.0%} hand "
+                f"{v.get('hand_targets', 0) / t:.0%} of targets, hand "
+                f"poses/reply {v.get('hand_poses', 0) / n:.2f}, frame "
+                f"markers/reply {v.get('frame_markers', 0) / n:.2f}, "
+                f"{v.get('switches', 0)} switches")
+    out = ["framing (by the framing a turn starts in):"]
+    for name, views in [("all", c["total"])] + list(c["by_avatar"].items()):
+        for k, v in views.items():
+            out.append(f"  {name:14s} {k:5s} " + row(v))
+    return out
+
+
+def budget_lines(reg) -> list:
+    """The stats text for the avatars' motion budgets (avatars.json)."""
+    out = []
+    for name, av in (reg.get("avatars") or {}).items():
+        b = av.get("budget")
+        if not b:
+            continue
+        r, hm = b["reach"], b["hand_moves"]
+        out.append(f"  {name:14s} {b['kind']:6s} {b['tier']:8s} hand reach "
+                   f"{r['all']:.0%} of the zone ({r['bust']:.0%} of it in "
+                   f"bust), {r['drawings']} arm drawings, {b['face']} face / "
+                   f"{b['offered']} offered controls, hand moves a reply "
+                   f"bust {hm['bust']} / full {hm['full']}")
+    return (["motion budget (flow.framing.budget, from the body files):"]
+            + out) if out else []
+
+
+MAX_HANDS = 1
+
+
+def default_max_hands(root):
+    """--max-hands when not given: MAX_HANDS (the beats teacher prompt
+    chooses its moments for a hand, so manners caps them) for a dataset whose
+    prompts carry that prompt, else None: unasked hand targets go, as
+    before."""
+    return MAX_HANDS if default_max_beats(root) else None
+
+
+def views_of(root) -> dict:
+    """{avatar: {"landmarks", "window"}} from avatars.json: what the bust
+    picture shows of each body (flow.framing.window, the landmarks to
+    resolve a pose's "@" references by); {} when the registry lacks them
+    (a dataset from before the camera)."""
+    try:
+        reg = load_registry(root)
+    except (OSError, ValueError):
+        return {}
+    out = {}
+    for name, av in (reg.get("avatars") or {}).items():
+        b = av.get("budget") or {}
+        if av.get("landmarks") and b.get("window") and "bust" in (
+                b.get("frames") or ()):
+            out[name] = {"landmarks": av["landmarks"],
+                         "window": b["window"]}
     return out
 
 
@@ -1222,6 +1487,16 @@ def main(argv=None) -> int:
                                 "on top of --max-poses; 0: they count as "
                                 f"poses [{BEATS_MAX} for a dataset written "
                                 "with the beats teacher prompt, else 0]")
+            p.add_argument("--max-hands", type=int, default=None,
+                           metavar="N",
+                           help="manners: markers that move a hand kept per "
+                                "reply where the user asked for none (the "
+                                "beats teacher prompt chooses its moments), "
+                                "and in bust only hand targets that are in "
+                                "the picture; -1: strip unasked hand "
+                                f"targets [{MAX_HANDS} for a dataset "
+                                "written with the beats teacher prompt, "
+                                "else -1]")
         if name == "stats":
             p.add_argument("--json", default=None)
         if name == "sft":
@@ -1251,12 +1526,23 @@ def main(argv=None) -> int:
     if a.cmd != "action" and a.manners:
         mb = (default_max_beats(a.root) if a.max_beats is None
               else a.max_beats)
-        mfix, mcounts = manners(recs, fix, a.max_poses, kept, mb)
+        mh = (default_max_hands(a.root) if a.max_hands is None
+              else None if a.max_hands < 0 else a.max_hands)
+        mfix, mcounts = manners(recs, fix, a.max_poses, kept, mb, mh,
+                                views_of(a.root))
     if a.cmd == "stats":
         bafter = beats(recs, {**fix, **mfix}, kept)
+        try:
+            budgets = {k: v["budget"] for k, v in
+                       load_registry(a.root).get("avatars", {}).items()
+                       if v.get("budget")}
+        except (OSError, ValueError):
+            budgets = {}
         s = stats(recs, notes, counts=counts, mcounts=mcounts,
                   bcounts=bafter,
-                  bbefore=beats(recs, fix, kept) if mcounts else None)
+                  bbefore=beats(recs, fix, kept) if mcounts else None,
+                  fcounts=framing(recs, {**fix, **mfix}, kept),
+                  budget=budgets)
         print(stats_text(s))
         if a.json:
             with open(a.json, "w", encoding="utf-8") as fh:

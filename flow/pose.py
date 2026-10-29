@@ -90,15 +90,18 @@ try:
     from . import body as fb
     from . import director as dr
     from . import events as ev
+    from . import framing as fr
     from .behaviors import min_jerk
 except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from flow import body as fb
     from flow import director as dr
     from flow import events as ev
+    from flow import framing as fr
     from flow.behaviors import min_jerk
 
 POSE = "pose"
+FRAME = "frame"
 # A marker's JSON may run to a few hundred characters (six targets with
 # landmark references is ~150); past this it is a runaway, dropped unspoken.
 MAX_MARKER = 600
@@ -221,12 +224,15 @@ class PoseParser(dr.TagParser):
     use. A marker split across chunks parses as it would whole."""
 
     def __init__(self, variables=None, landmarks=(), max_marker=MAX_MARKER,
-                 gestures=(), moves=None):
+                 gestures=(), moves=None, frames=False):
         # gestures: the labels [gesture:NAME] may name (--body-gestures);
         # none, and a gesture marker is dropped like any other tag.
         # moves: the motion primitives [move {...}] may name (flow.moves,
         # --body-moves); None, and a move marker is dropped as before.
+        # frames: take [frame bust] / [frame full] (flow.framing); off, and
+        # a frame marker is dropped like any other tag.
         super().__init__(gestures, None)
+        self.frames = bool(frames)
         self.moves = None if moves is None else list(moves)
         self.variables = None if variables is None else set(variables)
         self.landmarks = set(landmarks or ())
@@ -319,12 +325,25 @@ class PoseParser(dr.TagParser):
             if name in self.moves:
                 # A bare primitive name ("[dance]", "[clap {...}]").
                 return self._move(s, inner)
+        if self.frames and name == "frame":
+            return self._frame(re.sub(r"(?is)^frame\b\s*:?\s*", "", s),
+                               inner)
         ok = ("blink", "pause") + (("gesture",) if self.gestures else ())
         if name not in ok:
             self.warnings.append(f"[{inner}] is not a body-mode marker "
                                  f"({', '.join((POSE,) + ok)}); dropped")
             return None
         return self._tag(inner)
+
+    def _frame(self, body, inner):
+        view = body.strip().strip("\"'").strip().lower()
+        if view not in fr.FRAMES:
+            self.warnings.append(f"[{inner}]: 'frame' takes "
+                                 f"{'/'.join(fr.FRAMES)}; dropped")
+            return None
+        tag = {"tag": FRAME, "arg": view, "at": len(self.spoken)}
+        self.tags.append(tag)
+        return tag
 
     def _move(self, body, inner):
         try:
@@ -404,10 +423,12 @@ class PoseParser(dr.TagParser):
         return tag
 
 
-def parser_for(bm, max_marker=MAX_MARKER, gestures=(), moves=False):
+def parser_for(bm, max_marker=MAX_MARKER, gestures=(), moves=False,
+               frames=False):
     # A VRM body also takes composite targets ("hands": "@together");
     # a Live2D body has none (the same parser as before them). moves: take
-    # [move {...}] markers for the primitives this body can do.
+    # [move {...}] markers for the primitives this body can do. frames: take
+    # [frame bust] / [frame full] (a body whose framing can switch).
     names = tuple(getattr(bm, "composite_landmarks", ()))
     keys = list(getattr(bm, "composite_keys", ())) if names else []
     mvs = None
@@ -419,7 +440,8 @@ def parser_for(bm, max_marker=MAX_MARKER, gestures=(), moves=False):
         mvs = mv.offered(bm)
     return PoseParser(available(bm) + keys,
                       list(bm.landmarks) + list(names) if names
-                      else bm.landmarks, max_marker, gestures, mvs)
+                      else bm.landmarks, max_marker, gestures, mvs,
+                      frames and fr.can_frame(bm))
 
 
 def tag_text(t) -> str:
@@ -430,6 +452,8 @@ def tag_text(t) -> str:
         d = dict(arg.get("targets", {}))
         d.update({k: arg[k] for k in ("dur", "hold") if k in arg})
         return f"[pose {json.dumps(d, ensure_ascii=False)}]"
+    if t.get("tag") == FRAME:
+        return f"[frame {arg}]"
     if t.get("tag") == "move" and isinstance(arg, dict):
         return f"[move {json.dumps(arg, ensure_ascii=False)}]"
     return f"[{t['tag']}{':' + str(arg) if arg else ''}]"
@@ -772,11 +796,123 @@ def _beats_rule(bm) -> str:
                  "a tilt with a smile, a small turn away with a doubt, a "
                  "little chin down when shy. Never write that head move as "
                  "a marker of its own.\n")
-    L.append("- Keep the rest of your body almost still, hands out of the "
-             "picture: no hand, arm or big torso moves unless the user asks "
-             "you to show or do something, or the moment is a big one (a "
-             "greeting, a celebration), and then once in a reply at most.\n")
+    L.append("- Keep the rest of your body for the moments that call for it: "
+             "a greeting, a celebration, showing a size or a shape, pointing "
+             "at what you mean, an emphasis, or when the user asks you to "
+             "show or do something. Then let the hand fall back; the rest "
+             "of the time the face and head do it.\n")
+    L.append(camera_rule(bm))
+    L.append(budget_line(bm))
     return "".join(L)
+
+
+# ------------------------------------------------- camera and motion budget
+
+FRAME_ENTRY = (
+    "[frame bust] or [frame full]  switch the camera between bust (head and "
+    "chest) and full (the whole figure), as a streamer changes scenes: full "
+    "before you dance or show something with your body, bust to come back to "
+    "your face. It eases over in about {ease:g} seconds at that point of your "
+    "speech and stays until you switch again; at most twice in a reply, and "
+    "only when the framing you are in does not suit what you do next.\n")
+
+
+def frame_entry(bm) -> str:
+    """The [frame] line of the marker list ("" for a body whose framing
+    cannot switch: a VRM is drawn at one camera)."""
+    return FRAME_ENTRY.format(ease=fr.VIEW_EASE) if fr.can_frame(bm) else ""
+
+
+def _ys(vals):
+    return " and ".join(f"{v:.2f}" for v in vals)
+
+
+def camera_rule(bm) -> str:
+    """The camera line of the beats prompt, from the numbers: the bust
+    picture's window in hu (flow.framing ABOVE / BELOW) against where this
+    body's hands rest and how low they reach. Each user message then ends
+    with camera_now()."""
+    if not fr.can_frame(bm):
+        return ("- Camera: you are filmed full, the whole figure, and each "
+                "user message ends with \"(camera: full ...)\". Your body "
+                "moves are seen.\n")
+    b = fr.budget(bm)
+    w, rest, low = b["window"], fr.rest_hands(bm), b["reach"]["low"]
+    bot = w["bottom"]
+    ys = [y for _x, y in rest.values()]
+    vis = list(b["rest_visible"].values())
+    if not any(vis):
+        where = (f"your hands rest at y {_ys(ys)}, below the picture, and a "
+                 f"hand shows only once raised above y {bot:.2f}")
+    elif all(vis):
+        where = (f"your hands rest at y {_ys(ys)}, in the lower part of the "
+                 "picture")
+    else:
+        where = (f"your hands rest at y {_ys(ys)}, one of them below the "
+                 "picture")
+    hidden = (not all(vis)) or (low is not None and low < bot - fb.TOL["hu"])
+    if hidden:
+        tail = (f"So in bust a hand move below y {bot:.2f} is not seen: the "
+                "face carries the performance (brows, eyes, mouth, head).")
+    else:
+        tail = ("All your hand moves stay in that picture, but the face "
+                "still carries the performance.")
+    return (f"- Camera: you are filmed either in bust (head and chest) or in "
+            f"full (the whole figure); each user message ends with "
+            f"\"(camera: bust ...)\" or \"(camera: full ...)\", the framing "
+            f"you are in now. The bust picture runs from {w['top']:.1f} hu "
+            f"above your chin to {-bot:.1f} hu below it, {2 * w['half_width']:.1f} "
+            f"hu wide; {where}. {tail} In full your whole body is in the "
+            "picture and body moves are seen.\n")
+
+
+def camera_now(bm, framing) -> str:
+    """The user turn's camera line: "(camera: bust, ...)" / "(camera:
+    full, ...)", the framing now; numbers from the same window."""
+    if framing == "bust" and fr.can_frame(bm):
+        w = fr.window()
+        return (f"(camera: bust, head and chest; hands below y "
+                f"{w['bottom']:.2f} are out of frame)")
+    return "(camera: full, the whole body in frame)"
+
+
+def _times(n, word):
+    return f"{n} {word}" + ("" if n == 1 else "s")
+
+
+def budget_line(bm) -> str:
+    """The motion-budget line of the beats prompt: what this body can do
+    (flow.framing.budget: the share of the gesture zone its hands reach,
+    the face controls offered, its kind) as how much to move it."""
+    b = fr.budget(bm)
+    r, hm = b["reach"], b["hand_moves"]
+    pct = f"{r['all']:.0%}"
+    arms = (f"a hand reaches about {pct} of the places a hand goes when "
+            f"talking, through {_times(r['drawings'], 'arm drawing')}")
+    face = f"{_times(b['face'], 'face control')} offered"
+    if b["tier"] == "limited":
+        what = (f"your arms are limited ({arms}) and you have {face}: carry "
+                "the performance with the face and head, and move a hand "
+                "rarely, at most "
+                f"{_times(hm['full'], 'hand move')} in a reply (a greeting, "
+                "a celebration, a size, pointing, an emphasis)")
+    elif b["tier"] == "capable":
+        what = (f"your arms reach almost anywhere ({arms}; a "
+                f"{'3D' if b['kind'] == 'vrm' else 'Live2D'} body with "
+                f"joints) and you have {face}: in full use your body, up to "
+                f"{_times(hm['full'], 'hand move')} a reply, a lean or a "
+                "turn of the torso, a dance when it fits"
+                + (f"; in bust only a hand raised into the picture shows, so "
+                   f"at most {_times(hm['bust'], 'hand move')} a reply there"
+                   if "bust" in b["frames"] else ""))
+    else:
+        what = (f"your arms reach part of the way ({arms}) and you have "
+                f"{face}: the face still does most of the talking; a hand "
+                f"move is an option at the right moment, up to "
+                f"{_times(hm['full'], 'hand move')} a reply"
+                + (f" in full and {hm['bust']} in bust"
+                   if "bust" in b["frames"] else ""))
+    return f"- Motion budget: {what}.\n"
 
 
 def _best_hand(bm):
@@ -907,7 +1043,7 @@ def system_prompt(bm, persona=None, images=False, gestures="",
         image=(", and with it a picture of how you look right now, as the "
                "viewer sees you (your left is on the picture's right)"
                if images else ""),
-        gestures=gestures or "",
+        gestures=(gestures or "") + (frame_entry(bm) if beats else ""),
         whole="" if beats else _whole_body(bm, bool(gestures)),
         beats=_beats_rule(bm) if beats else "",
         sentence_rule=SENTENCE_RULE[prompt], moves=moves or "", move_rule=(mv.PROMPT_RULE if moves else ""),

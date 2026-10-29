@@ -75,6 +75,11 @@ included; flow.dataexport filters):
               targets, and writes a missed target as report[var].got)
   moves       flow.moves.solve_moves records, rounded: name, t, at, start,
               seconds, beats, tempo, amp, segments, solves, solve_seconds
+  framing     beats prompt only: {start, end, switches}, the framing the
+              turn started in (shown to the model as "(camera: ...)" after
+              the pose line in user_content), the one it ended in, and the
+              [frame] markers that changed it (a session starts in
+              bust or full per --bust-share, flow.framing.start_frame)
   reach       pose.reach_summary {markers, targets, ok, miss, exact_ok,
               exact_n, solve_seconds}
   play_warnings  the planning lines among warnings (pose: / move:)
@@ -106,7 +111,10 @@ included; flow.dataexport filters):
                   gesture drops, tokens}.
     vars          JSON string: the variable list
   <out>/avatars.json   tsukuyomi.avatars/1: per avatar kind, body, body_sha,
-                  pose_now, traj_vars, variants, prompts {persona: sha};
+                  pose_now, traj_vars, variants, prompts {persona: sha},
+                  budget (flow.framing.budget: the motion budget measured
+                  from the body: reach shares, face controls, tier, hand
+                  moves a reply per framing, the bust window), landmarks;
                   "prompts" {sha: system prompt text} verbatim (the SFT
                   export uses these bytes)
   <out>/sessions.jsonl  one line per finished session: {session, status
@@ -159,6 +167,7 @@ import numpy as np
 try:
     from . import body as fb
     from . import director as dr
+    from . import framing as fr
     from . import moves as mv
     from . import pose as pz
     from . import speech as sp
@@ -168,6 +177,7 @@ except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from flow import body as fb
     from flow import director as dr
+    from flow import framing as fr
     from flow import moves as mv
     from flow import pose as pz
     from flow import speech as sp
@@ -478,8 +488,9 @@ class Avatar:
                 run = {"system": pz.system_prompt(bm, ptext, False, "",
                                                   mlines, a.body_prompt),
                        "labels": {}, "body": bm,
-                       "parser": lambda bm=bm, m=bool(mnames):
-                           pz.parser_for(bm, moves=m)}
+                       "parser": lambda bm=bm, m=bool(mnames),
+                       f=a.body_prompt == "beats":
+                           pz.parser_for(bm, moves=m, frames=f)}
             self.runs[pid] = run
         self.pose_now = pz.pose_now(self.bm)
         self.traj_vars = traj_vars(self.bm, opts.traj_vars)
@@ -514,7 +525,9 @@ class Avatar:
                 "gestures": sorted(self.labels(next(iter(self.runs))))
                 if self.runs else [],
                 "spec": {k: v for k, v in self.spec.items()},
-                "prompts": {p: sha(r["system"]) for p, r in self.runs.items()}}
+                "prompts": {p: sha(r["system"]) for p, r in self.runs.items()},
+                "budget": fr.budget(self.bm),
+                "landmarks": {k: v for k, v in self.bm.landmarks.items()}}
 
 
 def traj_vars(bm, which="offered") -> list[str]:
@@ -704,7 +717,7 @@ def play_timed(av, tags, tm, seed):
             # Not built: a primitive this body cannot do (logged).
             played = True if id(x) in moved else "unsolved"
         else:
-            played = x["tag"] in ("blink", "gesture")
+            played = x["tag"] in ("blink", "gesture", pz.FRAME)
         markers.append({"tag": x["tag"], "arg": x["arg"], "at": x["at"],
                         "t": x["t"], "text": pz.tag_text(x),
                         "played": played})
@@ -811,10 +824,14 @@ def collect(backend, system, messages):
 
 # ------------------------------------------------------------ sessions
 
-def plan_sessions(avatars, personas, cfg, n, turns, seed=0) -> list[dict]:
+def plan_sessions(avatars, personas, cfg, n, turns, seed=0,
+                  bust_share=None) -> list[dict]:
     """n sessions in all, spread round-robin over avatar x persona (a
     persona with an "avatars" list only on those). Ids are stable for a
-    cell index, so a longer run resumes a shorter one."""
+    cell index, so a longer run resumes a shorter one. bust_share (the
+    beats prompt): each session also gets the "frame" it starts in
+    (flow.framing.start_frame: bust with that probability, from the run
+    seed and the id alone)."""
     cells = []
     by_id = {p["id"]: p for p in cfg["personas"]}
     for av in avatars:
@@ -832,6 +849,8 @@ def plan_sessions(avatars, personas, cfg, n, turns, seed=0) -> list[dict]:
         sid = f"{av}.{p}.{k:04d}"
         out.append({"id": sid, "avatar": av, "persona": p, "turns": turns,
                     "seed": zlib.crc32(f"{seed}:{sid}".encode()) & 0x7FFFFFFF})
+        if bust_share is not None:
+            out[-1]["frame"] = fr.start_frame(seed, sid, bust_share)
     return out
 
 
@@ -900,6 +919,13 @@ def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
         tot["cost_usd"] += c
         return c
     openers = [t for t in cfg["topics"] if t.get("opener")]
+    # The framing the character is in (flow.framing), shown with each line
+    # under the beats prompt and moved by its [frame] markers; a body whose
+    # framing cannot switch (a VRM) is always full. None: v1, not shown.
+    framing = None
+    if getattr(opts, "teacher_prompt", TEACHER_PROMPT) == "beats":
+        framing = sess.get("frame", "bust") if fr.can_frame(av.bm) \
+            else "full"
     for turn in range(1, sess["turns"] + 1):
         if stop is not None and stop.is_set():
             raise InterruptedError("stopped")
@@ -936,6 +962,9 @@ def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
         if not line:
             line = rng.choice(topic.get("examples") or ["Hi!"])
         content = line + "\n" + av.pose_now
+        if framing is not None:
+            content += "\n" + pz.camera_now(av.bm, framing)
+        start_frame = framing
         msgs = []
         for h in history:
             msgs.append({"role": "user", "content": h["user_content"]})
@@ -967,6 +996,12 @@ def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
                "refused": bool(reply["refused"]),
                "stop_reason": reply.get("stop_reason"),
                "warnings": list(reply.get("warnings") or [])}
+        if framing is not None:
+            if not reply["refused"]:
+                framing = fr.last_frame(reply["tags"], framing)
+            rec["framing"] = {"start": start_frame, "end": framing,
+                              "switches": fr.switches(reply["tags"],
+                                                      start_frame)}
         unplayed = {}
         for w in rec["warnings"]:
             m = re.match(r"\s*\[(\w+)", w)
@@ -1485,7 +1520,10 @@ def generate(opts, backend_factory=None, log=print, argv=None) -> dict:
     specs = [avatar_spec(x, roots, opts.rigs, opts.events, opts.live2d_lite)
              for x in opts.avatars]
     sessions = plan_sessions([s["name"] for s in specs], personas, cfg,
-                             opts.sessions, opts.turns, opts.seed)
+                             opts.sessions, opts.turns, opts.seed,
+                             getattr(opts, "bust_share", fr.BUST_SHARE)
+                             if getattr(opts, "teacher_prompt",
+                                        TEACHER_PROMPT) == "beats" else None)
     store = Store(opts.out, opts.shard_size)
     todo = [s for s in sessions if s["id"] not in store.done]
     if store.done:
@@ -1669,9 +1707,16 @@ def add_args(ap):
                     choices=pz.PROMPTS,
                     help="the character's system prompt: beats [default]: "
                          "1-3 expression beats a sentence (face, with a small "
-                         "head move in the same marker; hands only when "
-                         "asked); v1: the prompt of the first run (r1), to "
+                         "head move in the same marker; a hand at the moments "
+                         "that call for one; the camera line and [frame] "
+                         "markers); v1: the prompt of the first run (r1), to "
                          "regenerate it byte for byte")
+    ap.add_argument("--bust-share", type=float, default=fr.BUST_SHARE,
+                    metavar="P",
+                    help="beats prompt: the share of sessions that start in "
+                         "the bust framing (the rest start full; the "
+                         "character's [frame] markers move it from there) "
+                         f"[{fr.BUST_SHARE:g}]; a VRM is always full")
     ap.add_argument("--models", default="live2d-models:CubismWebSamples",
                     help="colon-separated folders holding .model3.json files")
     ap.add_argument("--rigs", default="rigs")

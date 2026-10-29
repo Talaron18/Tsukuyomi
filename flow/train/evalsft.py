@@ -248,7 +248,8 @@ def summarize(rows) -> dict:
             "markers_per_turn": {t: round(c / n, 3) for t, c in
                                  sorted(tags.items())} if n else {},
             "body_markers_per_turn": round(sum(
-                c for t, c in tags.items() if t != "pause") / n, 3)
+                c for t, c in tags.items() if t not in ("pause", "frame"))
+                / n, 3)
             if n else None,
             "unplayed_per_turn": round(sum(unpl.values()) / n, 3) if n
             else None,
@@ -275,6 +276,7 @@ def summary_text(sums) -> str:
             ("body/turn", lambda s: s["body_markers_per_turn"]),
             ("pose/turn", lambda s: s["markers_per_turn"].get("pose", 0)),
             ("move/turn", lambda s: s["markers_per_turn"].get("move", 0)),
+            ("frame/turn", lambda s: s["markers_per_turn"].get("frame", 0)),
             ("unplayed/turn", lambda s: s["unplayed_per_turn"]),
             ("reach", lambda s: s["reach"]["rate"]),
             ("MISS/turn", lambda s: s["miss_per_turn"]),

@@ -112,14 +112,17 @@ def log(s):
 
 def load_examples(data, per="session", max_miss=None, keep_lite=False,
                   correct_misses=True, avatar_weight=None, manners=True,
-                  max_poses=None, max_beats=None):
+                  max_poses=None, max_beats=None, max_hands=None):
     """The SFT examples ({"messages", "meta"}) from an sft.jsonl or a
     flow.dataset folder (exported here with flow.dataexport's filters,
     missed pose targets corrected to the value reached, and the avatars in
     `avatar_weight` ["NAME=N", ...] repeated, and with `manners` the
     streamer manners of flow.dataexport applied; an sft.jsonl is as
     exported). max_beats: manners' cap on expression beats (None: by the
-    dataset's teacher prompt, flow.dataexport.default_max_beats)."""
+    dataset's teacher prompt, flow.dataexport.default_max_beats). max_hands:
+    manners' cap on hand-moving markers where nothing was asked (None: by
+    the teacher prompt, flow.dataexport.default_max_hands; -1: strip them
+    as before)."""
     if os.path.isdir(data):
         try:
             from .. import dataexport as dx
@@ -141,7 +144,10 @@ def load_examples(data, per="session", max_miss=None, keep_lite=False,
                 recs, fix, max_poses or dx.MAX_POSES,
                 {i for i, (_, k) in notes.items() if k},
                 dx.default_max_beats(data) if max_beats is None
-                else max_beats)
+                else max_beats,
+                dx.default_max_hands(data) if max_hands is None
+                else None if max_hands < 0 else max_hands,
+                dx.views_of(data))
             for line in dx.manners_lines(mcounts):
                 log(line)
         if counts:
@@ -609,7 +615,8 @@ def prepare(o, tok):
     exs = [clean(e) for e in load_examples(
         o.data, o.per, correct_misses=o.correct_misses,
         avatar_weight=o.avatar_weight, manners=o.manners,
-        max_poses=o.max_poses, max_beats=o.max_beats)]
+        max_poses=o.max_poses, max_beats=o.max_beats,
+        max_hands=o.max_hands)]
     if not exs:
         raise SystemExit(f"no examples in {o.data}")
     train, ev, info = split(exs, o.eval_frac, o.split_seed, o.split_by_row)
@@ -830,7 +837,8 @@ def stats(o) -> dict:
     exs = [clean(e) for e in load_examples(
         o.data, o.per, correct_misses=o.correct_misses,
         avatar_weight=o.avatar_weight, manners=o.manners,
-        max_poses=o.max_poses, max_beats=o.max_beats)]
+        max_poses=o.max_poses, max_beats=o.max_beats,
+        max_hands=o.max_hands)]
     rep = length_report(tok, exs, o.family)
     print(report_text(rep, o.family))
     probs = check_template(tok, o.family, exs[0]) if exs else []
@@ -872,6 +880,12 @@ def add_data_args(p):
                    help="manners: expression beats kept per reply, besides "
                         "--max-poses [9 for data written with the beats "
                         "teacher prompt, else 0: beats count as poses]")
+    p.add_argument("--max-hands", type=int, default=None, metavar="N",
+                   help="manners: markers that move a hand kept per reply "
+                        "where nothing was asked, and in bust only hand "
+                        "targets in the picture [1 for data written with "
+                        "the beats teacher prompt; -1 or other data: unasked "
+                        "hand targets are stripped]")
     p.add_argument("--avatar-weight", action="append", default=[],
                    metavar="NAME=N",
                    help="with a dataset folder: repeat that avatar's "

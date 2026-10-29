@@ -1098,6 +1098,13 @@ def main(argv=None) -> int:
                     except ImportError:
                         from flow import moves as mv
                     directed = directed + mv.tokens(mvs)
+                # [frame] markers (flow.framing): the camera's ease, read
+                # by the render's view (--tokens-in replays it).
+                try:
+                    from . import framing as fr
+                except ImportError:
+                    from flow import framing as fr
+                directed = directed + fr.frame_tokens(acts)
                 n_idle = len(tokens)
                 tokens = dr.merge(tokens, directed)
                 print(f"director: {len(acts)} actions -> {len(directed)} "
@@ -1531,15 +1538,22 @@ def main(argv=None) -> int:
     with Live2DBackend(a.model, size=a.size, strip_dynamics=False,
                        fps=a.fps) as be:
         be.calibrate()
-        if a.frame == "bust":
+        # The view: bust as asked, or whenever a [frame] marker may switch
+        # to it (flow.framing.Camera eases between the two set_view states
+        # at each marker's time).
+        cam = None
+        switch = tokens is not None and any(k["type"] == "frame"
+                                            for k in tokens)
+        if a.frame == "bust" or switch:
             try:
                 from . import framing
             except ImportError:
                 from flow import framing
-            v = framing.bust_view(be, a.body or framing.body_path_for(
-                a.rig, a.model), a.model)
-            if v:
-                be.set_view(*v)
+            cam = framing.camera_for(be, a.body or framing.body_path_for(
+                a.rig, a.model), a.model, a.frame)
+            if cam is not None and switch:
+                print(f"framing: {framing.view_tokens(tokens, cam)} camera "
+                      f"switches from {a.frame}")
         print("backend: " + ", ".join(
             f"{k}={be._api_report[k]}" for k in ("order", "timestep", "parts")
             if k in be._api_report))
@@ -1567,8 +1581,12 @@ def main(argv=None) -> int:
                 be.render(first, parts=first_parts)
 
         written = 0
+        view = cam.at(0.0) if cam is not None else None
         for f in range(n_frames):
             over, parts = frame_overrides(f)
+            if cam is not None and cam.at(f / a.fps) != view:
+                view = cam.at(f / a.fps)
+                be.set_view(*view)
             if not a.no_autonomic:
                 eye, breath = auto.step()
                 # Under --static the authored curve wins where there is one.

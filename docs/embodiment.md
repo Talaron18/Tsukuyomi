@@ -618,6 +618,8 @@ none of which touch the r1 files or the flags of a run in progress:
       hand, arm or big torso moves unless the user asks you to show or do
       something, or the moment is a big one (a greeting, a celebration), and
       then once in a reply at most.
+      (That last paragraph is replaced by the camera, budget and `[frame]`
+      lines of "Framing and motion budget" below.)
 
   The rule becomes "One to three expression beats per sentence", the "use
   your whole body" line is dropped and the placement examples are face
@@ -652,6 +654,109 @@ takes `--head-drift` (default on), `--no-head-drift` and
 `--head-drift-scale X` (they sit in the director's parser, which it
 shares); `MotionStream(head_drift=None)` is off, so the offline director,
 the dataset's trajectories and the action head's data are as before.
+
+### Framing and motion budget
+
+The r2 beats prompt first told every avatar to keep its hands "out of the
+picture". That was true of one framing and of some bodies only: lafei's
+resting hands (y -1.10 hu) are inside the bust picture, Hiyori's (-2.00)
+are not, and a streamer switches scenes (face cam, full body for a dance).
+The beats prompt (`v1` is untouched, byte for byte) now says how the avatar
+is framed, lets it switch, and sizes its motion by what its body can do.
+`flow.framing` has the numbers, `flow.pose` the wording.
+
+- **Camera line.** The bust picture is the window of `framing.ABOVE` /
+  `BELOW` (1.5 hu over the chin to 1.6 under it, as wide as it is high,
+  centred on the chin). The system prompt (byte-stable per body, so the
+  cached prefix and `avatars.json` stay as they are) says what each framing
+  shows, worded from that window against where this body's hands rest and
+  how low they reach (`pose.camera_rule`): Hiyori "your hands rest at y
+  -2.00 and -2.09, below the picture, and a hand shows only once raised
+  above y -1.60 ... in bust a hand move below y -1.60 is not seen: the face
+  carries the performance"; lafei "in the lower part of the picture ... all
+  your hand moves stay in that picture". The framing *now* is a line after
+  `(your body now: ...)` in each user turn: `(camera: bust, head and chest;
+  hands below y -1.60 are out of frame)` or `(camera: full, the whole body
+  in frame)` (`pose.camera_now`). It is in `user_content`, so history,
+  the SFT export and `evalsft` carry it for free; v1 data has no such line.
+- **`[frame bust]` / `[frame full]`.** A marker like any (`[frame:full]`
+  and quotes also parse; anything else is a warning "'frame' takes
+  bust/full; dropped", counted as an unplayed `frame`). Only a parser built
+  with `frames=True` takes it (`parser_for(..., frames=True)`, the
+  director's `--body-prompt beats`, the dataset's beats runs, the export
+  parsers): the v1 prompt and parser drop it as before. A VRM body never
+  takes it (`framing.can_frame`): the browser page draws it at one camera
+  (`vrmbody.camera`), so a VRM is always full and the prompt says so; the
+  transition is not rendered there. The prompt lists it with the markers:
+  "full before you dance or show something with your body, bust to come back
+  to your face ... eases over in about 0.6 seconds ... at most twice in a
+  reply".
+- **The ease.** A marker becomes a token `{"type": "frame", "view",
+  "duration": 0.6}` at its time in the speech (`framing.frame_tokens`).
+  `framing.Camera` holds the two `set_view` states (`bust_view` and the
+  whole canvas) and eases scale and both offsets between them with minimum
+  jerk from where the view is when the switch begins (a switch back mid-ease
+  turns around smoothly); `Camera.at(t)` is pure in t. Live:
+  `Performer.sentence` adds the tokens (stream time = the sentence's audio
+  start + the marker's place), `MotionStream` commits them to its `camera`
+  and `RenderLoop` calls `backend.set_view` before a frame whose view
+  differs; `--renderer none` uses a stand-in zoom so the markers still run
+  through the pipeline. Offline: `runtime --direct` appends the tokens to
+  the directed ones (so `--tokens-in` replays them), the render subprocess
+  builds the camera from them and sets the view per frame; the director
+  starts a turn in `a.frame` (`--frame`, bust) and the next turn in the
+  framing the last marker left. Without a body frame (no `bust_view`) the
+  render stays full and says so.
+- **State across turns.** Live: `Performer.framing`, moved by each
+  sentence's markers, shown at the next line. Offline director: `a.frame`.
+  Data: each session starts in bust with probability `--bust-share` (0.7;
+  seeded by run seed and session id alone, `framing.start_frame`, so no
+  other draw moves), the teacher's markers move it, and each record has
+  `framing: {start, end, switches}` (beats runs only).
+- **Motion budget.** `framing.budget(bm)` measures the body: the share of a
+  gesture zone (x 0.15-1.1 hu out from the midline, y from where the hands
+  hang to 0.6 hu over the head, 8 x 6 points a side) that some arm drawing
+  reaches, taking each drawing's per-variable ranges (`body.limits`) as a
+  box, so it is an upper bound; the share of those points the bust picture
+  shows; the lowest / highest hand y; the arm drawings; the face controls of
+  `pose.offered` (brow, eye, mouth, cheek, gaze); the kind. Tiers: below 35%
+  of the zone `limited`, from 80% `capable`, else `moderate`; the hand moves
+  a reply per framing follow (limited 1 / 1, moderate 1 / 2 full, capable
+  1 / 3 full; bust 0 when no reached point is in the picture). The prompt
+  line (`pose.budget_line`) is e.g. "your arms are limited (a hand reaches
+  about 14% of the places a hand goes when talking, through 2 arm drawings)
+  and you have 16 face controls offered: carry the performance with the face
+  and head, and move a hand rarely, at most 1 hand move in a reply". It is
+  stored under `budget` (with the landmarks) in each avatar of
+  `avatars.json` and printed by `dataexport stats` ("motion budget").
+  Measured: Hiyori limited (14%, 38% of it in bust, 2 drawings, 16 face
+  controls of 27), lafei limited (23%, 1 drawing, 10 of 20), Natori moderate
+  (72%, 12 drawings, 15 of 28), seed-san capable (100%, 11 of 24); the same
+  numbers for the other VRM samples. `python -c "from flow import framing,
+  body; print(framing.budget(body.load('rigs/Hiyori.body.json')))"` checks
+  one.
+- **Manners for beats data.** The teacher now chooses its moments for a
+  hand (a greeting, a celebration, a size, pointing, an emphasis), so for a
+  dataset written with the beats prompt manners no longer strips unasked
+  hand targets. `--max-hands N` (default 1 there; `-1` and other data: strip
+  as before, same export and data hash as r1) keeps hand and arm targets and
+  caps the markers that move a hand (a pose with a hand target, a `[move]`
+  other than the head ones, a `[gesture]`) at N a reply where nothing was
+  asked, the first ones; the later ones lose their hand targets or go.
+  Shoulders and a big torso move still go. In bust (the record's start
+  framing, followed along the reply by its `[frame]` markers) hand targets
+  that would end out of the picture are stripped, asked or not: where the
+  hand ends up (the marker's x and y, or the resting position for the one
+  it leaves out; `@` references resolved with the avatar's landmarks)
+  against the window. `frame` markers are kept, and a reply with only a
+  frame marker still counts as having no body marker. The trainer takes
+  `--max-hands` too.
+- **Stats.** `dataexport stats` adds, for records with a framing, per avatar
+  and per framing a turn starts in: turns, beats per sentence, face and hand
+  share of targets, hand-moving poses and `[frame]` markers per reply, the
+  switches (`framing` in the json); and the budget of each avatar (`budget`).
+  `evalsft` counts `frame` markers per turn in its own column and leaves them
+  out of the body markers.
 
 ### Action head ablations on BEAT2 (2026-10)
 
