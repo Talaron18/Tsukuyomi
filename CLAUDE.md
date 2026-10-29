@@ -10,3 +10,11 @@
   NO_PROXY must list 127.0.0.1,localhost.
 - The two machines can't ssh to each other; move files with scp from
   PowerShell or through git.
+
+## Avatars and rights
+- 八千代辉夜姬 (fan-made, watermarked) and the Azur Lane rigs
+  (huangjiafangzhou_3 etc.): train and test only; never stream with them,
+  never commit their model files. Mao and the other Cubism samples are
+  under Live2D's free material licence.
+- r2 avatars planned: Hiyori, lafei (limited), Mao, huangjiafangzhou_3
+  (capable), 八千代辉夜姬 (face-first, no arm controls), seed-san (VRM).
