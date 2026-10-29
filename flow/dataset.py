@@ -376,9 +376,17 @@ def avatar_spec(item, models=("live2d-models", "CubismWebSamples"),
     kv = dict(p.split("=", 1) for p in rest.split(",") if "=" in p)
     body = kv.get("body") or os.path.join(rigs, f"{name}.body.json")
     if not os.path.exists(body):
-        raise SystemExit(f"avatar {name}: no body file {body}")
-    with open(body, encoding="utf-8") as fh:
-        kind = json.load(fh).get("kind", "live2d")
+        raise SystemExit(
+            f"avatar {name}: no body file {body} (it is not in the repo; "
+            f"copy it from the machine that has it, or build it: python -m "
+            f"flow.body --model-json <{name}.model3.json> --rig "
+            f"rigs/{name}.npz --measure, or pass {name}:body=PATH)")
+    try:
+        with open(body, encoding="utf-8") as fh:
+            kind = json.load(fh).get("kind", "live2d")
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"avatar {name}: cannot read body file {body}: "
+                         f"{exc}")
     spec = {"name": name, "body": body, "kind": kind}
     if kind == "vrm":
         spec["vrm"] = kv.get("vrm")

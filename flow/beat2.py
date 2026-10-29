@@ -200,7 +200,8 @@ VRM_KNUCKLE = {"thumb": ("Metacarpal", "Proximal", "Distal")}
 VRM_KNUCKLE_DEFAULT = ("Proximal", "Intermediate", "Distal")
 FINGER_V0 = {"ThumbMetacarpal": "ThumbProximal",
              "ThumbProximal": "ThumbIntermediate"}
-NAN_PREFIX = ("gaze.", "eye.", "brow.", "mouth.", "cheek.", "viseme.")
+NAN_PREFIX = ("gaze.", "eye.", "brow.", "mouth.", "cheek.", "tongue.",
+              "viseme.")
 PROSODY_COLS = ("rms", "f0", "voiced")
 SILENCE = {"", "sp", "sil", "spn", "sp1", "<unk>", "<eps>", "<sil>", "<sp>",
            "{sl}", "{ls}", "{lg}", "{ns}", "noise", "[silence]", "pau"}

@@ -858,6 +858,91 @@ is framed, lets it switch, and sizes its motion by what its body can do.
   json `away`, `returns`, `turns_away`, `timed_beats`, `speech_seconds`).
   The pilot's problem reads as many `away` and no `returns`.
 
+### Reply language, new rigs, face vocabulary, r2 avatars (2026-10)
+
+**Reply language.** A pilot had about 7% of teacher replies in another
+language than the user's latest line (whole stretches of a session, after
+the simulated user switched: `switch` / `mix` in `datagen.personas.json`);
+the trained students did the same on about 11% of eval turns
+(`flow.dataset.detect_lang`, mixed lines included). `scripts/lang_check.py`
+lists them.
+
+- *Prompt.* The beats prompt's rules gain (`pose.LANG_RULE`): "Answer in the
+  language of the user's latest message, even if your earlier replies used
+  another language. When the user mixes languages, answer in their main
+  language (a mixed-in word or two may be mirrored)." It reaches the
+  dataset teacher and the director / live character served with
+  `--body-prompt beats`. `v1` and the director's tag prompt are untouched.
+- *Export.* `dataexport stats` / `sft` and the trainer drop a turn whose
+  reply language (`lang.reply`) differs from its user line's (`lang.user`),
+  unless the record's `lang.mix` is set or either language was not
+  detected. It is a hard flag (`language`) like the others: a session
+  export is cut before the first one (the replies after it would carry the
+  wrong language as history), a `--per turn` export leaves out the turns
+  that would show it in their history. Stats and the sft command print
+  "language: N turns dropped, by pair: en->ja 3, ...". `--lang-filter` /
+  `--no-lang-filter` (also on `flow.train.sft`) force it; default: on for a
+  dataset written with the beats prompt, off otherwise, so the r1 export
+  and its data hash do not change.
+
+**Rigs with no visible arm drawing / no chest.** `flow.body` measured every
+arm variant by its visible drawables; a variant with none at rest (Lisette)
+raised "need at least one array to concatenate". It is now skipped with a
+logged caveat (`caveat: variant NAME has no visible drawable at rest`), the
+rest are measured, and the file lists them under `skipped_variants`.
+`flow.framing.hand_reach` read `landmarks["chest"]` even when a hand rests
+somewhere (huonululu_5 has no chest landmark): it now goes through
+`framing.chest_y`, which falls back to 0.4 hu under `shoulder.y` (else under
+the default shoulder line, -0.25) and logs it once.
+
+**Face-tracking rigs.** A VTube-Studio-style rig (八千代辉夜姬) offers 18
+face controls, of which the body builder mapped 8. `body.DECLARED` gains,
+read from the standard ids (underscores and case ignored, `body.ALIASES`
+for the other spellings; sided ones follow the rig's side naming):
+
+| variable | id | range | meaning |
+|---|---|---|---|
+| `eye.L.squint`, `eye.R.squint` | ParamEyeLSquint / RSquint | 0..1 | + squints |
+| `cheek.puff` | ParamCheekPuff | 0..1 | + puffs the cheek |
+| `mouth.pucker` | ParamMouthPuckerWiden | -1..1 | - purses the lips, + widens (as `mouth.form`: + is the smile side) |
+| `mouth.funnel` | ParamMouthFunnel | 0..1 | + rounds the lips into an O |
+| `tongue.out` | ParamTongueOut | 0..1 | + tongue out |
+| `eye.tears` | ParamTear (ParamTears, ParamTearDown_1) | 0..1 | + tears |
+
+`eye.tears` has the first of the rig's three `ParamTearDown_n` levels. They
+are in `body.EXTENDED`: offered (`pose.offered`) and worded in the beats
+prompt ("small tricks of the face", a squint for doubt) only for a body that
+has them, and left out of the "does not exist on this body" line, so the
+prompts of Hiyori, lafei, Natori and seed-san stay byte for byte (digests
+pinned in `tests/test_facevocab.py`). They count as face for the beats
+(`tongue.` joins `eye.`, `mouth.`, `cheek.` in the face prefixes of
+`dataexport`, `framing`, `beat2`, and in the micro layer's smile group, so a
+model beat on them keeps a micro smile away) and for the motion budget.
+Also read from the ARKit-style names (EyeSquintLeft / Right, CheekPuff,
+MouthFunnel, TongueOut, with or without `Param`). ARKit's MouthPucker is
+not mapped to `mouth.pucker` (its sign is the other way round). Not mapped
+(no canonical meaning yet): ParamMouthShrug, ParamMouthPressLipOpen,
+ParamEyeSmile_Happy_*, ParamTearDown_2/3, ParamExpression_*. A body file
+built before this change does not have them: rebuild it.
+
+**r2 avatars** (Hiyori, lafei, Mao, huangjiafangzhou_3, 八千代辉夜姬,
+seed-san). The default `--avatars` stays `Hiyori,seed-san,lafei`. The body
+files of Mao, huangjiafangzhou_3 and 八千代辉夜姬 are only on the CPU
+server: copy `rigs/NAME.body.json` (and the rig `.npz`) to the machine that
+generates, or the run stops at the start with "avatar NAME: no body file
+...". Rebuild 八千代辉夜姬's body for the new variables:
+
+    python -m flow.body --model-json M --rig rigs/NAME.npz --measure
+
+then
+
+    python -m flow.dataset gen --avatars Hiyori,lafei,Mao,huangjiafangzhou_3,八千代辉夜姬,seed-san \
+        --teacher-prompt beats --out data/datagen/r2 ...
+
+(NAME entries take `NAME:model=PATH,rig=PATH,body=PATH` where the defaults
+do not find them.) 八千代辉夜姬 and the Azur Lane rigs are for training and
+tests only, never streamed.
+
 ### Action head ablations on BEAT2 (2026-10)
 
 The first BEAT2 run (text only, 54 h, 27.6k segments) came out at normalised

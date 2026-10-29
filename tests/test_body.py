@@ -665,3 +665,35 @@ def test_azur_lane_v1_files(rig, drawables, params):
     res = bm.solve({"hand.R.y": "@shoulder.y"})
     assert res["report"]["hand.R.y"]["ok"]
     assert not any(bm.params[p]["role"] == "effect" for p in res["params"])
+
+
+class HideCore(GloveCore):
+    """GloveCore whose ParamGloveShow hides the whole model: the variant
+    that sets it has no visible drawable at rest (Lisette's arm variant)."""
+
+    def opacities(self):
+        op = super().opacities()
+        return op * 0.0 if self._glove else op
+
+
+def test_variant_with_nothing_visible_is_skipped():
+    info = _info()
+    info["pose_groups"] = []
+    info["param_names"]["ParamGloveShow"] = "手袋 表示"
+    n = 20
+    on, off = np.ones(n), np.zeros(n)
+    info["motion_frames"] = [
+        {("Meta", "name"): "idle.motion3.json",
+         ("PartOpacity", "PartArmA"): on, ("PartOpacity", "PartArmB"): off},
+        {("Meta", "name"): "wave.motion3.json",
+         ("PartOpacity", "PartArmA"): off, ("PartOpacity", "PartArmB"): on,
+         ("Parameter", "ParamGloveShow"): on},
+    ]
+    lines = []
+    blob = body.measure(HideCore(), info, log=lines.append)
+    assert blob["variants"] and blob["skipped_variants"]
+    assert all(v["switches"].get("ParamGloveShow") != 1.0
+               for v in blob["variants"])
+    assert any("caveat" in x and "no visible drawable" in x for x in lines)
+    assert blob["landmarks"]["head"]
+

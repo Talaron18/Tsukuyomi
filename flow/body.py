@@ -178,10 +178,42 @@ DECLARED = (
     ("mouth.open", "unit", "ParamMouthOpenY", None),
     ("mouth.form", "unit", "ParamMouthForm", None),
     ("cheek.blush", "unit", "ParamCheek", None),
+    # The face-tracking rigs' extras (EXTENDED): a body without them does
+    # not offer them and its prompt does not mention them.
+    ("eye.L.squint", "unit", "ParamEyeLSquint", None),
+    ("eye.R.squint", "unit", "ParamEyeRSquint", None),
+    ("cheek.puff", "unit", "ParamCheekPuff", None),
+    ("mouth.pucker", "unit", "ParamMouthPuckerWiden", None),
+    ("mouth.funnel", "unit", "ParamMouthFunnel", None),
+    ("tongue.out", "unit", "ParamTongueOut", None),
+    ("eye.tears", "unit", "ParamTear", None),
     ("shoulders.up", "unit", "ParamShoulder", None),
     ("shoulder.L.up", "unit", "ParamLeftShoulderUp", None),
     ("shoulder.R.up", "unit", "ParamRightShoulderUp", None),
 )
+
+# Declared variables only the face-tracking rigs (VTube Studio's ARKit-like
+# ids) have. pose.py leaves them out of "what does not exist on this body",
+# so the prompts of the other avatars stay as they were.
+EXTENDED = ("eye.L.squint", "eye.R.squint", "cheek.puff", "mouth.pucker",
+            "mouth.funnel", "tongue.out", "eye.tears")
+# Other ids a variable is read from when its standard id is not in the rig
+# (tried in order, underscores and case ignored; sided ones are mirrored
+# with the rest for a rig that names parameters by screen side).
+# eye.tears has three levels in the face-tracking rigs (ParamTearDown_1..3);
+# the first is the one declared.
+ALIASES = {
+    "eye.L.squint": ("ParamEyeSquintL", "ParamEyeSquintLeft",
+                     "EyeSquintLeft"),
+    "eye.R.squint": ("ParamEyeSquintR", "ParamEyeSquintRight",
+                     "EyeSquintRight"),
+    "cheek.puff": ("ParamPuffCheek", "CheekPuff"),
+    "mouth.funnel": ("MouthFunnel",),
+    "tongue.out": ("ParamTongue", "TongueOut"),
+    "eye.tears": ("ParamTears", "ParamTearDown_1"),
+}
+# ARKit's MouthPucker (0..1, + puckers) is not an alias of mouth.pucker (-1
+# pucker .. +1 widen): the sign is the other way round.
 
 # Which way + goes for a declared variable, and the measured proxy that
 # checks the rig agrees: (proxy feature of the head, sign the proxy must take
@@ -1017,10 +1049,14 @@ def measure(core, info: dict, log=print) -> dict:
     by_canon = {re.sub(r"[_\s]", "", p.lower()): p for p in pids}
     sided_decl = {}
     for name, unit_, sid, deg in DECLARED:
+        cands = [sid, *ALIASES.get(name, ())]
         if re.search(r"\.[LR]\.", name) and naming["params"] == "screen":
             # The character's left eye is the rig's ParamEyeROpen.
-            sided_decl[name] = sid = mirror_id(sid)
-        p = by_canon.get(sid.lower())
+            cands = [mirror_id(c) for c in cands]
+            sided_decl[name] = cands[0]
+        p = next((by_canon[k] for k in (re.sub(r"[_\s]", "", c.lower())
+                                       for c in cands) if k in by_canon),
+                 None)
         if p is None:
             continue
         i = pids.index(p)
@@ -1184,6 +1220,7 @@ def measure(core, info: dict, log=print) -> dict:
     solve_pids = [p for p in pids if roles[p]["role"] in
                   ("solvable", "physics")]
     out_variants = []
+    skipped = []
     for var in variants:
         Vr, Or = geom(var["switches"], var["parts"])
         vis = Or > 0.5
@@ -1191,8 +1228,16 @@ def measure(core, info: dict, log=print) -> dict:
         base = dict(var["switches"])
         F0 = features(Vr, Vr, regidx, base)
         present = ~np.isnan(F0)
-        visverts = np.concatenate([np.arange(off[d], off[d + 1])
-                                   for d in range(n_d) if vis[d]])
+        vis_ids = [np.arange(off[d], off[d + 1])
+                   for d in range(n_d) if vis[d]]
+        if not vis_ids:
+            # An arm drawing that shows nothing at rest (Lisette's): there
+            # is nothing to measure, and a solve could only park it.
+            log(f"  caveat: variant {var['name']} has no visible drawable "
+                f"at rest; skipped, the other variants are measured")
+            skipped.append(var["name"])
+            continue
+        visverts = np.concatenate(vis_ids)
         sweeps = {}
         moves = {}
         for p in solve_pids:
@@ -1255,7 +1300,10 @@ def measure(core, info: dict, log=print) -> dict:
             f"{len(pairs)} interaction pairs")
 
     # Landmarks at the first variant's rest.
-    V0v, O0v = geom(variants[0]["switches"], variants[0]["parts"])
+    if not out_variants:
+        raise ValueError("body: no arm variant has a visible drawable at "
+                         "rest, nothing to measure")
+    V0v, O0v = geom(out_variants[0]["switches"], out_variants[0]["parts"])
     vis = O0v > 0.5
 
     def lm(idx):
@@ -1332,6 +1380,7 @@ def measure(core, info: dict, log=print) -> dict:
                           if eff_draw[d]]},
         "features": feats,
         "variants": out_variants,
+        **({"skipped_variants": skipped} if skipped else {}),
     }
 
 

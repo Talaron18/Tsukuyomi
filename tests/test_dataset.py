@@ -286,6 +286,15 @@ def test_live2d_without_model_fails_unless_lite(tmp_path):
     assert ds.avatar_spec("seed-san")["kind"] == "vrm"
 
 
+def test_missing_body_file_is_a_clear_error(tmp_path):
+    with pytest.raises(SystemExit, match=r"no body file .*flow\.body.*--measure"):
+        ds.avatar_spec("Mao", rigs=str(tmp_path))
+    bad = tmp_path / "bad.body.json"
+    bad.write_text("{not json")
+    with pytest.raises(SystemExit, match="cannot read body file"):
+        ds.avatar_spec(f"Mao:body={bad}")
+
+
 # ------------------------------------------------------------ resume etc.
 
 def test_resume_after_interruption(tmp_path):

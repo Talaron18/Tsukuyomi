@@ -41,6 +41,18 @@ Quality filters, stats and exporters for flow.dataset's turn records.
   dedupe     user lines normalised (case, punctuation, spaces) and compared
              by character-trigram Jaccard (>= --dup-jaccard) within an
              avatar x persona; the first one is kept.
+  language   --lang-filter / --no-lang-filter [default: on for a dataset
+             written with the beats teacher prompt, whose prompt asks for the
+             user's language; off otherwise, so r1 exports are as before]:
+             a turn whose reply language (record lang.reply, detect_lang of
+             the spoken text) differs from its user line's (lang.user) is
+             dropped (hard flag "language"), unless the line mixes a
+             language in (lang.mix) or either side was not detected. It is
+             a drop like any other: a session export is cut before the
+             first one (the replies after a wrong-language reply would carry
+             it as history), a --per turn export leaves out the turns that
+             would show it in their history. `stats` and `sft` count them
+             ("language: N turns dropped, by pair": user->reply).
   manners    --manners (default on for sft and stats; --no-manners for the
              output of before; --max-poses N, default 2): the teacher writes
              about 2.3 pose markers a reply and a third of them move a hand,
@@ -154,7 +166,7 @@ except ImportError:
     from flow import pose as pz
 
 HARD = ("refused", "empty", "cutoff", "parse", "no_body", "miss", "dup",
-        "lite")
+        "lite", "language")
 SOFT = ("no_pose", "unplayed", "planned", "usage_estimated", "miss_fixed")
 # Soft flags that still keep a turn out of the SFT exports: a marker the
 # parser threw away (an invented [fPose ...]) would be learned; the turn's
@@ -255,6 +267,19 @@ def flag(r, max_miss=MAX_MISS) -> list[str]:
     return f
 
 
+def wrong_language(r) -> str | None:
+    """"user->reply" (the detected languages, flow.dataset.detect_lang)
+    when the reply is not in the language of the user's line, else None.
+    Not for a line with a language mixed in (lang.mix), nor when either
+    side is undetected (a line of digits or emoji), nor a record from
+    before the lang field."""
+    lang = r.get("lang") or {}
+    u, a = lang.get("user"), lang.get("reply")
+    if lang.get("mix") or not u or not a or u == a:
+        return None
+    return f"{u}->{a}"
+
+
 def hard_flags(f, keep_lite=False) -> list[str]:
     """The flags that drop a turn: HARD ones, a miss its corrections
     cleared (miss_fixed) and lite when kept aside."""
@@ -263,11 +288,13 @@ def hard_flags(f, keep_lite=False) -> list[str]:
 
 
 def annotate(records, max_miss=MAX_MISS, dup=DUP_JACCARD, keep_lite=False,
-             fix=None):
+             fix=None, lang_filter=False):
     """{id: (flags, kept)} for every record. `fix`: correct_misses' first
     result; a turn flagged miss whose remaining misses (those not
     corrected) are within max_miss gets the soft flag miss_fixed and is
-    kept on that count ("miss" stays in its flags)."""
+    kept on that count ("miss" stays in its flags). `lang_filter`: a turn
+    whose reply is in another language than the user's line (and the line
+    mixes none, wrong_language) gets the hard flag language."""
     dups = dedupe(records, dup)
     out = {}
     for r in records:
@@ -279,6 +306,8 @@ def annotate(records, max_miss=MAX_MISS, dup=DUP_JACCARD, keep_lite=False,
                 f.append("miss_fixed")
         if r["id"] in dups:
             f.append("dup")
+        if lang_filter and wrong_language(r):
+            f.append("language")
         out[r["id"]] = (f, not hard_flags(f, keep_lite))
     return out
 
@@ -304,6 +333,8 @@ def stats(records, notes, prices=None, counts=None, mcounts=None,
         c["lang_reply"][(r.get("lang") or {}).get("reply")] += 1
         for x in f:
             c["flags"][x] += 1
+        if "language" in f:
+            c["lang_dropped"][wrong_language(r)] += 1
         for m in r.get("markers") or ():
             c["markers"][m["tag"]] += 1
             if m.get("played") is not True and m["tag"] != "pause":
@@ -366,6 +397,10 @@ def stats_text(s) -> str:
         v = s["by"].get(k)
         if v:
             out.append(f"{k}: " + ", ".join(f"{a} {n}" for a, n in v.items()))
+    v = s["by"].get("lang_dropped")
+    if v:
+        out.append(f"language: {sum(v.values())} turns dropped, by pair: "
+                   + ", ".join(f"{a} {n}" for a, n in v.items()))
     r = s["reach"]
     if r["targets"]:
         out.append(f"reach: {r['ok']}/{r['targets']} targets ({r['rate']:.1%}), "
@@ -636,7 +671,8 @@ _NOT = [re.compile(p, re.I) for p in ASK_NOT]
 # "hands": "@together") is a body gesture and goes. TORSO_SMALL: the largest
 # |value| (degrees) of torso.yaw / pitch / tilt kept; torso.forward and an
 # "@anchor" torso value go.
-KEEP_PREFIX = ("head.", "gaze.", "brow.", "eye.", "mouth.", "cheek.")
+KEEP_PREFIX = ("head.", "gaze.", "brow.", "eye.", "mouth.", "cheek.",
+               "tongue.")
 TORSO_SMALL = 6.0
 # Moves whose figure is the head alone (flow.moves PRIMS kind "head"; the
 # aliases nod, nod_along, bop, look resolve to them). The others sway, bounce,
@@ -653,7 +689,7 @@ MAX_POSES = 2
 # in 4 sentences, about 0.8 a second; a long reply of 5-6 sentences written
 # the same way reaches 14, so 16 keeps its density instead of cutting the
 # tail; was 12, 9 before).
-FACE_PREFIX = ("brow.", "eye.", "mouth.", "cheek.", "gaze.")
+FACE_PREFIX = ("brow.", "eye.", "mouth.", "cheek.", "gaze.", "tongue.")
 BEATS_MAX = 16
 BEATS_MARK = "expression beats"      # in the prompt text of that version
 _SPEC = ("dur", "duration", "hold")
@@ -1314,6 +1350,13 @@ def default_max_beats(root) -> int:
                             for t in prompts.values()) else 0
 
 
+def default_lang_filter(root) -> bool:
+    """--lang-filter when not given: on for a dataset written with the
+    beats teacher prompt (its prompt tells the character to answer in the
+    user's language), off for the data of before (r1 exports unchanged)."""
+    return bool(default_max_beats(root))
+
+
 def parse_weights(specs, avatars=None) -> dict:
     """{avatar: n} from --avatar-weight values ("lafei=2" or
     "lafei=2,Hiyori=3"); an avatar the data lacks (a typo) or a weight
@@ -1430,6 +1473,11 @@ def sft_examples(root, records, notes, per="session", meta=False, fix=None,
             # else by the reply text.
             prev = [x for x in recs if x["turn"] < r["turn"]
                     and not x.get("refused")]
+            # A reply in the wrong language never stands as history either
+            # (the student would learn to keep the earlier language): the
+            # turns after it are left out, as session mode cuts there.
+            if any("language" in notes[x["id"]][0] for x in prev):
+                continue
             tied = len(prev) == len(hist) and all(
                 x["reply_raw"] == h["reply"] for x, h in zip(prev, hist))
             for i, h in enumerate(hist):
@@ -1527,6 +1575,14 @@ def main(argv=None) -> int:
                                 "on top of --max-poses; 0: they count as "
                                 f"poses [{BEATS_MAX} for a dataset written "
                                 "with the beats teacher prompt, else 0]")
+            p.add_argument("--lang-filter", default=None,
+                           action=argparse.BooleanOptionalAction,
+                           help="drop turns whose reply is in another "
+                                "language than the user's line (unless a "
+                                "language is mixed in); a session export "
+                                "is cut before the first one [on for a "
+                                "dataset written with the beats teacher "
+                                "prompt, else off]")
             p.add_argument("--max-hands", type=int, default=None,
                            metavar="N",
                            help="manners: markers that move a hand kept per "
@@ -1560,7 +1616,9 @@ def main(argv=None) -> int:
         return 1
     fix, counts = (correct_misses(recs) if a.cmd != "action"
                    and a.correct_misses else ({}, None))
-    notes = annotate(recs, a.max_miss, a.dup_jaccard, a.keep_lite, fix)
+    lf = (a.cmd != "action" and (default_lang_filter(a.root)
+                                 if a.lang_filter is None else a.lang_filter))
+    notes = annotate(recs, a.max_miss, a.dup_jaccard, a.keep_lite, fix, lf)
     mfix, mcounts = ({}, None)
     kept = {i for i, (_, k) in notes.items() if k}
     if a.cmd != "action" and a.manners:
@@ -1594,6 +1652,12 @@ def main(argv=None) -> int:
         n = write_jsonl(a.out, sft_examples(a.root, recs, notes, a.per,
                                             a.meta, {**fix, **mfix}, w))
         print(f"{n} examples -> {a.out}")
+        dropped = Counter(wrong_language(r) for r in recs
+                          if "language" in notes[r["id"]][0])
+        if dropped:
+            print(f"language: {sum(dropped.values())} turns dropped, by "
+                  "pair: " + ", ".join(f"{k} {v}" for k, v in
+                                       dropped.most_common()))
         if counts:
             print(correction_line(counts))
         if mcounts:
