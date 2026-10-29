@@ -1,0 +1,1 @@
+[pose {"hand.R.y": -0.6, "hand.R.x": -0.9, "dur": 0.4, "hold": 0.5}] Hi! [pose {"hand.R.y": -0.9, "hand.R.x": -1.05, "dur": 0.4, "hold": 0.5}] Wave! There, how's that?

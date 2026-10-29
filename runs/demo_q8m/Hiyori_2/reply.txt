@@ -1,0 +1,1 @@
+[pose {"hand.L.y": "@shoulder.y", "hand.L.x": 0.6, "head.yaw": 10, "dur": 0.4}] There you go, that's me! [pose {"hand.L.x": 0.4, "hand.R.x": -0.5, "torso.pitch": -4, "dur": 0.4, "hold": 1.5}] Arms crossed, like this.

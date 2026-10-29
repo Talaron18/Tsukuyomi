@@ -1,0 +1,8 @@
+1
+00:00:00,103 --> 00:00:01,448
+Hmm, over there?
+
+2
+00:00:02,391 --> 00:00:05,068
+There you are, smiling back at me!
+

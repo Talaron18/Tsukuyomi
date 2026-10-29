@@ -1,0 +1,1 @@
+[pose {"hand.R.y": -0.15, "hand.R.x": -0.75, "head.yaw": 15, "dur": 0.4, "hold": 0.6}] There I am! [pose {"hand.L.x": 0.72, "hand.L.y": -0.95, "hand.R.x": -0.83, "hand.R.y": -0.55, "torso.yaw": 6, "dur": 0.5, "hold": 1.5}] Arms crossed, just like you asked.

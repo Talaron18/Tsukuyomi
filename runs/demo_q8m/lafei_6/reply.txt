@@ -1,0 +1,1 @@
+[pose {"gaze.x": 0.6, "head.yaw": 15, "dur": 0.4, "hold": 0.6}] Hmm, over there? [pose {"gaze.x": 0, "head.yaw": 0, "mouth.form": 0.9, "cheek.blush": 0.5, "dur": 0.4, "hold": 0}] There you are, smiling back at me!
