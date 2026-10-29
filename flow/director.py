@@ -1657,9 +1657,9 @@ def add_args(ap):
     ap.add_argument("--frame", default="bust", choices=("bust", "full"),
                     help="Live2D renders: bust = head and chest (flow."
                          "framing), full = the whole canvas [bust]; the "
-                         "framing at the start, a [frame] marker of the "
-                         "beats prompt switches it (and the next turn "
-                         "starts where it ended)")
+                         "home framing, every turn starts in it; a [frame] "
+                         "marker of the beats prompt switches it until the "
+                         "end of that reply")
     ap.add_argument("--gestures", default=None, metavar="FILE.json",
                     help="per-rig gesture descriptions: a JSON object label "
                          "-> text, or label -> {\"desc\": text, \"hide\": "
@@ -2089,6 +2089,7 @@ def main(argv=None) -> int:
     tts = make_voice(a)
     messages = []
 
+    home_frame = a.frame
     body = run if run.get("mode") == "body" else None
     if body is not None:
         try:
@@ -2123,9 +2124,9 @@ def main(argv=None) -> int:
         if body is not None:
             messages[-1] = pz.text_only(messages[-1])
             if a.body_prompt == "beats" and not reply["refused"]:
-                # The next turn starts, and is shown, in the framing this
-                # one ended in.
-                a.frame = pz.fr.last_frame(reply["tags"], a.frame)
+                # A switch lasts for its reply: the next turn starts, and is
+                # shown, back in the home framing (--frame).
+                a.frame = home_frame
         if res is None:
             messages.pop()            # a refused turn is not history
             return 3

@@ -574,10 +574,13 @@ class Performer:
         # The framing now (flow.framing), shown to a beats-prompt model with
         # each line and moved by its [frame] markers; None: not shown (v1
         # prompt). A body whose framing cannot switch (a VRM) stays full.
-        self.framing = None
+        # `home` (--frame) is the framing every turn starts in: a switch
+        # lasts until the end of its reply, then the camera eases back.
+        self.framing = self.home = None
         if self.body is not None and getattr(a, "body_prompt", "v1") == "beats":
             self.framing = (getattr(a, "frame", "full")
                             if fr.can_frame(self.body["body"]) else "full")
+            self.home = self.framing
         # --avatar both: the VRM follows every sentence (VRMFollower).
         self.followers = []
 
@@ -659,6 +662,14 @@ class Performer:
                 lat.append(res)
         th.join()
         reply = "".join(raw)
+        if self.framing is not None and self.framing != self.home:
+            # The switch lasts for this reply: back to home at the end of
+            # its speech, so the next turn starts, and is shown, there.
+            t_back = max(self.next_frame / self.fps, self.clock.now())
+            self.stream.direct([fr.frame_token(self.home, t_back)])
+            self.emit(f"live: turn {n} camera -> {self.home} at "
+                      f"{t_back:.2f}s (home)")
+            self.framing = self.home
         if self.body is not None:
             self.messages[-1] = pz.text_only(self.messages[-1])
         if info["error"] is not None:
@@ -1284,7 +1295,7 @@ def main(argv=None) -> int:
                 be, framing.body_path_for(a.rig, a.model_json), a.model_json,
                 getattr(a, "frame", "full"))
             if stream.camera is None and perf.framing is not None:
-                perf.framing = "full"        # no bust view: stays full
+                perf.framing = perf.home = "full"   # no bust view
         print("backend: " + ", ".join(
             f"{k}={be._api_report[k]}" for k in ("order", "timestep", "parts")
             if k in be._api_report))

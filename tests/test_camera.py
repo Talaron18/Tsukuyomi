@@ -103,6 +103,10 @@ def test_camera_line_is_worded_from_the_window_and_the_hands():
     assert "1.5 hu above your chin to 1.6 hu below" in hiyori
     assert "rest at y -2.00 and -2.09, below the picture" in hiyori
     assert "above y -1.60" in hiyori and "not seen" in hiyori
+    assert "skip it and let the face carry the moment" in hiyori
+    assert "instead of switching to full" in hiyori
+    assert "a switch lasts for this reply, and the next one starts back in " \
+        "your home" in hiyori
     assert "In full your whole body is in the picture" in hiyori
     lafei = pz.camera_rule(_bm("lafei"))
     # lafei's hands rest at -1.10 / -1.15: inside the picture, not hidden.
@@ -110,6 +114,33 @@ def test_camera_line_is_worded_from_the_window_and_the_hands():
     assert "not seen" not in lafei and "All your hand moves stay" in lafei
     seed = pz.camera_rule(_bm("seed-san"))
     assert "filmed full" in seed and "bust (head" not in seed
+
+
+def test_beats_rule_asks_for_a_beat_in_every_sentence_and_variety():
+    sp = pz.system_prompt(_bm("Hiyori"), "X.", prompt="beats")
+    assert "every sentence gets at least one expression beat" in sp
+    assert "two or three" in sp and "every 1.5 to 2 seconds" in sp
+    assert "Vary them, not the same smile each time" in sp
+    assert "Make expression beats in every sentence: at least one" in sp
+    assert "One to three" not in sp
+    assert dx.BEATS_MARK in sp
+    assert "A beat is a quick change of" in sp       # the definition
+    # The budget line keeps a hand move from being a reason to go full.
+    assert "never for a single hand move" in pz.budget_line(_bm("Hiyori"))
+    assert "never for a single hand move" not in pz.budget_line(
+        _bm("seed-san"))
+    # r1's prompt is untouched.
+    assert "every sentence gets" not in pz.system_prompt(_bm("Hiyori"), "X.")
+
+
+def test_beats_cap_does_not_bind_for_a_short_reply_of_two_beats_each():
+    assert dx.BEATS_MAX == 12
+    four = " ".join(
+        '[pose {"mouth.form": 0.4, "head.tilt": 3}] Yes. '
+        '[pose {"brow.L.lift": 0.4, "brow.R.lift": 0.4}] Really?'
+        for _ in range(4))
+    res = dx.manners_reply(four, False, max_poses=2, max_beats=dx.BEATS_MAX)
+    assert res["reply"].count("[pose") == 8
 
 
 def test_user_turn_camera_line_follows_the_framing():
@@ -126,6 +157,11 @@ def test_user_turn_camera_line_follows_the_framing():
 def test_beats_prompt_carries_the_marker_entry_and_the_lines():
     sp = pz.system_prompt(_bm("Hiyori"), "X.", prompt="beats")
     assert "[frame bust] or [frame full]" in sp and "0.6 seconds" in sp
+    # A switch lasts for the reply and is rarer: a whole-body moment only.
+    assert "At most once in a reply" in sp and "at most twice" not in sp
+    assert "whole-body moment" in sp and "not for a greeting wave" in sp
+    assert "lasts until the end of this reply" in sp
+    assert "starts back in your home" in sp
     assert "- Camera: " in sp and "- Motion budget: " in sp
     assert dx.BEATS_MARK in sp
     vrm = pz.system_prompt(_bm("seed-san"), "X.", prompt="beats")
@@ -298,14 +334,33 @@ def test_live_performer_switches_the_camera_and_shows_the_framing(tmp_path):
     assert toks[0]["t"] < toks[1]["t"] and toks[0]["duration"] == fr.VIEW_EASE
     assert p.framing == "bust"                    # it switched back
     assert any("camera -> full" in s for s in logs)
-    # A turn that ends in full shows full to the next one.
+    # A turn that ends away from home goes back to it, and shows home to
+    # the next turn.
+    sent = []                     # the frame tokens as they are directed
+    direct = stream.direct
+    stream.direct = lambda toks: (
+        sent.extend(k for k in toks if k["type"] == "frame"), direct(toks))[1]
     p2 = lv.Performer(a, run, rig, stream, FakeClock(2.0), lv.Hub(clock),
                       dr.TextBackend("One. [frame full] Two."),
                       SpeakingTTS(clock), log=lambda s: None)
     p2.turn("hi")
     p2.messages.append({"role": "assistant", "content": "x"})
     p2.turn("again")
-    assert "(camera: full" in p2.messages[-2]["content"]
+    assert "(camera: bust" in p2.messages[-2]["content"]
+    assert p2.framing == "bust"
+    assert [k["view"] for k in sent] == ["full", "bust", "full", "bust"]
+    assert sent[2]["t"] < sent[3]["t"]            # the return, after the speech
+    # Full as home: a switch to bust returns to full.
+    a.frame = "full"
+    p4 = lv.Performer(a, run, rig, stream, FakeClock(2.0), lv.Hub(clock),
+                      dr.TextBackend("One. [frame bust] Two."),
+                      SpeakingTTS(clock), log=lambda s: None)
+    assert p4.framing == p4.home == "full"
+    p4.turn("hi")
+    assert p4.framing == "full"
+    assert [k["view"] for k in sent[4:]] == ["bust", "full"]
+    stream.direct = direct
+    a.frame = "bust"
     # Not the beats prompt: no line, no framing.
     a.body_prompt = "v1"
     p3 = lv.Performer(a, run, rig, stream, FakeClock(2.0), lv.Hub(clock),
@@ -362,14 +417,14 @@ def test_dataset_carries_the_framing_across_turns(tmp_path):
     assert hi
     for r in hi:
         if r["turn"] == 1:           # bust -> full -> bust, by the markers
-            assert r["framing"] == {"start": "bust", "end": "bust",
-                                    "switches": 2}
+            assert r["framing"] == {"start": "bust", "home": "bust",
+                                    "end": "bust", "switches": 2}
     by_s = {}
     for r in sorted(hi, key=lambda r: (r["session"], r["turn"])):
         by_s.setdefault(r["session"], []).append(r)
     for rs in by_s.values():
         for r0, r1 in zip(rs, rs[1:]):
-            assert r1["framing"]["start"] == r0["framing"]["end"]
+            assert r1["framing"]["start"] == r0["framing"]["home"]
         for r in rs:
             assert r["user_content"].endswith(
                 pz.camera_now(_bm("Hiyori"), r["framing"]["start"]))
@@ -396,11 +451,31 @@ def test_dataset_state_follows_the_markers_from_a_full_start(tmp_path):
     for sid in {r["session"] for r in recs}:
         rs = sorted((r for r in recs if r["session"] == sid),
                     key=lambda r: r["turn"])
-        assert rs[0]["framing"] == {"start": "full", "end": "bust",
-                                    "switches": 1}
+        assert rs[0]["framing"] == {"start": "full", "home": "full",
+                                    "end": "bust", "switches": 1}
         assert "(camera: full" in rs[0]["user_content"]
-        assert "(camera: bust" in rs[1]["user_content"]
-        assert rs[1]["framing"]["start"] == "bust"
+        # The switch lasted for its reply: the next turn is home again.
+        assert "(camera: full" in rs[1]["user_content"]
+        assert rs[1]["framing"]["start"] == "full"
+
+
+def test_dataset_turns_start_at_home_after_a_switch_away(tmp_path):
+    for share, home, other in (("1.0", "bust", "full"),
+                               ("0.0", "full", "bust")):
+        out, recs = _gen(tmp_path / share, [f"One. [frame {other}] Two.",
+                                            STAY, STAY],
+                         "--bust-share", share, avatars="Hiyori",
+                         sessions=2, turns=3)
+        for sid in {r["session"] for r in recs}:
+            rs = sorted((r for r in recs if r["session"] == sid),
+                        key=lambda r: r["turn"])
+            assert [r["framing"]["start"] for r in rs] == [home] * 3
+            assert rs[0]["framing"]["end"] == other
+            assert rs[0]["framing"]["home"] == home
+            assert rs[1]["framing"]["end"] == home        # no marker: home
+            for r in rs:
+                assert r["user_content"].endswith(
+                    pz.camera_now(_bm("Hiyori"), home))
 
 
 def test_v1_data_has_no_framing_and_no_camera_line(tmp_path):
@@ -542,6 +617,55 @@ def test_stats_report_framing_and_budget(tmp_path, capsys):
     assert set(f["by_avatar"]["seed-san"]) == {"full"}
 
 
+def test_frame_counts_against_the_home_framing():
+    # Home bust: away once, back once; the turn was spent (partly) away.
+    c = dx.frame_counts("A. [frame full] B. [frame bust] C.", "bust", "bust")
+    assert (c["away"], c["returns"], c["turns_away"], c["switches"]) \
+        == (1, 1, 1, 2)
+    c = dx.frame_counts("A. [frame full] B.", "bust", "bust")
+    assert (c["away"], c["returns"], c["turns_away"]) == (1, 0, 1)
+    c = dx.frame_counts("A. B.", "bust", "bust")
+    assert (c["away"], c["returns"], c["turns_away"]) == (0, 0, 0)
+    # An old record that started away from home (the framing was carried).
+    c = dx.frame_counts("A. [frame bust] B.", "full", "bust")
+    assert (c["away"], c["returns"], c["turns_away"]) == (0, 1, 1)
+    c = dx.frame_counts("A. B.", "full", "bust")
+    assert c["turns_away"] == 1
+    # Without a home it is the start (home framing data).
+    assert dx.frame_counts("A. [frame full] B.", "bust")["away"] == 1
+
+
+def _frec(i, turn, start, text, sec, home="bust"):
+    r = {"id": f"s/t{turn:02d}", "session": "s", "turn": turn,
+         "avatar": {"name": "A"}, "reply_raw": text, "refused": False,
+         "timing": {"speech_seconds": sec},
+         "framing": {"start": start, "end": start, "switches": 0}}
+    if home:
+        r["framing"]["home"] = home
+    return r
+
+
+def test_framing_stats_have_home_counts_and_beats_per_second():
+    b = '[pose {"mouth.form": 0.5}] Hi. [pose {"brow.L.lift": 0.5}] There.'
+    recs = [_frec(0, 1, "bust", b + " [frame full] Yes.", 4.0),
+            _frec(0, 2, "bust", b + " [frame full] Yes. [frame bust] Back.",
+                  6.0),
+            _frec(0, 3, "bust", b, 2.0)]
+    f = dx.framing(recs)["total"]["bust"]
+    assert (f["turns"], f["away"], f["returns"], f["turns_away"]) \
+        == (3, 2, 1, 2)
+    assert f["speech_seconds"] == 12.0 and f["timed_beats"] == 6
+    text = "\n".join(dx.framing_lines(dx.framing(recs)))
+    assert "2 away from home, 1 back" in text
+    assert "2 turns away from home" in text and "beats/s 0.50" in text
+    # Records from before the home framing: the first turn's start is home.
+    old = [_frec(0, 1, "bust", b + " [frame full] Yes.", 4.0, home=None),
+           _frec(0, 2, "full", b, 3.0, home=None)]
+    fo = dx.framing(old)["total"]
+    assert fo["bust"]["away"] == 1 and fo["bust"]["turns_away"] == 1
+    assert fo["full"]["turns_away"] == 1 and fo["full"]["away"] == 0
+
+
 def test_r1_stats_read_as_before(tmp_path, capsys):
     out, recs = _gen(tmp_path, [STAY], "--teacher-prompt", "v1",
                      avatars="Hiyori", sessions=1, turns=2)
@@ -587,7 +711,7 @@ def test_director_plans_frame_markers_into_tokens(tmp_path, capsys):
         "tokens"] if k["type"] == "frame"]
 
 
-def test_director_chat_carries_the_framing_to_the_next_turn(tmp_path,
+def test_director_chat_starts_every_turn_in_the_home_framing(tmp_path,
                                                             monkeypatch):
     seen = []
 
@@ -615,5 +739,5 @@ def test_director_chat_carries_the_framing_to_the_next_turn(tmp_path,
     assert dr.main(args) == 0
     tail = [c.splitlines()[-1] for c in seen]
     assert tail[0].startswith("(camera: bust")
-    assert tail[1].startswith("(camera: full")        # turn 1 ended full
-    assert tail[2].startswith("(camera: full")        # turn 2 kept it
+    assert tail[1].startswith("(camera: bust")        # home again after full
+    assert tail[2].startswith("(camera: bust")

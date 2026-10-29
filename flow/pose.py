@@ -737,9 +737,10 @@ SENTENCE_RULE = {
     "v1": "- One or two beats per sentence, for what that sentence means. "
           "Put a marker right before the words it goes with, often "
           "mid-sentence.\n",
-    "beats": "- One to three expression beats per sentence (the face and head "
-             "beats above), each in its own marker right before the words it "
-             "reacts to, often mid-sentence.\n"}
+    "beats": "- Make expression beats in every sentence: at least one, two or "
+             "three in a longer one (the face and head beats above), each "
+             "in its own marker right before the words it reacts to, often "
+             "mid-sentence.\n"}
 
 
 def _bothsides(have, base, kinds):
@@ -781,11 +782,29 @@ def _beats_rule(bm) -> str:
     if "cheek.blush" in have:
         face.append('a blush ("cheek.blush") when shy')
     head = [v for v in ("head.tilt", "head.yaw", "head.pitch") if v in have]
+    vary = []
+    if eyes:
+        vary.append("the eyes")
+    if brows:
+        vary.append("the brows")
+    if "mouth.form" in have:
+        vary.append("mouth shapes")
+    if "cheek.blush" in have:
+        vary.append("a blush")
+    if {"gaze.x", "gaze.y"} & have:
+        vary.append("the gaze")
+    if head:
+        vary.append("small head moves")
     if face:
-        L = ["- Your face does most of the talking, as a streamer's does: "
-             "change it several times in a reply, a beat for each thing you "
-             "react to (a joke, a surprise, a doubt, a warm word). A beat is "
-             "a quick change of " + "; ".join(face) + ". Use dur 0.15 to 0.4 "
+        L = ["- Your face does most of the talking, as a streamer's does, "
+             "and it never holds still: every sentence gets at least one "
+             "expression beat, a longer sentence two or three, so that "
+             "something changes about every 1.5 to 2 seconds of speech. A "
+             "beat for each thing you react to (a joke, a surprise, a "
+             "doubt, a warm word) and for the small turns between them. "
+             "Vary them, not the same smile each time"
+             + (": " + ", ".join(vary) if vary else "")
+             + ". A beat is a quick change of " + "; ".join(face) + ". Use dur 0.15 to 0.4 "
              "and hold 0.3 to 1 for a beat, and the next beat or your idle "
              "takes it back; both eyes together unless you mean a wink.\n"]
     else:
@@ -810,11 +829,12 @@ def _beats_rule(bm) -> str:
 
 FRAME_ENTRY = (
     "[frame bust] or [frame full]  switch the camera between bust (head and "
-    "chest) and full (the whole figure), as a streamer changes scenes: full "
-    "before you dance or show something with your body, bust to come back to "
-    "your face. It eases over in about {ease:g} seconds at that point of your "
-    "speech and stays until you switch again; at most twice in a reply, and "
-    "only when the framing you are in does not suit what you do next.\n")
+    "chest) and full (the whole figure), as a streamer changes scenes. Go "
+    "full only for a whole-body moment: a dance, showing an outfit or a "
+    "pose, a big celebration with the body; not for a greeting wave or a "
+    "single hand move. It eases over in about {ease:g} seconds at that point "
+    "of your speech and lasts until the end of this reply; the next reply "
+    "starts back in your home framing. At most once in a reply.\n")
 
 
 def frame_entry(bm) -> str:
@@ -852,8 +872,9 @@ def camera_rule(bm) -> str:
                  "picture")
     hidden = (not all(vis)) or (low is not None and low < bot - fb.TOL["hu"])
     if hidden:
-        tail = (f"So in bust a hand move below y {bot:.2f} is not seen: the "
-                "face carries the performance (brows, eyes, mouth, head).")
+        tail = (f"So in bust a hand move below y {bot:.2f} is not seen: skip "
+                "it and let the face carry the moment (brows, eyes, mouth, "
+                "head) instead of switching to full.")
     else:
         tail = ("All your hand moves stay in that picture, but the face "
                 "still carries the performance.")
@@ -863,7 +884,10 @@ def camera_rule(bm) -> str:
             f"you are in now. The bust picture runs from {w['top']:.1f} hu "
             f"above your chin to {-bot:.1f} hu below it, {2 * w['half_width']:.1f} "
             f"hu wide; {where}. {tail} In full your whole body is in the "
-            "picture and body moves are seen.\n")
+            "picture and body moves are seen. Your home is the framing each "
+            "reply starts in, the one the camera line of the user message shows; a "
+            "switch lasts for this reply, and the next one starts back in "
+            "your home unless you write the marker again.\n")
 
 
 def camera_now(bm, framing) -> str:
@@ -912,7 +936,10 @@ def budget_line(bm) -> str:
                 f"{_times(hm['full'], 'hand move')} a reply"
                 + (f" in full and {hm['bust']} in bust"
                    if "bust" in b["frames"] else ""))
-    return f"- Motion budget: {what}.\n"
+    sw = ("; switch to full only for a whole-body moment (a dance, an outfit, "
+          "a pose, a big celebration), never for a single hand move"
+          if "bust" in b["frames"] else "")
+    return f"- Motion budget: {what}{sw}.\n"
 
 
 def _best_hand(bm):

@@ -609,8 +609,12 @@ none of which touch the r1 files or the flags of a run in progress:
   no `eye.*.smile`, so it is told to close the eyes with `eye.*.open`
   instead, and brows / blush only where they exist):
 
-      Your face does most of the talking, as a streamer's does: change it
-      several times in a reply, a beat for each thing you react to ...
+      Your face does most of the talking, as a streamer's does, and it
+      never holds still: every sentence gets at least one expression beat,
+      a longer sentence two or three, so that something changes about every
+      1.5 to 2 seconds of speech ... Vary them, not the same smile each
+      time: the eyes, the brows, mouth shapes, a blush, the gaze, small head
+      moves (worded from the variables the body has) ...
       Each beat carries a small head move in the same marker, a few degrees
       (head.tilt, head.yaw, head.pitch between -8 and 8) ... Never write
       that head move as a marker of its own.
@@ -621,7 +625,11 @@ none of which touch the r1 files or the flags of a run in progress:
       (That last paragraph is replaced by the camera, budget and `[frame]`
       lines of "Framing and motion budget" below.)
 
-  The rule becomes "One to three expression beats per sentence", the "use
+  The rule becomes "At least one expression beat in every sentence, two or
+  three in a longer one" (the 20-session pilot had 0.65 beats a sentence,
+  2.3 a reply of about 9 s of speech, against the one to three asked for;
+  real streamers change expression every 1-2 s). The definition of a beat
+  is unchanged, so the stats count the same thing. The "use
   your whole body" line is dropped and the placement examples are face
   beats with their head angles. The director's own default stays `v1`
   (`--body-prompt`): a student is served with the prompt it was trained
@@ -639,7 +647,9 @@ none of which touch the r1 files or the flags of a run in progress:
   and leaves `--max-poses` to the other markers. Default: 9 when the
   dataset's `avatars.json` carries the beats prompt, else 0, which is
   manners as before, so r1 exports (and the hash of a run such as q8m)
-  do not change. The trainer takes the same flag (`--max-beats`).
+  do not change. The trainer takes the same flag (`--max-beats`). The
+  default is 12 (was 9): 3-4 sentences with 2 beats each are 6-8 markers,
+  and 4 sentences of 3 beats still fit.
 
 **Idle head drift.** Before, the calm idle held the head still between
 fixations (holds of 3 s or more, `events.IDLE`), nothing moved it
@@ -688,9 +698,20 @@ is framed, lets it switch, and sizes its motion by what its body can do.
   takes it (`framing.can_frame`): the browser page draws it at one camera
   (`vrmbody.camera`), so a VRM is always full and the prompt says so; the
   transition is not rendered there. The prompt lists it with the markers:
-  "full before you dance or show something with your body, bust to come back
-  to your face ... eases over in about 0.6 seconds ... at most twice in a
-  reply".
+  "Go full only for a whole-body moment: a dance, showing an outfit or a
+  pose, a big celebration with the body; not for a greeting wave or a single
+  hand move ... eases over in about 0.6 seconds ... lasts until the end of
+  this reply; the next reply starts back in your home framing. At most once
+  in a reply." The pilot's teacher went full at the first hand moment (often
+  a greeting wave) and stayed: Hiyori had 9 of 47 turns in bust although 70%
+  of sessions start there, all 4 of her switches bust to full and none back.
+  The camera line says the same in the other direction ("in bust a hand move
+  ... is not seen: skip it and let the face carry the moment ... instead of
+  switching to full"; "a switch lasts for this reply, and the next one
+  starts back in your home unless you write the marker again") and the
+  budget line adds "switch to full only for a whole-body moment ..., never
+  for a single hand move". The home itself is not in the system prompt
+  (byte-stable per body): the user turn's camera line shows it.
 - **The ease.** A marker becomes a token `{"type": "frame", "view",
   "duration": 0.6}` at its time in the speech (`framing.frame_tokens`).
   `framing.Camera` holds the two `set_view` states (`bust_view` and the
@@ -704,15 +725,24 @@ is framed, lets it switch, and sizes its motion by what its body can do.
   through the pipeline. Offline: `runtime --direct` appends the tokens to
   the directed ones (so `--tokens-in` replays them), the render subprocess
   builds the camera from them and sets the view per frame; the director
-  starts a turn in `a.frame` (`--frame`, bust) and the next turn in the
-  framing the last marker left. Without a body frame (no `bust_view`) the
+  starts a turn in `a.frame` (`--frame`, bust), and the next turn back in
+  it (the home framing, below). Without a body frame (no `bust_view`) the
   render stays full and says so.
-- **State across turns.** Live: `Performer.framing`, moved by each
-  sentence's markers, shown at the next line. Offline director: `a.frame`.
-  Data: each session starts in bust with probability `--bust-share` (0.7;
-  seeded by run seed and session id alone, `framing.start_frame`, so no
-  other draw moves), the teacher's markers move it, and each record has
-  `framing: {start, end, switches}` (beats runs only).
+- **State across turns: a home framing.** A session or live chat has a home
+  framing and every turn starts in it; a `[frame]` switch, to full or to
+  bust, lasts until the end of its reply and the next turn is back home
+  unless the model writes the marker again. Data: a session's home is bust
+  with probability `--bust-share` (0.7; seeded by run seed and session id
+  alone, `framing.start_frame`, so no other draw moves); each turn starts
+  there (the camera line of `user_content` shows it), the teacher's markers
+  move it within the reply, and each record has `framing: {start, home, end,
+  switches}` (beats runs only; `start` equals `home`, `end` is where the
+  reply left the camera). Offline director `--chat`: `--frame` is the home;
+  `a.frame` is reset to it after each turn (the render of a turn starts in
+  `a.frame` and replays its tokens). Live: `Performer.home` (`--frame`,
+  full when the body has no bust view); when a reply ends away from home
+  the Performer commits a `frame` token back home at the end of its speech
+  (stream time `next_frame / fps`) and shows home at the next line.
 - **Motion budget.** `framing.budget(bm)` measures the body: the share of a
   gesture zone (x 0.15-1.1 hu out from the midline, y from where the hands
   hang to 0.6 hu over the head, 8 x 6 points a side) that some arm drawing
@@ -756,7 +786,13 @@ is framed, lets it switch, and sizes its motion by what its body can do.
   share of targets, hand-moving poses and `[frame]` markers per reply, the
   switches (`framing` in the json); and the budget of each avatar (`budget`).
   `evalsft` counts `frame` markers per turn in its own column and leaves them
-  out of the body markers.
+  out of the body markers. Against the session's home (`framing.home`; for
+  records from before it, the framing the session's first turn started in)
+  each framing row also gives the switches away from home, the switches back
+  and the turns spent away (started away, or went away in the reply), and
+  beats per second of speech (`timing.speech_seconds` of the record; in the
+  json `away`, `returns`, `turns_away`, `timed_beats`, `speech_seconds`).
+  The pilot's problem reads as many `away` and no `returns`.
 
 ### Action head ablations on BEAT2 (2026-10)
 

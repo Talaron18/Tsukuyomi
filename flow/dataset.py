@@ -75,11 +75,13 @@ included; flow.dataexport filters):
               targets, and writes a missed target as report[var].got)
   moves       flow.moves.solve_moves records, rounded: name, t, at, start,
               seconds, beats, tempo, amp, segments, solves, solve_seconds
-  framing     beats prompt only: {start, end, switches}, the framing the
-              turn started in (shown to the model as "(camera: ...)" after
-              the pose line in user_content), the one it ended in, and the
-              [frame] markers that changed it (a session starts in
-              bust or full per --bust-share, flow.framing.start_frame)
+  framing     beats prompt only: {start, home, end, switches}, the framing
+              the turn started in (shown to the model as "(camera: ...)"
+              after the pose line in user_content), the session's home, the
+              one the reply ended in, and the [frame] markers that changed
+              it. A session's home is bust or full per --bust-share
+              (flow.framing.start_frame); every turn starts in it, a
+              switch lasts until the end of its reply
   reach       pose.reach_summary {markers, targets, ok, miss, exact_ok,
               exact_n, solve_seconds}
   play_warnings  the planning lines among warnings (pose: / move:)
@@ -922,9 +924,11 @@ def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
     # The framing the character is in (flow.framing), shown with each line
     # under the beats prompt and moved by its [frame] markers; a body whose
     # framing cannot switch (a VRM) is always full. None: v1, not shown.
-    framing = None
+    # The session's home framing is the one every turn starts in: a [frame]
+    # switch lasts until the end of its reply.
+    framing = home = None
     if getattr(opts, "teacher_prompt", TEACHER_PROMPT) == "beats":
-        framing = sess.get("frame", "bust") if fr.can_frame(av.bm) \
+        framing = home = sess.get("frame", "bust") if fr.can_frame(av.bm) \
             else "full"
     for turn in range(1, sess["turns"] + 1):
         if stop is not None and stop.is_set():
@@ -963,6 +967,7 @@ def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
             line = rng.choice(topic.get("examples") or ["Hi!"])
         content = line + "\n" + av.pose_now
         if framing is not None:
+            framing = home
             content += "\n" + pz.camera_now(av.bm, framing)
         start_frame = framing
         msgs = []
@@ -997,9 +1002,9 @@ def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
                "stop_reason": reply.get("stop_reason"),
                "warnings": list(reply.get("warnings") or [])}
         if framing is not None:
-            if not reply["refused"]:
-                framing = fr.last_frame(reply["tags"], framing)
-            rec["framing"] = {"start": start_frame, "end": framing,
+            end = start_frame if reply["refused"] else fr.last_frame(
+                reply["tags"], start_frame)
+            rec["framing"] = {"start": start_frame, "home": home, "end": end,
                               "switches": fr.switches(reply["tags"],
                                                       start_frame)}
         unplayed = {}

@@ -63,7 +63,7 @@ Quality filters, stats and exporters for flow.dataset's turn records.
              spoken text is checked with the pose parser: a turn whose
              spoken text would change is left as it was and counted.
   beats      the r2 teacher prompt (flow.pose "beats", flow.dataset
-             --teacher-prompt) writes 1-3 expression beats a sentence: a
+             --teacher-prompt) writes 1-3 expression beats a sentence (at least one): a
              pose marker whose targets are the face (brow, eye, mouth, cheek,
              gaze) with optional head angles. Counted by `stats` (beats per
              sentence, the face and the hand share of all pose targets), on
@@ -89,8 +89,10 @@ Quality filters, stats and exporters for flow.dataset's turn records.
              flow.framing.window, landmarks and window from avatars.json --
              are stripped, asked or not. [frame] markers are kept.
   framing    `stats` per avatar and per framing a turn starts in: beats per
-             sentence, face and hand share of targets, hand-moving poses and
-             [frame] markers per reply, switches; and the motion budget of
+             sentence and per second of speech, face and hand share of targets,
+             hand-moving poses and [frame] markers per reply, switches, and
+             against the session's home framing the switches away from it,
+             the returns and the turns spent away; and the motion budget of
              each avatar (avatars.json "budget"). Only for records that
              carry a framing (the beats prompt), so r1 stats read as before.
   stats      counts by avatar / persona / language / topic / marker tag,
@@ -647,9 +649,10 @@ MAX_POSES = 2
 # Expression beats (see the module docstring): the pose markers of the
 # "beats" prompt are the face, with the head along. gaze counts as face (a
 # glance is a beat); BEATS_MAX: markers kept per reply when the dataset was
-# written with that prompt (3 sentences x 3 beats).
+# written with that prompt (4 sentences x 3 beats; a reply of 3-4 sentences
+# with 2 beats each is 6-8).
 FACE_PREFIX = ("brow.", "eye.", "mouth.", "cheek.", "gaze.")
-BEATS_MAX = 9
+BEATS_MAX = 12
 BEATS_MARK = "expression beats"      # in the prompt text of that version
 _SPEC = ("dur", "duration", "hold")
 _ARM_KEYS = ("hand", "hands", "arm", "forearm", "elbow", "wrist")
@@ -1148,13 +1151,29 @@ def beats_lines(c, before=None) -> list:
 
 
 _FCOUNT = ("turns", "sentences", "poses", "beats", "targets", "face_targets",
-           "hand_targets", "hand_poses", "frame_markers", "switches")
+           "hand_targets", "hand_poses", "frame_markers", "switches",
+           "away", "returns", "turns_away")
 
 
-def frame_counts(text, start) -> Counter:
+def home_switches(tags, start, home) -> tuple:
+    """(away, returns) of a reply's frame markers that started in `start`:
+    the switches to a framing other than `home`, the switches back to it."""
+    cur, away, back = start, 0, 0
+    for t in tags:
+        if t.get("tag") == pz.FRAME and t.get("arg") in fr.FRAMES \
+                and t["arg"] != cur:
+            cur = t["arg"]
+            away += cur != home
+            back += cur == home
+    return away, back
+
+
+def frame_counts(text, start, home=None) -> Counter:
     """Counters over one reply that started in framing `start` (_FCOUNT):
     beat_counts', pose markers with a hand target, [frame] markers and the
-    ones that change the framing."""
+    ones that change the framing; with the session's `home` the switches
+    away from it, the switches back, and 1 turn_away when the turn started
+    or went away from home."""
     c = beat_counts(text)
     tags = []
     for _a, _b, t in marker_spans(text):
@@ -1164,6 +1183,9 @@ def frame_counts(text, start) -> Counter:
             c["frame_markers"] += 1
         tags.append(t)
     c["switches"] = fr.switches(tags, start)
+    home = home or start
+    c["away"], c["returns"] = home_switches(tags, start, home)
+    c["turns_away"] = int(start != home or c["away"] > 0)
     return Counter({k: v for k, v in c.items() if k in _FCOUNT})
 
 
@@ -1173,6 +1195,12 @@ def framing(records, texts=None, count=None) -> dict:
     replies (the corrected / manners texts in `texts`), turns in `count`
     only; {} when no record has a framing. "total" sums the avatars."""
     by = {}
+    # Data from before the home framing has no "home" in a record: the
+    # framing a session's first turn started in.
+    homes = {}
+    for r in sorted((r for r in records if r.get("framing")),
+                    key=lambda r: r["turn"], reverse=True):
+        homes[r["session"]] = r["framing"]["start"]
     for r in records:
         f = r.get("framing")
         if not f or r.get("refused") or (count is not None
@@ -1183,7 +1211,12 @@ def framing(records, texts=None, count=None) -> dict:
         a = by.setdefault(r["avatar"]["name"], {}).setdefault(
             f["start"], Counter())
         a["turns"] += 1
-        a.update(frame_counts(text, f["start"]))
+        a.update(frame_counts(text, f["start"],
+                              f.get("home") or homes.get(r["session"])))
+        sec = (r.get("timing") or {}).get("speech_seconds")
+        if sec is not None:
+            a["timed_beats"] += beat_counts(text)["beats"]
+            a["speech_seconds"] += float(sec)
     if not by:
         return {}
     tot = {}
@@ -1208,7 +1241,12 @@ def framing_lines(c) -> list:
                 f"{v.get('hand_targets', 0) / t:.0%} of targets, hand "
                 f"poses/reply {v.get('hand_poses', 0) / n:.2f}, frame "
                 f"markers/reply {v.get('frame_markers', 0) / n:.2f}, "
-                f"{v.get('switches', 0)} switches")
+                f"{v.get('switches', 0)} switches ("
+                f"{v.get('away', 0)} away from home, "
+                f"{v.get('returns', 0)} back), "
+                f"{v.get('turns_away', 0)} turns away from home"
+                + (f", beats/s {v['timed_beats'] / v['speech_seconds']:.2f}"
+                   if v.get("speech_seconds") else ""))
     out = ["framing (by the framing a turn starts in):"]
     for name, views in [("all", c["total"])] + list(c["by_avatar"].items()):
         for k, v in views.items():
