@@ -35,3 +35,7 @@ __pycache__/
 /*venv/
 /data/
 /*.tgz
+
+# demo renders: keep demo.mp4 and the text, not the frames or the wav
+/runs/demo*/*/render/
+/runs/demo*/*/speech.wav
