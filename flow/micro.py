@@ -68,7 +68,7 @@ BROW_T = ((0.08, 0.12), (0.04, 0.08), (0.13, 0.20))      # rise, hold, fall
 SMILE_T = (0.35, 0.50, 0.40)
 PEAK_Z = 0.7              # stress score a peak must clear
 QUESTION_ST = 2.0         # semitones of final rise that make a question
-GROUPS = {"brow": ("brow.",), "smile": ("eye.", "mouth.", "cheek.")}
+GROUPS = {"brow": ("brow.",), "smile": ("eye.", "mouth.", "cheek.", "tongue.")}
 
 
 # --------------------------------------------------------------- features

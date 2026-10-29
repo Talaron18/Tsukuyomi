@@ -164,6 +164,12 @@ MEANING = {
     "brow.L.form": "- angry, + gentle", "brow.R.form": "- angry, + gentle",
     "mouth.form": "- frown, + smile",
     "cheek.blush": "+ blush",
+    "eye.L.squint": "+ squints", "eye.R.squint": "+ squints",
+    "cheek.puff": "+ puffs the cheek",
+    "mouth.pucker": "- purses the lips, + widens the mouth",
+    "mouth.funnel": "+ rounds the lips into an O",
+    "tongue.out": "+ sticks the tongue out",
+    "eye.tears": "+ tears",
     "shoulders.up": "+ shrugs", "shoulder.L.up": "+ raises the shoulder",
     "shoulder.R.up": "+ raises the shoulder",
     "hand.L.x": "your left hand, + toward your left",
@@ -665,7 +671,7 @@ def describe_body(bm) -> str:
                           f"(x stays below {max(hi for _, hi in xs):.2f})")
     have = set(offered(bm))
     missing = [n for n, *_ in fb.DECLARED if n not in have
-               and n not in NOT_TARGETS]
+               and n not in NOT_TARGETS and n not in fb.EXTENDED]
     if missing:
         cannot.append("these do not exist on this body: " + ", ".join(missing))
     cannot.append("no walking, no legs, no fingers; nothing outside the "
@@ -733,6 +739,12 @@ Examples of placement (not of content; never copy them):
 # _beats_rule). flow.dataset's --teacher-prompt picks; the director's own
 # default stays v1, the prompt the trained students were taught with.
 PROMPTS = ("v1", "beats")
+# The beats prompt's reply-language rule: the pilot's replies kept the
+# language of the earlier ones after the user switched.
+LANG_RULE = ("- Answer in the language of the user's latest message, even "
+             "if your earlier replies used another language. When the user "
+             "mixes languages, answer in their main language (a mixed-in "
+             "word or two may be mirrored).\n")
 SENTENCE_RULE = {
     "v1": "- One or two beats per sentence, for what that sentence means. "
           "Put a marker right before the words it goes with, often "
@@ -740,7 +752,7 @@ SENTENCE_RULE = {
     "beats": "- Make expression beats in every sentence: at least one, two or "
              "three in a longer one (the face and head beats above), each "
              "in its own marker right before the words it reacts to, often "
-             "mid-sentence.\n"}
+             "mid-sentence.\n" + LANG_RULE}
 
 
 def _bothsides(have, base, kinds):
@@ -781,6 +793,24 @@ def _beats_rule(bm) -> str:
                     "serious")
     if "cheek.blush" in have:
         face.append('a blush ("cheek.blush") when shy')
+    squint = _bothsides(have, "eye", ("squint",))
+    if squint:
+        face.append("a squint for doubt or suspicion ("
+                    + ", ".join(f'"{v}"' for v in squint) + " up)")
+    extras = []
+    if "cheek.puff" in have:
+        extras.append('puffed cheeks ("cheek.puff") when sulking')
+    if "mouth.pucker" in have:
+        extras.append('pursed lips for a pout ("mouth.pucker" down), a wide '
+                      'grin ("mouth.pucker" up)')
+    if "mouth.funnel" in have:
+        extras.append('an O mouth ("mouth.funnel") on a surprise')
+    if "tongue.out" in have:
+        extras.append('the tongue out ("tongue.out") when teasing')
+    if "eye.tears" in have:
+        extras.append('tears ("eye.tears") when moved or sad')
+    if extras:
+        face.append("small tricks of the face: " + "; ".join(extras))
     head = [v for v in ("head.tilt", "head.yaw", "head.pitch") if v in have]
     vary = []
     if eyes:
@@ -791,6 +821,8 @@ def _beats_rule(bm) -> str:
         vary.append("mouth shapes")
     if "cheek.blush" in have:
         vary.append("a blush")
+    if squint or extras:
+        vary.append("squints and other small face tricks")
     if {"gaze.x", "gaze.y"} & have:
         vary.append("the gaze")
     if head:

@@ -47,7 +47,7 @@ ABOVE, BELOW = 1.5, 1.6
 VIEW_EASE = 0.6          # seconds a [frame] switch takes
 BUST_SHARE = 0.7         # sessions of generated data that start in bust
 # The prompt's face controls (the same prefixes as flow.dataexport's face).
-FACE_PREFIX = ("brow.", "eye.", "mouth.", "cheek.", "gaze.")
+FACE_PREFIX = ("brow.", "eye.", "mouth.", "cheek.", "gaze.", "tongue.")
 # The gesture zone a hand's reach is measured over, in hu from the chin: x
 # outward from the midline on the hand's own side, y from where the lower
 # hand hangs at rest to ABOVE_HEAD over the head landmark.
@@ -183,6 +183,27 @@ def rest_hands(bm) -> dict:
     return out
 
 
+_WARNED = set()
+
+
+def chest_y(L) -> float:
+    """The chest landmark's y (hu). A body file whose torso gave no chest
+    (huonululu_5's) falls back as flow.moves does: 0.4 hu under the
+    shoulder line, or under the chin-relative default shoulder line (-0.25)
+    when the arms gave none either. Logged once per fallback."""
+    if "chest" in L:
+        return float(L["chest"][1])
+    sh = float(L.get("shoulder.y", -0.25))
+    key = "shoulder.y" if "shoulder.y" in L else "default"
+    if key not in _WARNED:
+        _WARNED.add(key)
+        what = ("shoulder line" if key == "shoulder.y"
+                else "default shoulder line")
+        print(f"framing: body file has no chest landmark; using "
+              f"{sh - 0.4:+.2f} hu (0.4 under the {what})")
+    return sh - 0.4
+
+
 def hand_reach(bm, win=None) -> dict:
     """The measured reach of the hands over the gesture zone (ZONE_*): the
     share of its grid points (8 heights x 6 widths, each side) that some
@@ -192,8 +213,8 @@ def hand_reach(bm, win=None) -> dict:
     w = win or window()
     L = bm.landmarks
     rest = rest_hands(bm)
-    y0 = min([y for _x, y in rest.values()] or [L["chest"][1] - 0.5])
-    y1 = L["head"][1] + ZONE_ABOVE_HEAD
+    y0 = min([y for _x, y in rest.values()] or [chest_y(L) - 0.5])
+    y1 = float(L.get("head", [0.0, 0.45])[1]) + ZONE_ABOVE_HEAD
     ys = np.linspace(y0, y1, 8)
     xs = np.linspace(ZONE_X[0], ZONE_X[1], 6)
     tot = hit = bhit = 0

@@ -112,7 +112,8 @@ def log(s):
 
 def load_examples(data, per="session", max_miss=None, keep_lite=False,
                   correct_misses=True, avatar_weight=None, manners=True,
-                  max_poses=None, max_beats=None, max_hands=None):
+                  max_poses=None, max_beats=None, max_hands=None,
+                  lang_filter=None):
     """The SFT examples ({"messages", "meta"}) from an sft.jsonl or a
     flow.dataset folder (exported here with flow.dataexport's filters,
     missed pose targets corrected to the value reached, and the avatars in
@@ -122,7 +123,9 @@ def load_examples(data, per="session", max_miss=None, keep_lite=False,
     dataset's teacher prompt, flow.dataexport.default_max_beats). max_hands:
     manners' cap on hand-moving markers where nothing was asked (None: by
     the teacher prompt, flow.dataexport.default_max_hands; -1: strip them
-    as before)."""
+    as before). lang_filter: drop the turns whose reply is in another
+    language than the user's line (flow.dataexport; None: on for data
+    written with the beats teacher prompt)."""
     if os.path.isdir(data):
         try:
             from .. import dataexport as dx
@@ -135,7 +138,13 @@ def load_examples(data, per="session", max_miss=None, keep_lite=False,
             raise SystemExit(f"no records under {data}/shards")
         fix, counts = dx.correct_misses(recs) if correct_misses else ({}, None)
         notes = dx.annotate(recs, max_miss if max_miss is not None
-                            else dx.MAX_MISS, keep_lite=keep_lite, fix=fix)
+                            else dx.MAX_MISS, keep_lite=keep_lite, fix=fix,
+                            lang_filter=dx.default_lang_filter(data)
+                            if lang_filter is None else lang_filter)
+        dropped = sum("language" in f for f, _ in notes.values())
+        if dropped:
+            log(f"language: {dropped} turns dropped (reply not in the "
+                "user's language)")
         w = dx.parse_weights(avatar_weight, {r["avatar"]["name"]
                                              for r in recs})
         mfix = {}
@@ -616,7 +625,7 @@ def prepare(o, tok):
         o.data, o.per, correct_misses=o.correct_misses,
         avatar_weight=o.avatar_weight, manners=o.manners,
         max_poses=o.max_poses, max_beats=o.max_beats,
-        max_hands=o.max_hands)]
+        max_hands=o.max_hands, lang_filter=o.lang_filter)]
     if not exs:
         raise SystemExit(f"no examples in {o.data}")
     train, ev, info = split(exs, o.eval_frac, o.split_seed, o.split_by_row)
@@ -838,7 +847,7 @@ def stats(o) -> dict:
         o.data, o.per, correct_misses=o.correct_misses,
         avatar_weight=o.avatar_weight, manners=o.manners,
         max_poses=o.max_poses, max_beats=o.max_beats,
-        max_hands=o.max_hands)]
+        max_hands=o.max_hands, lang_filter=o.lang_filter)]
     rep = length_report(tok, exs, o.family)
     print(report_text(rep, o.family))
     probs = check_template(tok, o.family, exs[0]) if exs else []
@@ -880,6 +889,14 @@ def add_data_args(p):
                    help="manners: expression beats kept per reply, besides "
                         "--max-poses [9 for data written with the beats "
                         "teacher prompt, else 0: beats count as poses]")
+    p.add_argument("--lang-filter", default=None,
+                   action=argparse.BooleanOptionalAction,
+                   help="with a dataset folder: drop the turns whose reply "
+                        "is in another language than the user's line, and "
+                        "cut a session there (flow.dataexport) [on for data "
+                        "written with the beats teacher prompt, else off]. "
+                        "It changes the training text, so the data hash "
+                        "changes")
     p.add_argument("--max-hands", type=int, default=None, metavar="N",
                    help="manners: markers that move a hand kept per reply "
                         "where nothing was asked, and in bust only hand "
