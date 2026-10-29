@@ -102,6 +102,7 @@ import numpy as np
 try:
     from . import director as dr
     from . import framing as fr
+    from . import micro as mc
     from . import moves as mv
     from . import pose as pz
     from . import speech as sp
@@ -110,6 +111,7 @@ except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from flow import director as dr
     from flow import framing as fr
+    from flow import micro as mc
     from flow import moves as mv
     from flow import pose as pz
     from flow import speech as sp
@@ -583,6 +585,10 @@ class Performer:
             self.home = self.framing
         # --avatar both: the VRM follows every sentence (VRMFollower).
         self.followers = []
+        # Speech-driven micro-expressions (flow.micro) on this body: its
+        # state keeps the spacing across sentences. Body mode with a TTS.
+        self.micro = (mc.planner_for(a, self.body["body"], self.emit)
+                      if self.body is not None else None)
 
     def start(self):
         self.thread = threading.Thread(target=self._loop, name="turns",
@@ -712,6 +718,7 @@ class Performer:
         t0 = self.clock.now()
         mood = "neutral"
         audio = None
+        sp_ends = None
         if spoken and self.tts is not None:
             if getattr(a, "mood", "auto") != "off":
                 mood = sp.mood_of(spoken, tags)[0]
@@ -720,6 +727,7 @@ class Performer:
                             lang=self.lang_of(spoken))
             acts, spans, end = said["acts"], said["spans"], said["end"]
             audio, sr, moras = said["audio"], said["sr"], said.get("moras")
+            sp_ends = mc.sentence_ends(spoken, spans) or None
         elif spoken:
             acts, spans, end = dr.timeline(spoken, tags, a.cjk_rate,
                                            a.latin_rate)
@@ -825,6 +833,11 @@ class Performer:
                           "to a motion")
             for line in mv.report_lines(mvs, spoken):
                 self.emit(f"live: turn {n}.{k} {line}")
+        if self.micro is not None and audio is not None:
+            # Between the model's beats: from this sentence's audio, off
+            # the variables its pose markers touch (flow.micro).
+            directed += self.micro.plan(audio, sr, acts, t_start,
+                                        1000 * n + k, sp_ends)
         gone = self.stream.direct(directed) if directed else 0
         if mouth is not None:
             self.stream.add_mouth(f0, mouth, len(mouth["open"]))

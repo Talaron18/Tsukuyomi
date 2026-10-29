@@ -649,10 +649,12 @@ MAX_POSES = 2
 # Expression beats (see the module docstring): the pose markers of the
 # "beats" prompt are the face, with the head along. gaze counts as face (a
 # glance is a beat); BEATS_MAX: markers kept per reply when the dataset was
-# written with that prompt (4 sentences x 3 beats; a reply of 3-4 sentences
-# with 2 beats each is 6-8).
+# written with that prompt (the dense worked example of the prompt is 8 beats
+# in 4 sentences, about 0.8 a second; a long reply of 5-6 sentences written
+# the same way reaches 14, so 16 keeps its density instead of cutting the
+# tail; was 12, 9 before).
 FACE_PREFIX = ("brow.", "eye.", "mouth.", "cheek.", "gaze.")
-BEATS_MAX = 12
+BEATS_MAX = 16
 BEATS_MARK = "expression beats"      # in the prompt text of that version
 _SPEC = ("dur", "duration", "hold")
 _ARM_KEYS = ("hand", "hands", "arm", "forearm", "elbow", "wrist")

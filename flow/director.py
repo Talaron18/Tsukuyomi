@@ -1284,6 +1284,24 @@ def make_tts(a, log=print):
     return sp.VoiceRouter(kind, cli, cfg, make, log)
 
 
+def micro_plan(a, body, said, acts, spoken, log=print):
+    """The speech-driven micro-expression tokens (flow.micro) of a spoken
+    reply, for body mode with --micro; [] otherwise. The model's pose
+    markers (acts) keep them off the same variables."""
+    if body is None:
+        return []
+    try:
+        from . import micro as mc
+    except ImportError:
+        from flow import micro as mc
+    m = mc.planner_for(a, body["body"], log)
+    if m is None:
+        return []
+    toks = m.plan(said["audio"], said["sr"], acts, 0.0, 0,
+                  mc.sentence_ends(spoken, said["spans"]) or None)
+    return toks
+
+
 def plan(a, reply, out_dir, motions, log=print, tts=None, body=None):
     """Write reply.txt, spoken.txt, actions.json, subs.srt/json, then plan
     tokens.json in-process (runtime --direct --dump-only). Returns (render
@@ -1367,6 +1385,9 @@ def plan(a, reply, out_dir, motions, log=print, tts=None, body=None):
         sp.write_wav(os.path.join(out_dir, "speech.wav"), said["audio"],
                      said["sr"])
         seconds = body_solve(acts, length(acts, end, motions, a.tail))
+        micro_toks = micro_plan(a, body, said, acts, reply["spoken"], log)
+        if micro_toks:
+            extra["micro"] = micro_toks
         extra.update({"tts": {"backend": getattr(tts, "kind", None) or a.tts,
                          "voice": tts.last_voice,
                          "timing": said["method"],
@@ -1532,6 +1553,11 @@ def add_args(ap):
     ap.add_argument("--head-drift-scale", type=float, default=1.0,
                     metavar="X", help="the drift's amplitude, x its "
                     "defaults (2.5 deg yaw, 1.5 pitch, 2 tilt) [1]")
+    try:
+        from . import micro as mc
+    except ImportError:
+        from flow import micro as mc
+    mc.add_args(ap)
     ap.add_argument("--idle-profile", default="calm",
                     choices=("calm", "authored"),
                     help="the idle between and under the tags (flow.runtime "

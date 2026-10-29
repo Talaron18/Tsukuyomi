@@ -209,7 +209,7 @@ def test_stats_command_prints_the_beats_block(tmp_path, capsys):
     js = tmp_path / "s.json"
     assert dx.main(["stats", out, "--json", str(js)]) == 0
     text = capsys.readouterr().out
-    assert "expression beats:" in text and "manners (at most 2 poses, 12 " \
+    assert "expression beats:" in text and "manners (at most 2 poses, 16 " \
         "beats, 1 hand-moving markers)" in text
     s = json.loads(js.read_text())
     assert s["beats"]["total"]["beats"] > 0

@@ -436,6 +436,7 @@ def director_args(spec, opts, persona=None):
         argv.append("--no-body-gestures")
     argv += ["--body-prompt", getattr(opts, "teacher_prompt", TEACHER_PROMPT)]
     a = ap.parse_args(argv)
+    a.micro = False         # no speech-driven micro-expressions in the data
     a.tail = opts.tail
     if opts.max_tokens:
         a.max_tokens = opts.max_tokens

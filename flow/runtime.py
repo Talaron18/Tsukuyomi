@@ -1105,6 +1105,10 @@ def main(argv=None) -> int:
                 except ImportError:
                     from flow import framing as fr
                 directed = directed + fr.frame_tokens(acts)
+                # Speech-driven micro-expressions (flow.micro), planned by
+                # the director from the audio.
+                if isinstance(blob, dict) and blob.get("micro"):
+                    directed = directed + list(blob["micro"])
                 n_idle = len(tokens)
                 tokens = dr.merge(tokens, directed)
                 print(f"director: {len(acts)} actions -> {len(directed)} "
@@ -1301,6 +1305,17 @@ def main(argv=None) -> int:
                                   base_parts)
         print(f"pose: {sum(k['type'] == 'pose' for k in tokens)} body poses "
               "over the idle (flow.pose)")
+    micro_layer = None
+    if events_on and any(k["type"] == "micro" for k in tokens):
+        try:
+            from . import micro as mc
+        except ImportError:
+            from flow import micro as mc
+        micro_layer = mc.layer_for(tokens)
+        micro_bounds = mc.bounds_of(pids, lo, hi)
+        micro_dflt = dict(zip(pids, dflt.tolist()))
+        print(f"micro: {sum(k['type'] == 'micro' for k in tokens)} speech-"
+              "driven micro-expressions over the idle (flow.micro)")
     mtok = next((k for k in tokens if k["type"] == "mouth"),
                 None) if events_on else None
     if mtok is not None:
@@ -1473,6 +1488,15 @@ def main(argv=None) -> int:
                 for col in gesture_cols:
                     if pids[expressive[col]] not in player.keyed[f]:
                         applied_mask[f, col] = False
+            if micro_layer is not None:
+                over = micro_layer.apply(f / a.fps, over, micro_bounds,
+                                         micro_dflt)
+                for p in micro_layer.written:
+                    col = expr_col.get(p)
+                    if col is not None:
+                        i = expressive[col]
+                        applied[f, col] = (over[p] - lo[i]) / span_x[col] * 2 - 1
+                        applied_mask[f, col] = True
             still = ()
             if move_layer is not None:
                 over, parts = move_layer.apply(f, over, parts)

@@ -978,6 +978,51 @@ def _whole_body(bm, gestures=False) -> str:
         + ".\n"
 
 
+def _dense_example(bm, have) -> str:
+    """One whole reply written the way the beats rule asks for: four
+    sentences (about 10 s of speech), eight expression beats, one at nearly
+    every clause, each with its small head move, no hand. Built from the
+    variables this body offers, like the other examples (lafei closes its
+    eyes with eye.*.open, a body without brows or blush skips them); ""
+    when fewer than five of the beats survive on this body."""
+    def mk(d):
+        d = {k: v for k, v in d.items() if k in have or k in ("dur", "hold")}
+        return "[pose " + json.dumps(d) + "]" \
+            if any(k in have for k in d) else ""
+    smile = {v: 0.8 for v in _bothsides(have, "eye", ("smile",))}
+    shut = {v: 0 for v in _bothsides(have, "eye", ("open",))}
+    # No smiling eye (lafei): a squint, half shut; the laugh closes them.
+    squeeze = smile or {v: 0.45 for v in shut}
+
+    def brows(x):
+        return {"brow.L.lift": x, "brow.R.lift": x}
+    beats = [
+        mk({**brows(0.7), "head.pitch": 4, "head.yaw": -4, "dur": 0.2,
+            "hold": 0.4}),
+        mk({**squeeze, "mouth.form": 0.9, "head.tilt": 6, "dur": 0.2,
+            "hold": 0.7}),
+        mk({**shut, "mouth.form": 1, "head.tilt": -5, "head.pitch": 3,
+            "dur": 0.15, "hold": 0.5}),
+        mk({"gaze.x": -0.6, "gaze.y": 0.2, "head.yaw": -6, "dur": 0.25,
+            "hold": 0.6}),
+        mk({"gaze.x": 0, "gaze.y": 0, **brows(-0.5), "mouth.form": -0.4,
+            "head.yaw": 2, "head.tilt": -4, "dur": 0.25, "hold": 0.5}),
+        mk({"cheek.blush": 0.6, "mouth.form": 0.4, "head.pitch": 5,
+            "head.tilt": 4, "dur": 0.3, "hold": 0.8}),
+        mk({**brows(0.5), "head.pitch": -3, "head.yaw": 4, "dur": 0.2,
+            "hold": 0.4}),
+        mk({**squeeze, "mouth.form": 0.7, "head.tilt": 5, "dur": 0.25,
+            "hold": 0.6}),
+    ]
+    if sum(1 for x in beats if x) < 5:
+        return ""
+    b = [x + " " if x else "" for x in beats]
+    return (f"{b[0]}Oh, you really did that? {b[1]}That is the funniest "
+            f"thing, {b[2]}and I am not even sorry. {b[3]}Honestly, I was "
+            f"{b[4]}a little scared, {b[5]}but it was brave, {b[6]}wasn't "
+            f"it? {b[7]}Now tell me the rest.")
+
+
 def _beat_examples(bm) -> list[str]:
     """Placement examples for the "beats" prompt: face beats with their head
     move in the marker, from the variables this body has ([] when it has no
@@ -997,6 +1042,9 @@ def _beat_examples(bm) -> list[str]:
     c = mk({"mouth.form": -0.5, "brow.L.lift": -0.4, "brow.R.lift": -0.4,
             "head.tilt": -5, "head.yaw": 4, "dur": 0.25, "hold": 0.6})
     ex = []
+    dense = _dense_example(bm, have)
+    if dense:
+        ex.append(dense)
     if a and b:
         ex.append(f"{b} Wait, you did what? {a} That's hilarious!")
     if c and a:

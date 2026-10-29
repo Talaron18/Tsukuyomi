@@ -648,8 +648,10 @@ none of which touch the r1 files or the flags of a run in progress:
   dataset's `avatars.json` carries the beats prompt, else 0, which is
   manners as before, so r1 exports (and the hash of a run such as q8m)
   do not change. The trainer takes the same flag (`--max-beats`). The
-  default is 12 (was 9): 3-4 sentences with 2 beats each are 6-8 markers,
-  and 4 sentences of 3 beats still fit.
+  default is 16 (was 12, 9 before): 3-4 sentences with 2 beats each are
+  6-8 markers, and the prompt's dense example (below) is 8 beats in 4
+  sentences; a long reply written like it (5-6 sentences) reaches 14, which
+  12 would have cut at the tail, against the density asked for.
 
 **Idle head drift.** Before, the calm idle held the head still between
 fixations (holds of 3 s or more, `events.IDLE`), nothing moved it
@@ -664,6 +666,68 @@ takes `--head-drift` (default on), `--no-head-drift` and
 `--head-drift-scale X` (they sit in the director's parser, which it
 shares); `MotionStream(head_drift=None)` is off, so the offline director,
 the dataset's trajectories and the action head's data are as before.
+
+**Dense worked example.** Two pilots of the beats prompt gave 0.69 beats a
+sentence, about 0.30 a second of speech, against the 0.5-0.65 a streamer's
+face changes (every 1.5-2 s); stronger rule text barely moved it. The
+placement examples of the beats prompt now start with one whole reply
+(`pose._dense_example`, 4 sentences, about 10 s of speech, 8 beats, a beat
+at nearly every clause), so the teacher has a density to copy, not only a
+rule: brows up, eye smile, eyes closed in a laugh, gaze away and back,
+brows knit with the mouth down, a blush, brows up on a question, a smile
+for the last line, each with a small head move in the same marker and no
+hand. It is built from `pose.offered(bm)` like the other examples, so a
+variable the body lacks is left out; lafei (no `eye.*.smile`) gets a half-
+shut squint (`eye.*.open` 0.45) for the smile beats and `eye.*.open` 0 for
+the laugh; a VRM gets the same with its own variables. v1 is untouched
+(tested by digest per body); the words "expression beats" stay in the
+rule text, where `dataexport.BEATS_MARK` finds them. Hiyori's:
+
+    [pose {"brow.L.lift": 0.7, "brow.R.lift": 0.7, "head.pitch": 4, "head.yaw": -4, "dur": 0.2, "hold": 0.4}] Oh, you really did that? [pose {"eye.L.smile": 0.8, "eye.R.smile": 0.8, "mouth.form": 0.9, "head.tilt": 6, ...}] That is the funniest thing, [pose {"eye.L.open": 0, "eye.R.open": 0, "mouth.form": 1, "head.tilt": -5, ...}] and I am not even sorry. [pose {"gaze.x": -0.6, "gaze.y": 0.2, "head.yaw": -6, ...}] Honestly, I was [pose {"gaze.x": 0, "gaze.y": 0, "brow.L.lift": -0.5, "brow.R.lift": -0.5, "mouth.form": -0.4, ...}] a little scared, [pose {"cheek.blush": 0.6, "mouth.form": 0.4, ...}] but it was brave, [pose {"brow.L.lift": 0.5, "brow.R.lift": 0.5, ...}] wasn't it? [pose {"eye.L.smile": 0.8, "eye.R.smile": 0.8, "mouth.form": 0.7, ...}] Now tell me the rest.
+
+**Speech-driven micro-expressions** (`flow.micro`). Between the model's own
+beats, a layer in the manner of the head drift adds small, short face
+changes from the TTS audio. The audio features: the loudness envelope (RMS
+in dB over 40 ms, smoothed over 120 ms) and, from `flow.beat2.prosody`
+(YIN), the pitch's rise over its local median in semitones; their sum,
+against the sentence's own median, has a stress peak where it tops 0.7 and
+is a local maximum over +-0.2 s (at most 0.7 a second of voiced speech).
+
+- **Brow**: a lift of 0.2-0.3 of the brow's range for 0.25-0.4 s at a stress
+  peak (a little before it).
+- **Smile**: `eye.*.smile` (else `mouth.form` up) at 0.25-0.35 of the range,
+  easing in over 0.35 s so that it peaks as a sentence ends, gone in 0.4 s;
+  not at a question (final pitch rise of 2 semitones or more). Hiyori's
+  `mouth.form` already rests at its maximum, so she smiles with the eyes.
+- **Blink**: an ordinary blink token at a pause of 0.35 s or more inside the
+  speech and at its end, 2.5 s apart at the closest. `Autonomic` only had a
+  Poisson blink (mean 4 s) and the requests of large gaze shifts; a request
+  moves the next scheduled blink to the pause.
+
+Rules: seeded and deterministic (a function of the audio, the seed and a
+key); 0.8 s between two face events, also across sentences; a face event is
+dropped when a model beat on the same variables (brows for a brow, eyes /
+mouth / cheeks for a smile) is within 0.6 s before its onset or after its
+hold (the model's beats win; `micro: ... N dropped for a model beat nearby`).
+Each sentence logs `micro: N events (b brow, s smile, k blink) over X s of
+voice`.
+
+Played as `micro` tokens, parameter offsets that the body model solves once
+per body (the canonical variable at its full range, scaled; face parameters
+only, no arm drawings, nothing the lip sync owns; a variable the body lacks
+is skipped). `flow.micro.MicroLayer` adds the eased offset to the frame
+before moves and poses (`MotionStream.frame` and `runtime.main`'s loop), so
+a pose on the same parameter takes over. The offline director writes the
+tokens into `actions.json` (`micro`) and so into `tokens.json`: `--tokens-in`
+replays them, and the live stream draws the same frames (tested).
+
+Flags (the director's parser, shared by `flow.live`): `--micro` (default on),
+`--no-micro`, `--micro-scale X` (amplitude, x the defaults; 0 is off). On by
+default in the offline director render and in `flow.live` (`--avatar` live2d,
+vrm and both) in body mode with a TTS; tag mode and a silent render have no
+body model or audio, so none. The dataset's trajectories and the action
+head's data never get it (`dataset.director_args` sets it off; only
+`director.plan`, `vrm.plan` and `live.Performer` build a `Micro`).
 
 ### Framing and motion budget
 

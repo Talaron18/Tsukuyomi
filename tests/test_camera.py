@@ -134,7 +134,7 @@ def test_beats_rule_asks_for_a_beat_in_every_sentence_and_variety():
 
 
 def test_beats_cap_does_not_bind_for_a_short_reply_of_two_beats_each():
-    assert dx.BEATS_MAX == 12
+    assert dx.BEATS_MAX == 16
     four = " ".join(
         '[pose {"mouth.form": 0.4, "head.tilt": 3}] Yes. '
         '[pose {"brow.L.lift": 0.4, "brow.R.lift": 0.4}] Really?'

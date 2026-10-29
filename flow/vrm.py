@@ -431,6 +431,13 @@ def plan(a, reply, out_dir, run, log=print, tts=None):
         directed += pz.tokens(poses, rig.roles, pz.arm_params(bm))
     if mvs:
         directed += mv.tokens(mvs)
+    if said is not None and run.get("mode") == "body":
+        # Speech-driven micro-expressions (flow.micro), as the Live2D
+        # render and flow.live have them.
+        micro_toks = dr.micro_plan(a, run, said, acts, reply["spoken"], log)
+        if micro_toks:
+            directed += micro_toks
+            extra["micro_events"] = len(micro_toks)
     gs = run.get("gsearch")
     gs_base = None
     if gs is not None:
@@ -587,6 +594,11 @@ class Follower:
             stream, log
         self.rng = np.random.default_rng([int(a.seed), 7])
         self._pre = None            # moves built ahead (build_moves)
+        try:
+            from . import micro as mc
+        except ImportError:
+            from flow import micro as mc
+        self.micro = mc.planner_for(a, bm, log)    # flow.micro, or None
 
     def build_moves(self, acts, seed=0):
         """The sentence's move markers on the VRM's own body (its reach
@@ -646,6 +658,9 @@ class Follower:
             for k in mv.tokens(mvs):
                 k["t"] = round(float(k["t"]) + t_start, 4)
                 directed.append(k)
+        if self.micro is not None and audio is not None:
+            directed += self.micro.plan(audio[0], audio[1], acts, t_start,
+                                        f0)
         if directed:
             self.stream.direct(directed)
         if audio is not None and (a.lipsync or "auto") != "off":

@@ -59,11 +59,13 @@ import numpy as np
 
 try:
     from . import events as ev
+    from . import micro as mc
     from . import runtime as rt
     from .behaviors import min_jerk
 except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from flow import events as ev
+    from flow import micro as mc
     from flow import runtime as rt
     from flow.behaviors import min_jerk
 
@@ -383,6 +385,11 @@ class MotionStream:
             self.mouth_rest = {p: float(v[0]) for p, v in rest.items()}
         self.drift = (HeadDrift(rig, seed, head_drift)
                       if head_drift else None)
+        # Speech-driven micro-expressions (flow.micro): "micro" tokens the
+        # caller planned; none, nothing runs.
+        self.micro = mc.MicroLayer()
+        self.micro_bounds = mc.bounds_of(rig.pids, rig.lo, rig.hi)
+        self.micro_dflt = dict(zip(rig.pids, rig.dflt.tolist()))
         self.f = 0                          # the next frame to compute
         self.camera = None                  # flow.framing.Camera, or off
         self.late = []                      # (intended, actual) directed
@@ -510,6 +517,8 @@ class MotionStream:
                 self.ges_prev, self.ges_cur = self.ges_cur, k
             elif typ == "blink" and self.auto is not None:
                 self.auto.request(float(k["t"]))
+            elif typ == "micro":
+                self.micro.commit(k)
             elif typ == "pose":
                 self.poses.commit(k)
             elif typ == "move":
@@ -571,6 +580,9 @@ class MotionStream:
                 over[p] = v
         if self.drift is not None:
             over = self.drift.apply(tf, over)
+        if self.micro.busy():
+            over = self.micro.apply(tf, over, self.micro_bounds,
+                                    self.micro_dflt)
         still = ()
         if self.gsearch is not None and self.gsearch.busy():
             over, parts = self.gsearch.apply(f, over, parts)
