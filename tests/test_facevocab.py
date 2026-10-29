@@ -148,11 +148,12 @@ def _digest(bm, prompt):
 
 
 # sha256[:16] of the prompts before the face vocabulary and the language
-# rule (the beats ones without the rule's sentence).
+# rule (the beats ones without the rule's sentence), with the bust picture
+# 1.0 hu below the chin.
 PINNED = {
-    "Hiyori": ("44842b09fe417e26", "0fe164a79656bdae"),
-    "lafei": ("7367f7386be57589", "c601c99615310110"),
-    "Natori": ("bba679326c22bcd5", "d6c262a1bcd4bf48"),
+    "Hiyori": ("44842b09fe417e26", "78cae7075a3eed1c"),
+    "lafei": ("7367f7386be57589", "9096b41623be8105"),
+    "Natori": ("bba679326c22bcd5", "2e13d61e36d25c19"),
     "seed-san": ("719fee22fd233b9c", "e8aff804b814f8dd"),
 }
 

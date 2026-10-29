@@ -9,7 +9,7 @@ streamer's camera shows them) instead of the whole canvas.
             extent in pixels: two points per axis fix the linear map from
             model units to pixels at scale 1. The window kept is from
             `above` hu over the chin to `below` hu under it (default 1.5 and
-            1.6: hair and ears to the middle of the chest), centred on the
+            1.0: hair and ears to the upper chest, as streamers frame it), centred on the
             chin horizontally; live2d-py's SetScale scales about the canvas
             centre and SetOffset then shifts by half-canvas units (+x right,
             +y up), measured on Hiyori: an offset of 0.5 moves the figure
@@ -43,7 +43,7 @@ import zlib
 import numpy as np
 
 FRAMES = ("bust", "full")
-ABOVE, BELOW = 1.5, 1.6
+ABOVE, BELOW = 1.5, 1.0
 VIEW_EASE = 0.6          # seconds a [frame] switch takes
 BUST_SHARE = 0.7         # sessions of generated data that start in bust
 # The prompt's face controls (the same prefixes as flow.dataexport's face).

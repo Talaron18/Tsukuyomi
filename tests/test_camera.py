@@ -12,6 +12,7 @@ import argparse
 import json
 import os
 import re
+from unittest import mock
 
 import pytest
 
@@ -100,18 +101,25 @@ def test_camera_line_is_worded_from_the_window_and_the_hands():
     assert (w["top"], w["bottom"]) == (fr.ABOVE, -fr.BELOW)
     hiyori = pz.camera_rule(_bm("Hiyori"))
     # Her hands rest below the bust picture; a hand shows once raised.
-    assert "1.5 hu above your chin to 1.6 hu below" in hiyori
+    assert "1.5 hu above your chin to 1.0 hu below" in hiyori
     assert "rest at y -2.00 and -2.09, below the picture" in hiyori
-    assert "above y -1.60" in hiyori and "not seen" in hiyori
+    assert "above y -1.00" in hiyori and "not seen" in hiyori
     assert "skip it and let the face carry the moment" in hiyori
     assert "instead of switching to full" in hiyori
     assert "a switch lasts for this reply, and the next one starts back in " \
         "your home" in hiyori
     assert "In full your whole body is in the picture" in hiyori
     lafei = pz.camera_rule(_bm("lafei"))
-    # lafei's hands rest at -1.10 / -1.15: inside the picture, not hidden.
-    assert "in the lower part of the picture" in lafei
-    assert "not seen" not in lafei and "All your hand moves stay" in lafei
+    # lafei's hands rest at -1.10 / -1.15: just below the 1.0 hu picture.
+    assert "rest at y -1.10 and -1.15, below the picture" in lafei
+    assert "not seen" in lafei
+    # With a looser picture they are inside it, and the wording says so.
+    budget = fr.budget
+    with mock.patch.object(fr, "budget",
+                           lambda bm, **k: budget(bm, below=1.6)):
+        loose = pz.camera_rule(_bm("lafei"))
+    assert "in the lower part of the picture" in loose
+    assert "not seen" not in loose and "All your hand moves stay" in loose
     seed = pz.camera_rule(_bm("seed-san"))
     assert "filmed full" in seed and "bust (head" not in seed
 
@@ -147,9 +155,9 @@ def test_user_turn_camera_line_follows_the_framing():
     bm = _bm("Hiyori")
     bust = pz.camera_now(bm, "bust")
     assert bust.startswith("(camera: bust") and "head and chest" in bust
-    assert "below y -1.60 are out of frame" in bust
+    assert "below y -1.00 are out of frame" in bust
     full = pz.camera_now(bm, "full")
-    assert full.startswith("(camera: full") and "-1.60" not in full
+    assert full.startswith("(camera: full") and "-1.00" not in full
     # A body that cannot switch is only ever shown full.
     assert pz.camera_now(_bm("seed-san"), "bust").startswith("(camera: full")
 
@@ -187,7 +195,7 @@ def test_budget_is_measured_from_the_body():
         assert b[n]["face"] == sum(v.startswith(fr.FACE_PREFIX) for v in off)
     assert b["seed-san"]["kind"] == "vrm" and b["Hiyori"]["kind"] == "live2d"
     assert b["Hiyori"]["rest_visible"] == {"L": False, "R": False}
-    assert b["lafei"]["rest_visible"] == {"L": True, "R": True}
+    assert b["lafei"]["rest_visible"] == {"L": False, "R": False}   # 1.0 hu picture
     assert b["Hiyori"]["hand_moves"] == {"bust": 1, "full": 1}
     assert b["seed-san"]["hand_moves"]["bust"] == 0
     assert b["seed-san"]["hand_moves"]["full"] > b["Hiyori"]["hand_moves"][
