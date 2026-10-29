@@ -1,0 +1,1 @@
+[pose {"head.tilt": 10, "mouth.form": 0.6, "dur": 0.4, "hold": 1}] うん、ちゃんと聞くよ。[pause:0.6] ほら、深呼吸、ゆっくりして。

@@ -1,0 +1,1 @@
+[pose {"head.tilt": 8, "mouth.form": 1, "dur": 0.4}] Hi! [pose {"head.yaw": 10, "dur": 0.4, "hold": 0.3}] It has been a while! I've been great, honestly. How about you?

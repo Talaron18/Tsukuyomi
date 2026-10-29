@@ -1,0 +1,1 @@
+[pose {"head.tilt": 10, "brow.L.lift": 0.6, "brow.R.lift": 0.6, "dur": 0.3, "hold": 0.4}] えへへ、今日はいい色選んだね！ [pose {"hand.L.y": "@shoulder.y", "hand.L.x": 0.3, "mouth.form": 1, "dur": 0.4, "hold": 0.6}] 私と似合ってるよ、ほんと！

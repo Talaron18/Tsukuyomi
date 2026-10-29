@@ -1,0 +1,1 @@
+[pose {"brow.L.lift": 0.7, "brow.R.lift": 0.7, "head.tilt": 6, "dur": 0.3}] Hmm, something I'm secretly bad at... [pause:0.4] Oh, I'm terrible at folding origami. [pose {"hand.L.y": "@shoulder.y", "mouth.form": 0.8, "dur": 0.4, "hold": 1.5}] I just keep messing up the corners.

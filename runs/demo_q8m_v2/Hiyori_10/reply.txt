@@ -1,0 +1,1 @@
+えっ、本当に？ [pose {"brow.L.lift": 0.9, "brow.R.lift": 0.9, "head.pitch": 8, "dur": 0.2}] 信じられない、私も！ [pose {"mouth.form": 1, "eye.L.smile": 0.8, "eye.R.smile": 0.8}] ほんとに嬉しい。

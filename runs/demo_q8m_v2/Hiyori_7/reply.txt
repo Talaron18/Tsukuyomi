@@ -1,0 +1,2 @@
+[pose {"head.yaw": 12, "brow.L.lift": 0.6, "brow.R.lift": 0.6, "dur": 0.25, "hold": 0}] うーん、今日の配信はね、音楽を聴きながらおしゃべりしようかな！
+[pose {"head.tilt": 8, "dur": 0.4, "hold": 1}] 何か気になる話があれば、聞かせてね。

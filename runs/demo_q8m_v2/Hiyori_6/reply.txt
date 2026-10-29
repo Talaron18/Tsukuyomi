@@ -1,0 +1,2 @@
+Yay! [move {"name": "dance", "beats": 8, "tempo": 120, "amp": 0.8}] Come on, dance with me!
+[pose {"mouth.form": 1, "eye.L.smile": 0.8, "eye.R.smile": 0.8, "head.tilt": 8, "dur": 0.3, "hold": 0.5}] How's that?

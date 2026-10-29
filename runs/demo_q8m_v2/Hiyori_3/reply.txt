@@ -1,0 +1,1 @@
+[pose {"hand.R.y": "@shoulder.y", "hand.R.x": -0.2, "dur": 0.4, "hold": 0.5}] Oh, right! [move {"name": "wave", "side": "R"}] Hi hi, waving at you! [pose {"hand.R.y": -2.09, "hand.R.x": -0.78, "dur": 0.5, "hold": 0}]

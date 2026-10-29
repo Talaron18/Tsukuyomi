@@ -1,0 +1,12 @@
+1
+00:00:00,100 --> 00:00:01,488
+Congratulations!
+
+2
+00:00:02,337 --> 00:00:03,112
+You did it!
+
+3
+00:00:04,105 --> 00:00:07,136
+That's so amazing, I'm so happy for you!
+
