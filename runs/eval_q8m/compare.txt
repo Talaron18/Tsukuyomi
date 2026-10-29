@@ -1,2 +1,3 @@
                        turns         parse       refused      refusal~        cutoff     body/turn     pose/turn     move/turn unplayed/turn         reach     MISS/turn   first s p50     tok/s p50       out tok
 recorded                 504         0.002           0.0           0.0           0.0         2.413         2.312         0.052           0.0        0.9603          0.27           0.0             -          82.6
+student                  504        0.0159           0.0           0.0           0.0          2.01         1.938         0.046           0.0        0.9688         0.153         0.047         131.7         105.4
