@@ -39,3 +39,5 @@ __pycache__/
 # demo renders: keep demo.mp4 and the text, not the frames or the wav
 /runs/demo*/*/render/
 /runs/demo*/*/speech.wav
+/runs/*/*/speech.wav
+/runs/*/*/render/*.png
