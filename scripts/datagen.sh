@@ -21,6 +21,10 @@
 #   SESSIONS=2000 TURNS=8 BUDGET_USD=20 CONC=8 OUT=data/datagen/r1 \
 #       nohup bash scripts/datagen.sh > datagen.log 2>&1 &
 #   ESTIMATE=1 bash scripts/datagen.sh            # the cost, nothing called
+#   # r3 (beats2, quiet-chat turns, 10 turns a session, ~16000 turns):
+#   SESSIONS=1600 TURNS=10 CONC=8 BUDGET_USD=20 OUT=data/datagen/r3 \
+#       AVATARS=Hiyori,lafei,Mao,huangjiafangzhou_3,八千代辉夜姬,seed-san \
+#       bash scripts/datagen.sh
 #
 # Environment knobs (defaults in brackets):
 #   AVATARS     [Hiyori,seed-san,lafei] rigs/<name>.body.json each; Live2D

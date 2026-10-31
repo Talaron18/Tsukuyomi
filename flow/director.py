@@ -1166,6 +1166,10 @@ def runtime_args(a, seconds):
                 f"{float(getattr(a, 'head_drift_scale', 1.0)):g}"]
     if getattr(a, "pose_ease", False):
         out.append("--pose-ease")
+    if getattr(a, "head_carry", False):
+        out.append("--head-carry")
+    if float(getattr(a, "baseline_scale", 0.0) or 0.0) > 0:
+        out += ["--baseline-scale", f"{float(a.baseline_scale):g}"]
     if not getattr(a, "camera_follow", True):
         out.append("--no-camera-follow")
     out += ["--frame", getattr(a, "frame", "full")]
@@ -1571,6 +1575,25 @@ def add_args(ap):
                          "the model asked for and when is unchanged "
                          "[default on]; --no-pose-ease: the beats as "
                          "written")
+    ap.add_argument("--head-carry", default=True,
+                    action=argparse.BooleanOptionalAction,
+                    help="body mode: a head or gaze angle a pose sets (a "
+                         "tilt, a pitch, a yaw that is more than a short "
+                         "reaction: over 6 degrees or held over 0.6 s) "
+                         "stays until the next pose that sets it, blending "
+                         "from target to target, and relaxes over at least "
+                         "1 s at the end of the reply's speech or after "
+                         "20 s of silence (flow.pose.carried) [default on]; "
+                         "--no-head-carry: each beat releases to the idle "
+                         "after its hold")
+    ap.add_argument("--baseline-scale", type=float, default=1.0,
+                    metavar="X",
+                    help="body mode: the expression baseline, a share "
+                         "(about 37%%, more for a beat that agrees with the "
+                         "reply's mood) of each face beat stays as a resting "
+                         "expression to the end of the reply and fades over "
+                         "5 s, under the beats and micro-expressions "
+                         "(flow.pose.PoseLayer) [1]; 0 is off")
     ap.add_argument("--camera-follow", default=True,
                     action=argparse.BooleanOptionalAction,
                     help="in bust, the camera eases to full ~0.3 s before a "

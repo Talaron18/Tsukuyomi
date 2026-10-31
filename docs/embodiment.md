@@ -1056,14 +1056,149 @@ cap and language filter.
   23% zh over a run. `dataset.run_opts` reads a run that did not record
   `teacher_prompt` as `beats`.
 
-r3 generation, the r2 avatar list:
+- *Quiet chat.* The first live trial of q8r2 showed a student that only
+  speaks when spoken to. Live now sends `(chat is quiet)` after a while
+  without a message (below) and the simulated user does the same on 10% of
+  the turns after the first (`--quiet-share P`, `dataset.QUIET_SHARE`; 0
+  none; beats2 only, the older prompts regenerate as they were). One
+  constant, `pose.QUIET_CHAT`, and one function, `pose.quiet_user`, write
+  the line in both. The turn is not a user line: no simulator call, topic
+  `quiet`, `quiet: true` on the record, `lang.asked` / `lang.user` the
+  session's current language (the language of the last real line), and the
+  `(reply in: ...)` line read from that line (`turn_tail(...,
+  lang_text=)`). The draw comes from its own generator
+  (`dataset.quiet_turn`, from the session seed and the turn), so nothing
+  else of a session moves. `dataexport` keeps these turns: `dedupe` leaves
+  them out (the line is the same by design) and `asked_for` says they asked
+  for nothing, so the manners strip unasked hands as for any chat turn. The
+  prompt gets, in its rules (beats2 only): "A user message that is just
+  "(chat is quiet)" means nobody has written for a while: keep talking as a
+  streamer does when the chat is quiet. Start a small topic of your own,
+  react to something you said or saw, ask the viewers a question, or carry
+  on with the last topic. Keep it short and natural, and never say that the
+  chat is quiet."
+- *Looks hold.* Two sentences under the head move: "Your head stays at the
+  angle a marker gave it until your next marker sets that angle again (and
+  settles back when your reply ends), so tilt from one side to the other as
+  you talk and do not count on the idle to bring it back." and, from the
+  variables the body has, "When the user asks you to look or turn somewhere
+  (left, right, up, down, at the camera), do it in one marker that holds
+  that direction: "head.yaw" and "gaze.x", with "hold" 2 to 4. The head stays
+  turned until your next head move or the end of the reply, so do not glance
+  back after a moment." They describe the playback of the next section; the
+  data itself is still played by the dataset as before (it does not carry:
+  the trajectories and the action head's targets are unchanged).
+- *Longer sessions.* Nothing caps a session: `--turns` / `TURNS` is the
+  session length, the personas and topics have no turn count, the
+  simulated user sees the whole transcript, and the character sees every
+  earlier turn. r3 runs 10 turns, 1600 sessions (16000 turns; r2 was about
+  15000). The live window (`--history-turns 5`) is shorter than the
+  longest history the character saw (9 exchanges) and as long as a
+  6-turn session's, so a request to the student never holds more history
+  than it trained on. A session example of 10 turns is about 1.7x a
+  6-turn one: `train_sft --max-len auto` (99th percentile, 256-token
+  steps, at most 16384) cuts the rest after the last reply that fits.
 
-    python -m flow.dataset gen --avatars Hiyori,lafei,Mao,huangjiafangzhou_3,八千代辉夜姬,seed-san \
-        --teacher-prompt beats2 --out data/datagen/r3 ...
+r3 generation, the r2 avatar list, 10 turns a session, 1600 sessions (about
+the turns of r2):
 
-(`--teacher-prompt beats2` is the default; the personas file is the same.)
+    SESSIONS=1600 TURNS=10 CONC=8 BUDGET_USD=20 OUT=data/datagen/r3 \
+    AVATARS=Hiyori,lafei,Mao,huangjiafangzhou_3,八千代辉夜姬,seed-san \
+        bash scripts/datagen.sh
+
+or `python -m flow.dataset gen --avatars Hiyori,lafei,Mao,huangjiafangzhou_3,八千代辉夜姬,seed-san
+--sessions 1600 --turns 10 --teacher-prompt beats2 --out data/datagen/r3 ...`
+(`--teacher-prompt beats2` is the default; the personas file is the same).
 Export and train as for r2; serve the student with `--body-prompt beats2`.
 八千代辉夜姬 and the Azur Lane rigs are for training and tests only.
+
+### Live after the first q8r2 trial (2026-10)
+
+The student (tsk-q8r2, Mao, `--body-prompt beats`) was talked to for 19
+turns. From turn 12 every reply was the same three beats, requested hand
+poses did nothing, the first-text latency grew from 0.9 to 2.7 s, the face
+went blank between beats, Mao seemed to look left all the time, a requested
+look right lasted under a second, the character never spoke unprompted, and
+her head tilted in discrete steps. What changed, all in `flow.live` (and
+the offline director where it plays the same tokens), none of it in what
+the dataset and the action head learn from:
+
+- **History window** (`--history-turns K`, default 5; 0 keeps all). The
+  system prompt and the last K exchanges and the current line are sent: a
+  request is at most 6 turns, as long as the sessions of r1/r2 (6) and shorter
+  than r3's. The model copies its own earlier replies once the chat is
+  longer than anything it trained on. `Performer.trim_history` drops the
+  older messages for good and logs `history trimmed to the last K
+  exchanges (n older messages not sent)`.
+- **Head carry** (`--head-carry`, default on; `--no-head-carry`). A pose
+  used to hold its target, then release to the idle's value, so each beat
+  went out and back to centre. A beat's head and gaze angles now stay where
+  it put them: `pose.tokens(..., carry=True)` names them in the token
+  (`carry`) and `PoseLayer` holds them until the next token that sets that
+  angle, which blends straight from there (min-jerk, the pose-ease times),
+  or until an end token. Live sends the end token (`pose.release_token`) at
+  the end of each reply's speech: the carried angles relax over
+  `CARRY_RELEASE` = 1.5 s (never under 1 s); the baseline below starts to
+  fade. Without an end (the reply failed, a quiet stream) they relax after
+  `CARRY_MAX` = 20 s. HeadDrift stays under all of it. Carried: pitch and
+  tilt always; yaw, gaze.x and gaze.y unless the beat is a reaction
+  (`|yaw| <= 6` degrees, `|gaze| <= 0.4`, hold <= 0.6 s), which relaxes
+  after its hold as before. The q8r2 replies open with a yaw of -4 or -5 (20
+  of the 21 replies in `runs/demo_q8r2` that open with one; 11 -5, 9 -4,
+  mean -4.1); carried, that would have been a lasting turn. A look
+  (`head.yaw: 25, hold: 3`) stays to the end of the reply and relaxes over 1.5
+  s. A reaction in the middle of a look relaxes to the idle, not back to the
+  look. The offline director and the VRM render take the same flags
+  (`--head-carry` is passed to `flow.runtime`, which writes the end token at
+  the speech's end into the tokens); the dataset sets it off.
+- **Expression baseline** (`--baseline-scale X`, default 1; 0 is off).
+  Each face beat leaves a resting share of itself: `BASE_FRAC` 0.375 of
+  how far it moved the face parameter from where the idle had it (`face_params`:
+  brows and the unbound eye, mouth and cheek shapes; not angles, hands,
+  switches or openings), 0.25 to 0.5 with the reply's mood (`pose.valence`
+  of each beat, from its smiles, mouth form, blush and brows; a beat that
+  agrees with the mean of the reply so far keeps more, one that does not
+  keeps less). It is reached by the end of the beat's hold, kept to the end of the reply
+  (`BASE_HOLD_MAX` = 8 s with no end token) and faded over `BASE_DECAY` = 5 s,
+  or replaced by the next beat on that parameter, which starts from where
+  the face is. It is added to the frame after the drift and before the
+  micro-expressions and the beats (`PoseLayer.base_apply`), so both ride on
+  it and a beat's release returns to the resting face, not to a blank one.
+  Scale 0 is the frames of before, bit for bit.
+- **Quiet chat** (`--quiet-after S`, default 20; 0 is never; `--quiet-max
+  N`, default 3). S seconds after a reply's speech ends with nothing waiting
+  the Performer sends the model `(chat is quiet)` (`pose.QUIET_CHAT`, the
+  string the dataset's simulated user sends) with the usual body, camera and
+  `(reply in: ...)` lines, the language being that of the last real message.
+  At most `--quiet-max` in a row; any real message resets the count, and a
+  message that arrives while a quiet turn is spoken waits its turn as
+  ever. The voice keeps the conversation's language (a quiet turn does not
+  re-detect it from the English line). Logged as `live: turn n: chat quiet
+  S s after the last reply; quiet turn i/N`; the page's user event and the
+  recorded turn carry `quiet`. The student of r2 (beats prompt) has never
+  seen the line; it is only meaningful with the beats2 student.
+
+Why Mao looks to the left. Measured with the real Mao rig (the Cubism
+sample, `rigs/Mao.npz`, the calm idle, no GL) through `MotionStream`, 40
+seeds of 60 s each, drift on: mean head yaw (ParamAngleX) +0.37 degrees
+(the spread between seeds is 2.65, 22 of 40 negative), mean eye-ball X
+(ParamEyeBallX) +0.002 (22 of 40 negative), pitch +0.40. The idle has no side.
+Mao's own motions do have one (mean ParamAngleX: mtn_04 -4.1, special_01
+-9.8, special_02 -20.4, special_03 -5.7; EyeBallX -0.1 to -0.22) but the
+gesture library keeps out every parameter a role is bound to, head and
+gaze included (checked: none of the two idle gestures writes either), so none of it
+reaches the head. What does have a side is the student: in the 30 replies
+of `runs/demo_q8r2`, 43 beats set a head yaw, 58% negative, mean -0.72
+degrees; 20 of 21 first beats of a reply have -4 or -5. `head.yaw` is
+positive toward the character's left (the viewer's right), so -5 is a turn
+toward her right, the viewer's left: the same screen side every reply, a
+brief turn that starts every answer. The scripted Mao_14 reply (yaw -4,
+none, +5, 11 s of speech) averages -0.34 degrees of yaw over its speech
+under either playback; in a reply with only the opening yaw -5 the 8 s after
+the beat average -0.69 degrees (12 seeds, the idle's own spread) because the
+reaction relaxes, where a carried -5 would have stayed at -5. A requested look right (yaw +25, hold 3) was at
++24 at 2 s and back at -0.8 by 5 s; it is now +25 until the end of the
+reply at 9 s and back by 11 s.
 
 ### Action head ablations on BEAT2 (2026-10)
 

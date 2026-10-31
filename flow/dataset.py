@@ -58,6 +58,10 @@ included; flow.dataexport filters):
               saw them: user_content is the user message (line + "\\n" +
               pose_now), reply the raw marked text
   user, user_content
+  quiet       true on a quiet-chat turn (beats2; absent otherwise): user is
+              flow.pose.QUIET_CHAT, no simulator was called, topic is
+              "quiet" and lang.asked / lang.user are the session's current
+              language, as the "(reply in: ...)" line is
   reply_raw   the model's text, markers in it; spoken: what is said
   refused, stop_reason, warnings (parser and planning)
   markers     [{tag, arg, at (char offset in spoken), t (seconds; null for
@@ -209,6 +213,12 @@ TEACHER_PROMPT = "beats2"
 # personas' own "switch" (0.1-0.15) carried an earlier turn's language over
 # into the answer to a user who had moved on; r2 data keeps theirs.
 LANG_SWITCH = 0.03
+# Quiet-chat turns of the beats2 prompt (--quiet-share): the share of turns
+# (never the first) on which the simulated user sends exactly what flow.live
+# sends after a while without a message, flow.pose.QUIET_CHAT, and the
+# character keeps talking by itself. Drawn from its own generator, so
+# nothing else of a session moves.
+QUIET_SHARE = 0.10
 # Prices in US$ per million tokens: DeepSeek's deepseek-chat list prices
 # as last checked (2025-09: input 0.28 on a cache miss, 0.028 on a hit,
 # output 0.42). Check https://api-docs.deepseek.com/quick_start/pricing
@@ -450,6 +460,8 @@ def director_args(spec, opts, persona=None):
     a.micro = False         # no speech-driven micro-expressions in the data
     a.head_drift = False    # nor drift, pose ease or camera: the data is the
     a.pose_ease = False     # trajectory as the model wrote it
+    a.head_carry = False    # (no carried angles, no resting expression)
+    a.baseline_scale = 0.0
     a.camera_follow = False
     a.tail = opts.tail
     if opts.max_tokens:
@@ -863,6 +875,19 @@ def switch_prob(persona, opts) -> float:
     return float(persona.get("switch", 0.15) if v is None else v)
 
 
+def quiet_turn(sess, turn, opts) -> bool:
+    """Whether turn `turn` of the session is a quiet-chat turn: beats2 only,
+    never the first, with chance --quiet-share, from the session's seed and
+    the turn alone (a resumed session decides the same)."""
+    share = getattr(opts, "quiet_share", None)
+    share = QUIET_SHARE if share is None else float(share)
+    if (getattr(opts, "teacher_prompt", TEACHER_PROMPT) != "beats2"
+            or turn <= 1 or share <= 0):
+        return False
+    r = random.Random(zlib.crc32(f"{sess['seed']}:{turn}:quiet".encode()))
+    return r.random() < share
+
+
 def collect(backend, system, messages):
     return "".join(backend.stream(system, messages))
 
@@ -977,6 +1002,7 @@ def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
     if pz.beats_like(prompt):
         framing = home = sess.get("frame", "bust") if fr.can_frame(av.bm) \
             else "full"
+    last_line, cur_lang = None, lang0     # the last real line, its language
     for turn in range(1, sess["turns"] + 1):
         if stop is not None and stop.is_set():
             raise InterruptedError("stopped")
@@ -995,7 +1021,14 @@ def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
             cfg, ptext, user, topic, lang, mix, transcript, char_name)}]
         line, u_att, u_text, u_sec = "", 0, "", 0.0
         u_tok, u_est, uc = {"in": 0, "in_hit": 0, "out": 0}, False, 0.0
-        for _ in range(3):
+        quiet = last_line is not None and quiet_turn(sess, turn, opts)
+        if quiet:
+            # Chat is quiet: the line flow.live sends, no simulator, the
+            # session's current language.
+            topic = {"id": "quiet"}
+            lang, mix = cur_lang, None
+            line = pz.quiet_user(last_line)[0]
+        for _ in range(0 if quiet else 3):
             t0 = time.monotonic()
             u_text, k = with_retries(lambda: collect(user_backend, usys, umsg),
                                      opts.retries, opts.backoff, stop, log,
@@ -1015,7 +1048,9 @@ def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
         content = line + "\n" + av.pose_now
         if framing is not None:
             framing = home
-            content += pz.turn_tail(av.bm, framing, line, prompt)
+            content += pz.turn_tail(av.bm, framing, line, prompt,
+                                    lang_text=pz.quiet_user(last_line)[1]
+                                    if quiet else None)
         start_frame = framing
         msgs = []
         for h in history:
@@ -1042,10 +1077,11 @@ def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
                "persona": sess["persona"], "user_type": user["id"],
                "topic": topic["id"],
                "lang": {"asked": lang, "mix": mix,
-                        "user": detect_lang(line),
+                        "user": detect_lang(last_line if quiet else line),
                         "reply": detect_lang(reply["spoken"])},
                "history": [dict(h) for h in history],
                "user": line, "user_content": content,
+               **({"quiet": True} if quiet else {}),
                "reply_raw": reply["raw"], "spoken": reply["spoken"],
                "refused": bool(reply["refused"]),
                "stop_reason": reply.get("stop_reason"),
@@ -1079,7 +1115,11 @@ def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
                 arrays[key + suf] = v
             history.append({"user": line, "user_content": content,
                             "reply": reply["raw"]})
-        transcript.append(("user", line))
+        if quiet:
+            pass                    # nobody wrote: no user line to show
+        else:
+            transcript.append(("user", line))
+            last_line, cur_lang = line, lang
         if reply["spoken"]:
             transcript.append(("char", reply["spoken"]))
         rec["llm"] = {
@@ -1778,6 +1818,12 @@ def add_args(ap):
                          "instead of the session's [beats2: "
                          f"{LANG_SWITCH:g}; older prompts: each persona's "
                          "own \"switch\" in --config, 0.1-0.15]")
+    ap.add_argument("--quiet-share", type=float, default=None, metavar="P",
+                    help="beats2: the share of turns (never the first) on "
+                         "which the simulated user sends the quiet-chat "
+                         "line flow.live sends after a while without a "
+                         "message (flow.pose.QUIET_CHAT) and the character "
+                         f"keeps talking [{QUIET_SHARE:g}]; 0 is none")
     ap.add_argument("--bust-share", type=float, default=fr.BUST_SHARE,
                     metavar="P",
                     help="beats prompt: the share of sessions that start in "

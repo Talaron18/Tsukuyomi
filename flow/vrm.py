@@ -429,11 +429,17 @@ def plan(a, reply, out_dir, run, log=print, tts=None):
     rng = np.random.default_rng([int(a.seed), 1])
     stream = fs.MotionStream(rig, seed=a.seed, idle=not a.no_idle,
                              head_drift=fs.drift_from_args(a),
-                             pose_ease=fs.ease_from_args(a), log=log)
+                             pose_ease=fs.ease_from_args(a),
+                             baseline_scale=fs.baseline_from_args(a), log=log)
     directed = dr.realize(acts, rig.stats, list(rig.roles), {}, rng,
                           stream.pose(), settle=None)
     if poses:
-        directed += pz.tokens(poses, rig.roles, pz.arm_params(bm))
+        carry = bool(getattr(a, "head_carry", False))
+        base = fs.baseline_from_args(a) > 0
+        directed += pz.tokens(poses, rig.roles, pz.arm_params(bm),
+                              carry=carry, baseline=base)
+        if carry or base:
+            directed.append(pz.release_token(end))
     if mvs:
         directed += mv.tokens(mvs)
     if said is not None and run.get("mode") == "body":
@@ -472,7 +478,8 @@ def plan(a, reply, out_dir, run, log=print, tts=None):
         # panel): a stream of its own with the same seeds.
         s2 = fs.MotionStream(rig, seed=a.seed, idle=not a.no_idle,
                              head_drift=fs.drift_from_args(a),
-                             pose_ease=fs.ease_from_args(a), log=log)
+                             pose_ease=fs.ease_from_args(a),
+                             baseline_scale=fs.baseline_from_args(a), log=log)
         s2.direct(gs_base)
         if mouth is not None:
             s2.add_mouth(0, mouth, len(mouth["open"]))
@@ -623,6 +630,17 @@ class Follower:
                                    seed=seed)
         return self._pre
 
+    def release(self, t):
+        """The reply's speech ends at t (flow.live): carried angles relax,
+        the baseline fades, as on the Live2D side."""
+        try:
+            from . import pose as pz
+        except ImportError:
+            from flow import pose as pz
+        a = self.a
+        if getattr(a, "head_carry", False) or fs.baseline_from_args(a) > 0:
+            self.stream.direct([pz.release_token(t)])
+
     def sentence(self, acts, t_start, f0, spoken, audio, end):
         try:
             from . import moves as mv
@@ -658,7 +676,9 @@ class Follower:
                    if x.get("tag") != "gesture"]
         directed = dr.realize(shifted, self.rig.stats, list(self.rig.roles),
                               {}, self.rng, self.stream.pose())
-        for k in pz.tokens(poses, self.rig.roles, pz.arm_params(self.bm)):
+        for k in pz.tokens(poses, self.rig.roles, pz.arm_params(self.bm),
+                           carry=bool(getattr(a, "head_carry", False)),
+                           baseline=fs.baseline_from_args(a) > 0):
             k["t"] = round(float(k["t"]) + t_start, 4)
             directed.append(k)
         if mvs:

@@ -86,6 +86,10 @@ Quality filters, stats and exporters for flow.dataset's turn records.
              capped at N a reply on their own and --max-poses counts the
              other pose markers only; 0 is manners as before, a beat a pose
              marker like any, so a reply of beats keeps 2.
+  quiet      the quiet-chat turns of beats2 data (record "quiet": true, the
+             user line flow.pose.QUIET_CHAT): kept like any turn. They are
+             not deduplicated (the line is the same every time) and they
+             never count as asking for a gesture.
   hands      --max-hands N [default: N = MAX_HANDS (1) when the dataset's
              avatars.json holds the beats prompt; -1 or other data: the
              manners above strip every unasked hand target]. The beats
@@ -195,6 +199,8 @@ def dedupe(records, threshold=DUP_JACCARD) -> set:
     out = set()
     groups = defaultdict(list)
     for r in sorted(records, key=lambda r: (r["session"], r["turn"])):
+        if r.get("quiet"):
+            continue    # the quiet-chat line is the same every time, by design
         groups[(r["avatar"]["name"], r["persona"])].append(r)
     for recs in groups.values():
         exact, kept = set(), []
@@ -709,7 +715,9 @@ def asked_line(line) -> bool:
 
 def asked_for(r):
     """(asked, by) for a record: by is "topic", "keyword", "topic+keyword"
-    or None."""
+    or None. A quiet-chat turn (flow.pose.QUIET_CHAT) asks for nothing."""
+    if r.get("quiet"):
+        return False, None
     by = []
     if r.get("topic") in ASK_TOPICS:
         by.append("topic")

@@ -84,7 +84,7 @@ def _opts(out, *extra, avatars="seed-san,Hiyori", sessions=4, turns=3):
                           "--sessions", str(sessions), "--turns", str(turns),
                           "--out", str(out), "--concurrency", "2",
                           "--personas", "cheerful,sleepy", "--backoff",
-                          "0.01", *extra])
+                          "0.01", "--quiet-share", "0", *extra])
 
 
 @pytest.fixture(scope="module")

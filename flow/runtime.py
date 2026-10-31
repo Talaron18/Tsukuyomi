@@ -878,6 +878,17 @@ def main(argv=None) -> int:
                     help="organic pose playback (flow.pose.ANGLE_DUR): "
                          "head / torso targets take at least 0.35 s to "
                          "arrive and 0.7 s to relax. The director passes it")
+    ap.add_argument("--head-carry", action="store_true",
+                    help="--direct: head and gaze angles a pose sets stay "
+                         "until the next pose that sets them, relaxing at "
+                         "the end of the speech (flow.pose.carried). The "
+                         "director passes it")
+    ap.add_argument("--baseline-scale", type=float, default=0.0,
+                    metavar="X",
+                    help="the expression baseline (flow.pose.PoseLayer): a "
+                         "share of each face beat stays as a resting "
+                         "expression; 0 is off [0]. The director passes "
+                         "its own default (1)")
     ap.add_argument("--body", default=None,
                     help="the rig's body file for --frame bust [rigs/<rig "
                          "name>.body.json]")
@@ -1104,7 +1115,18 @@ def main(argv=None) -> int:
                         from flow import pose as pz
                     directed = directed + pz.tokens(
                         solved, roles, {p for x in solved
-                                        for p in x.get("arm_params", ())})
+                                        for p in x.get("arm_params", ())},
+                        carry=a.head_carry, baseline=a.baseline_scale > 0)
+                    if a.head_carry or a.baseline_scale > 0:
+                        # The reply's end: carried angles relax, the
+                        # baseline fades (the director writes the speech's
+                        # length; else the last beat's hold).
+                        end_t = blob.get("speech_seconds") \
+                            if isinstance(blob, dict) else None
+                        if end_t is None:
+                            end_t = max(x["start"] + x["dur"] + x["hold"]
+                                        for x in solved)
+                        directed.append(pz.release_token(end_t))
                 # Motion primitives (flow.moves) the director built.
                 mvs = [x["solved"] for x in acts
                        if x.get("tag") == "move" and x.get("solved")]
@@ -1325,7 +1347,10 @@ def main(argv=None) -> int:
         pose_layer = pz.layer_for(
             tokens, a.fps, dict(zip(pids, dflt.tolist())), base_parts,
             ease=a.pose_ease,
-            angles=pz.angle_params(pids, roles) if a.pose_ease else ())
+            angles=pz.angle_params(pids, roles) if a.pose_ease else (),
+            baseline=a.baseline_scale)
+        base_bounds = {p: (float(x), float(y)) for p, x, y in
+                       zip(pids, lo, hi)}
         print(f"pose: {sum(k['type'] == 'pose' for k in tokens)} body poses "
               "over the idle (flow.pose)")
     drift = None
@@ -1530,6 +1555,14 @@ def main(argv=None) -> int:
             if drift is not None:
                 over = drift.apply(f / a.fps, over)
                 for p, *_ in drift.axes:
+                    col = expr_col.get(p)
+                    if col is not None and p in over:
+                        i = expressive[col]
+                        applied[f, col] = (over[p] - lo[i]) / span_x[col] * 2 - 1
+                        applied_mask[f, col] = True
+            if pose_layer is not None and pose_layer.has_base():
+                over = pose_layer.base_apply(f, over, base_bounds)
+                for p in pose_layer.off:
                     col = expr_col.get(p)
                     if col is not None and p in over:
                         i = expressive[col]

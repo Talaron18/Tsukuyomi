@@ -156,6 +156,27 @@ def angle_params(pids, roles=()) -> set:
            if ev.GROUP_OF.get(r) in ("head", "body")}
     out |= {p for p in pids if _ANGLE_ID.search(p)}
     return out
+# Head carry (live, and the offline director; the dataset plays neither): a
+# head or gaze angle a beat set stays where the beat put it until the next
+# beat that sets that angle, blending directly from one target to the next,
+# and relaxes only at the end of the reply's speech (release_token) or, with
+# no end, after CARRY_MAX seconds of silence. A beat that is only a reaction
+# (a yaw of at most REACT_YAW degrees, a gaze of at most REACT_GAZE, held no
+# more than REACT_HOLD) relaxes after its hold as before: the model opens
+# many replies with a yaw of -4 or -5, which would otherwise stay on.
+CARRY_MAX = 20.0
+CARRY_RELEASE = 1.5
+REACT_YAW, REACT_GAZE, REACT_HOLD = 6.0, 0.4, 0.6
+CARRY_ROLES = {"head_x": "head.yaw", "head_y": "head.pitch",
+               "head_z": "head.tilt", "gaze_x": "gaze.x", "gaze_y": "gaze.y"}
+# Expression baseline: after a face beat, BASE_FRAC of what it moved the
+# face (+-BASE_MOOD with the reply's mood) stays on as a resting expression,
+# under the micro-expressions and the next beats: it holds to the end of the
+# reply (BASE_HOLD_MAX with no end) and fades over BASE_DECAY seconds, or
+# until a beat on the same parameter replaces it. PoseLayer(baseline=X) is
+# the scale: 0 is off.
+BASE_FRAC, BASE_MOOD = 0.375, 0.125
+BASE_DECAY, BASE_HOLD_MAX = 5.0, 8.0
 # A solved parameter is played when it moves at least this fraction of its
 # span from where it was (or is a target's main mover); below it the idle
 # keeps it. Hiyori's hand.R.y = shoulder solve also nudged BodyAngleX by
@@ -791,6 +812,16 @@ LANG_RULE2 = ("- Answer in the language of the user's latest message, even "
 OPEN_RULE = ("- Vary how your replies open: never start every reply with the "
              "same expression, and do not take the opening of an example; "
              "begin with what this line makes you feel.\n")
+# beats2: what a user turn of QUIET_CHAT means. flow.live sends it after a
+# while without a message and flow.dataset's simulated user sometimes does,
+# the same string (quiet_user) and the same tail (turn_tail's lang_text).
+QUIET_CHAT = "(chat is quiet)"
+QUIET_RULE = ("- A user message that is just \"" + QUIET_CHAT + "\" means "
+              "nobody has written for a while: keep talking as a streamer "
+              "does when the chat is quiet. Start a small topic of your own, "
+              "react to something you said or saw, ask the viewers a "
+              "question, or carry on with the last topic. Keep it short and "
+              "natural, and never say that the chat is quiet.\n")
 SENTENCE_RULE = {
     "v1": "- One or two beats per sentence, for what that sentence means. "
           "Put a marker right before the words it goes with, often "
@@ -800,7 +831,7 @@ SENTENCE_RULE = {
              "in its own marker right before the words it reacts to, often "
              "mid-sentence.\n" + LANG_RULE}
 SENTENCE_RULE["beats2"] = (SENTENCE_RULE["beats"][:-len(LANG_RULE)]
-                           + LANG_RULE2 + OPEN_RULE)
+                           + LANG_RULE2 + OPEN_RULE + QUIET_RULE)
 
 
 def _bothsides(have, base, kinds):
@@ -808,6 +839,18 @@ def _bothsides(have, base, kinds):
     ("eye", ("smile",)) -> ["eye.L.smile", "eye.R.smile"]."""
     return [f"{base}.{s}.{k}" for k in kinds for s in "LR"
             if f"{base}.{s}.{k}" in have]
+
+
+# beats2: the head no longer comes back to centre after every beat.
+HEAD_STAYS = ("- Your head stays at the angle a marker gave it until your "
+              "next marker sets that angle again (and settles back when your "
+              "reply ends), so tilt from one side to the other as you talk "
+              "and do not count on the idle to bring it back.\n")
+LOOK_RULE = ("- When the user asks you to look or turn somewhere (left, "
+             "right, up, down, at the camera), do it in one marker that "
+             "holds that direction: {vars}, with \"hold\" 2 to 4. The "
+             "head stays turned until your next head move or the end of "
+             "the reply, so do not glance back after a moment.\n")
 
 
 def _beats_rule(bm, v2=False) -> str:
@@ -895,11 +938,20 @@ def _beats_rule(bm, v2=False) -> str:
                  "a tilt with a smile, a small turn away with a doubt, a "
                  "little chin down when shy. Never write that head move as "
                  "a marker of its own.\n")
+        if v2:
+            L.append(HEAD_STAYS)
     L.append("- Keep the rest of your body for the moments that call for it: "
              "a greeting, a celebration, showing a size or a shape, pointing "
              "at what you mean, an emphasis, or when the user asks you to "
              "show or do something. Then let the hand fall back; the rest "
              "of the time the face and head do it.\n")
+    if v2:
+        look = [f'"{v}"' for v in ("head.yaw", "head.pitch", "gaze.x",
+                                   "gaze.y") if v in have]
+        if look:
+            L.append(LOOK_RULE.format(vars=" and ".join(
+                [", ".join(look[:-1]), look[-1]] if len(look) > 1
+                else look)))
     L.append(camera_rule(bm))
     L.append(budget_line(bm, v2))
     return "".join(L)
@@ -1508,17 +1560,27 @@ def reply_line(text) -> str:
     return f"(reply in: {name})" if name else ""
 
 
-def turn_tail(bm, framing, text, prompt) -> str:
+def quiet_user(last_user=None) -> tuple:
+    """(the user line, the text the reply language is read from) of a quiet
+    chat turn: QUIET_CHAT, and the last real user message (the turn answers
+    in the language the conversation is in). flow.live and flow.dataset
+    both build their quiet turn from this."""
+    return QUIET_CHAT, last_user or ""
+
+
+def turn_tail(bm, framing, text, prompt, lang_text=None) -> str:
     """What follows the pose line of a user turn under `prompt`: "" for v1;
     "\n(camera: ...)" for beats; for beats2 also "\n(reply in: ...)" next
     to it. `framing`: the framing the turn starts in; `text` the user's
-    line. The data generator, the director and the live loop all call
-    this, so what the student was taught is what it is served."""
+    line (`lang_text`: the text the reply language is read from when that
+    is not the line itself, as for a quiet turn, see quiet_user). The data
+    generator, the director and the live loop all call this, so what the
+    student was taught is what it is served."""
     if not beats_like(prompt):
         return ""
     out = "\n" + camera_now(bm, framing)
     if prompt == "beats2":
-        line = reply_line(text)
+        line = reply_line(text if lang_text is None else lang_text)
         if line:
             out += "\n" + line
     return out
@@ -1939,11 +2001,84 @@ def arm_params(bm) -> set:
     return out
 
 
-def tokens(poses, roles, arms=()) -> list[dict]:
+def carried(rec, roles) -> list:
+    """The parameters of a pose record that stay where it puts them (head
+    carry, see CARRY_MAX): its head and gaze angles, except a reaction (a
+    short yaw or glance, REACT_YAW / REACT_GAZE / REACT_HOLD), which relaxes
+    after its hold. roles: runtime's {role: (pid, sign, source)}. A detour
+    leg (via) and an angle the record did not name (the solver moved it on
+    the way to another target) are not carried."""
+    if rec.get("via"):
+        return []
+    out = []
+    for r, var in CARRY_ROLES.items():
+        pid = (roles.get(r) or (None,))[0]
+        if pid is None or pid not in rec["params"] or var not in rec.get(
+                "resolved", {}):
+            continue
+        v = abs(float(rec["resolved"][var]))
+        short = float(rec.get("hold", POSE_HOLD)) <= REACT_HOLD
+        if short and v <= (REACT_YAW if var == "head.yaw" else
+                           REACT_GAZE if var.startswith("gaze") else 0.0):
+            continue
+        out.append(pid)
+    return sorted(out)
+
+
+def face_params(rec, roles, arms=()) -> list:
+    """The parameters of a pose record the expression baseline keeps: the
+    face's (brows, and the unbound eye, mouth and cheek shapes), not an
+    angle, a hand or arm, a switch, or an opening (the voice drives the
+    mouth; a closed eye is a blink's)."""
+    skip = (angle_params(list(rec["params"]), roles) | set(arms)
+            | set(rec.get("step", ()))
+            | {roles[r][0] for r in CARRY_ROLES if r in roles})
+    return sorted(p for p in rec["params"]
+                  if p not in skip and "open" not in p.lower())
+
+
+def valence(rec) -> float:
+    """How positive (+1) or negative (-1) the beat's face is, from the
+    variables it resolved: smiles, the mouth's form, a blush, brows (a drop
+    is worry, a lift a little surprise). 0 with none of them."""
+    res = rec.get("resolved", {})
+    t = []
+    sm = [v for k, v in res.items() if k.startswith("eye.") and
+          k.endswith(".smile")]
+    if sm:
+        t.append(sum(sm) / len(sm))
+    if "mouth.form" in res:
+        t.append(res["mouth.form"])
+    if "cheek.blush" in res:
+        t.append(0.5 * res["cheek.blush"])
+    br = [v for k, v in res.items() if k.startswith("brow.") and
+          k.endswith(".lift")]
+    if br:
+        m = sum(br) / len(br)
+        t.append(0.8 * m if m < 0 else 0.3 * m)
+    return float(max(-1.0, min(1.0, sum(t) / len(t)))) if t else 0.0
+
+
+def release_token(t, release=CARRY_RELEASE) -> dict:
+    """The end of a reply's speech at t: the head and gaze angles it carried
+    relax over `release` seconds (at least 1) and the expression baseline
+    starts to fade. No parameters of its own."""
+    return {"t": round(float(t), 4), "type": POSE, "role": POSE,
+            "params": {}, "parts": {}, "parts_from": {}, "step": [],
+            "duration": 0.1, "hold": 0.0,
+            "release": round(max(float(release), 1.0), 4), "groups": [],
+            "variant": None, "src": "director", "end": True}
+
+
+def tokens(poses, roles, arms=(), carry=False, baseline=False) -> list[dict]:
     """Pose tokens for the event stream. roles: runtime's {role: (pid,
     sign, source)}; a played parameter bound to a role takes that role's
     group (director.merge then drops the idle's moves on it for the move
-    plus hold), an unbound one in `arms` takes "arms"."""
+    plus hold), an unbound one in `arms` takes "arms". carry: tokens name
+    the head and gaze angles that stay (`carry`, see carried); baseline:
+    they name the face parameters the baseline keeps and the beat's
+    valence (`base`, `valence`). Neither: the tokens of before, which the
+    dataset and the action head's data are made of."""
     group_of_pid = {p: ev.GROUP_OF.get(r) for r, (p, _s, _src) in
                     roles.items()}
     arms = set(arms)
@@ -1956,6 +2091,16 @@ def tokens(poses, roles, arms=()) -> list[dict]:
                 groups.add(g)
             elif pid in arms or pid in p["parts"]:
                 groups.add("arms")
+        extra = {}
+        if carry:
+            c = carried(p, roles)
+            if c:
+                extra["carry"] = c
+        if baseline and not p.get("via"):
+            b = face_params(p, roles, arms)
+            if b:
+                extra["base"] = b
+                extra["valence"] = round(valence(p), 4)
         out.append({"t": p["start"], "type": POSE, "role": POSE,
                     "params": p["params"], "parts": p["parts"],
                     "parts_from": p.get("parts_from", {}),
@@ -1963,7 +2108,8 @@ def tokens(poses, roles, arms=()) -> list[dict]:
                     "hold": p["hold"], "release": p["release"],
                     "groups": sorted(groups), "variant": p["variant_name"],
                     "src": "director",
-                    **({"settle": p["settle"]} if "settle" in p else {})})
+                    **({"settle": p["settle"]} if "settle" in p else {}),
+                    **extra})
     return out
 
 
@@ -2011,11 +2157,29 @@ class PoseLayer:
     relax; onsets and targets are the token's, the hold lasts as long as it
     was written to, from when the longer move is done. Off: the
     token's own times, as the dataset and the action head's data play them.
+
+    Carry (a token's "carry", see carried): the parameters it names hold
+    their target until the next token that sets them, which blends from
+    there, or until an end token (release_token), which relaxes them over
+    its release; with neither they relax after CARRY_MAX seconds.
+
+    Baseline (a token's "base" and "valence", see face_params; `baseline`
+    the scale, 0 off): each face parameter of a beat also starts a resting
+    offset, BASE_FRAC of what the beat moved it from where the idle has it
+    (more when the beat agrees with the reply's mood so far, less when it
+    does not), reached by the end of the hold and kept to the end of the
+    reply, then faded over BASE_DECAY. base_apply adds the offsets to the
+    frame before the micro-expressions and the beats, so the beats leave
+    and return to the resting face. No such token, nothing changes.
     """
 
     def __init__(self, fps, defaults=None, part_rest=None, life=LIFE,
-                 settle=SETTLE, ease=False, angles=()):
+                 settle=SETTLE, ease=False, angles=(), baseline=0.0):
         self.fps = float(fps)
+        self.baseline = float(baseline)
+        self.carried = set()
+        self.off = {}                  # pid -> (a, b, from, to, fade start)
+        self.moods = []
         self.ease, self.angles = bool(ease), set(angles)
         self.life, self.settle = float(life), float(settle)
         self.defaults = dict(defaults or {})
@@ -2030,6 +2194,52 @@ class PoseLayer:
 
     def busy(self):
         return bool(self.queue or self.state or self.touched)
+
+    def _end(self, tok):
+        """An end token: what was carried relaxes, the baseline fades."""
+        t = float(tok["t"])
+        rel = max(float(tok.get("release", CARRY_RELEASE)), 1.0)
+        for key in sorted(self.carried):
+            s = self.state.get(key)
+            if s is None:
+                continue
+            t0, d, frm, to, he, _rel, step, u0, settle = s
+            self.state[key] = (t0, d, frm, to, min(he, max(t, t0 + d)), rel,
+                               step, u0, settle)
+        self.carried.clear()
+        for pid, (a, b, frm, to, bend) in list(self.off.items()):
+            self.off[pid] = (a, b, frm, to, max(b, min(bend, t)))
+        self.moods = []
+
+    def _off(self, pid, t):
+        a, b, frm, to, bend = self.off[pid]
+        if t < b:
+            return frm + (to - frm) * float(min_jerk(
+                min(max((t - a) / max(b - a, 1e-6), 0.0), 1.0)))
+        if t < bend:
+            return to
+        if t < bend + BASE_DECAY:
+            return to * (1.0 - float(min_jerk((t - bend) / BASE_DECAY)))
+        return 0.0
+
+    def has_base(self):
+        return bool(self.off)
+
+    def base_apply(self, f, over, bounds=None):
+        """over with the resting expression added (bounds: {pid: (lo,
+        hi)} to keep each inside its range)."""
+        tf = f / self.fps
+        over = dict(over)
+        for pid in sorted(self.off):
+            if tf >= self.off[pid][4] + BASE_DECAY:
+                del self.off[pid]
+                continue
+            v = float(over.get(pid, self.defaults.get(pid, 0.0))) \
+                + self._off(pid, tf)
+            if bounds and pid in bounds:
+                v = min(max(v, bounds[pid][0]), bounds[pid][1])
+            over[pid] = v
+        return over
 
     def _eval(self, s, tf, under, life=True):
         # State: (t0, duration, from, to, hold end, release, step, the
@@ -2082,11 +2292,20 @@ class PoseLayer:
         while self.queue and int(math.ceil(float(self.queue[0]["t"])
                                            * self.fps - 1e-9)) <= f:
             tok = self.queue.pop(0)
+            if tok.get("end"):
+                self._end(tok)
+                continue
             t0 = float(tok["t"])
             d = max(float(tok.get("duration", DUR_MIN)), 1.0 / self.fps)
             he = t0 + d + max(float(tok.get("hold", 0.0)), 0.0)
             rel = max(float(tok.get("release", d)), 1.0 / self.fps)
             step = set(tok.get("step", ()))
+            carry, base = set(tok.get("carry", ())), set()
+            val = float(tok.get("valence", 0.0))
+            if self.baseline > 0 and tok.get("base"):
+                base = set(tok["base"])
+                self.moods.append(val)
+            mood = sum(self.moods) / len(self.moods) if self.moods else 0.0
             for i, v in tok.get("parts_from", {}).items():
                 # Where the frame itself sets no opacity for a swapped part
                 # (a rig whose motions never key it), the body's own state
@@ -2104,9 +2323,28 @@ class PoseLayer:
                     if self.ease and kind == "p" and i not in step:
                         d_i, he_i, rel_i = eased(
                             d, he, rel, i in self.angles, self.fps, t0)
+                    settle = tok.get("settle")
+                    if kind == "p" and i in carry and i not in step:
+                        # Stays until the next token on it, or the end.
+                        he_i = t0 + d_i + CARRY_MAX
+                        rel_i = max(rel_i, CARRY_RELEASE)
+                        settle = 0.0
+                        self.carried.add(key)
+                    else:
+                        self.carried.discard(key)
+                    if kind == "p" and i in base and i not in step:
+                        # The resting offset: a share of what the beat
+                        # moves the idle's value, more for a beat of the
+                        # reply's mood.
+                        was = self._off(i, tf) if i in self.off else 0.0
+                        k = min(max(BASE_FRAC + BASE_MOOD * mood
+                                    * (1 if val > 0 else -1 if val < 0
+                                       else 0), 0.2), 0.55) * self.baseline
+                        self.off[i] = (t0, he_i, was,
+                                       k * (float(v) - (u - was)),
+                                       he_i + BASE_HOLD_MAX)
                     self.state[key] = (t0, d_i, frm, float(v), he_i, rel_i,
-                                       kind == "q" or i in step, u,
-                                       tok.get("settle"))
+                                       kind == "q" or i in step, u, settle)
                     if kind == "q":
                         self.touched.add(i)
         for key in sorted(self.state):
@@ -2115,6 +2353,7 @@ class PoseLayer:
                                    i not in still)
             if done:
                 del self.state[key]
+                self.carried.discard(key)
             if kind == "p":
                 if not done:
                     over[i] = val
@@ -2130,13 +2369,14 @@ class PoseLayer:
 
 
 def layer_for(tokens_, fps, defaults, part_rest=None, ease=False,
-              angles=()):
+              angles=(), baseline=0.0):
     """A PoseLayer with every pose token of a stream committed, in order;
     None when there are none (tag mode: nothing changes)."""
     toks = [k for k in tokens_ if k.get("type") == POSE]
     if not toks:
         return None
-    lay = PoseLayer(fps, defaults, part_rest, ease=ease, angles=angles)
+    lay = PoseLayer(fps, defaults, part_rest, ease=ease, angles=angles,
+                    baseline=baseline)
     for k in sorted(toks, key=lambda k: float(k["t"])):
         lay.commit(k)
     return lay

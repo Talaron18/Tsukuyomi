@@ -155,6 +155,12 @@ def ease_from_args(a) -> bool:
     return bool(getattr(a, "pose_ease", False))
 
 
+def baseline_from_args(a) -> float:
+    """MotionStream's baseline_scale for parsed arguments (flow.pose
+    BASE_FRAC: the resting expression a face beat leaves; 0 is off)."""
+    return max(float(getattr(a, "baseline_scale", 0.0) or 0.0), 0.0)
+
+
 class EventRig:
     """Everything runtime.main sets up for an --events run, once: columns,
     held parameters, bound roles and adapted statistics, the gesture
@@ -330,13 +336,16 @@ class MotionStream:
     rig's calibrated mouth map (flow.mouth), whose rest the mouth holds
     between sentences. head_drift: None (off, the stream of before) or the
     HeadDrift scale (1.0: its default amplitudes). pose_ease: organic pose
-    playback (flow.pose.ANGLE_DUR; off: the beats as written). Thread safety: direct()/add_mouth() may be called
+    playback (flow.pose.ANGLE_DUR; off: the beats as written). baseline_scale:
+    the expression baseline (flow.pose.PoseLayer; 0, the default, is off).
+    Head carry needs no flag here: pose tokens that name `carry` hold their
+    angles, those that do not play as ever. Thread safety: direct()/add_mouth() may be called
     from any thread while the render thread calls frame().
     """
 
     def __init__(self, rig, seed=0, idle=True, tokens=None, horizon=20.0,
                  refill=10.0, mouth_map=None, log=print, autonomic=True,
-                 head_drift=None, pose_ease=False):
+                 head_drift=None, pose_ease=False, baseline_scale=0.0):
         self.rig, self.fps, self.log = rig, rig.fps, log
         self.lock = threading.Lock()
         self.horizon, self.refill = float(horizon), float(refill)
@@ -375,7 +384,8 @@ class MotionStream:
         self.poses = pz.PoseLayer(
             rig.fps, dict(zip(rig.pids, rig.dflt.tolist())), rig.base_parts,
             ease=pose_ease,
-            angles=pz.angle_params(rig.pids, rig.roles) if pose_ease else ())
+            angles=pz.angle_params(rig.pids, rig.roles) if pose_ease else (),
+            baseline=baseline_scale)
         # Motion primitives (flow.moves), under the poses.
         try:
             from . import moves as mv
@@ -595,6 +605,9 @@ class MotionStream:
                 over[p] = v
         if self.drift is not None:
             over = self.drift.apply(tf, over)
+        if self.poses.has_base():
+            # The resting expression, under the micro-expressions and beats.
+            over = self.poses.base_apply(f, over, self.micro_bounds)
         if self.micro.busy():
             over = self.micro.apply(tf, over, self.micro_bounds,
                                     self.micro_dflt)

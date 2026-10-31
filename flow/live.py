@@ -549,6 +549,12 @@ class Server(ThreadingHTTPServer):
 
 # ---------------------------------------------------------------- turns
 
+# Quiet chat: the most quiet turns in a row before a real message is waited
+# for, and how often the loop looks at the clock (seconds).
+QUIET_MAX = 3
+QUIET_POLL = 0.5
+
+
 class Performer:
     """Turns, one at a time, on a worker thread: the language model's
     reply streamed and cut into sentences, each spoken and put on the
@@ -568,6 +574,23 @@ class Performer:
         self.busy = False
         self.thread = None
         self.lang, self.lang_set = "en", False
+        # The model sees the last `history_turns` exchanges (0: all of them):
+        # the student was taught sessions of a few turns, and past them it
+        # copies its own earlier replies.
+        self.history_turns = int(getattr(a, "history_turns", 5))
+        # Head carry and the expression baseline (flow.pose): the pose
+        # tokens name the angles that stay and the face they keep, and the
+        # end of each reply's speech releases them.
+        self.carry = bool(getattr(a, "head_carry", False))
+        self.baseline = fs.baseline_from_args(a) > 0
+        # Talking while the chat is quiet: quiet_after seconds after the
+        # last reply's speech ends (0: never), at most quiet_max in a row
+        # before a real message is waited for.
+        self.quiet_after = float(getattr(a, "quiet_after", 0.0) or 0.0)
+        self.quiet_max = int(getattr(a, "quiet_max", QUIET_MAX))
+        self.quiet_n = 0                  # quiet turns since a real message
+        self.quiet_t0 = None              # when the last turn's speech ended
+        self.last_user = ""               # the last real user message
         # Body mode (--mode body): the run from director.prepare_body, and
         # a callable giving the latest rendered frame (RGBA array) for the
         # picture a vision backend gets.
@@ -597,21 +620,47 @@ class Performer:
         self.thread.start()
 
     def say(self, text):
+        self.quiet_n = 0                  # a real message: the count starts over
         self.inbox.put(text)
         return self.inbox.qsize() + (1 if self.busy else 0)
 
+    def quiet_due(self):
+        """True when the chat has been quiet long enough for the character
+        to carry on by itself: --quiet-after seconds since the last turn's
+        speech ended, nothing waiting, fewer than quiet_max quiet turns
+        since a real message."""
+        return bool(self.quiet_after > 0 and self.quiet_t0 is not None
+                    and self.quiet_n < self.quiet_max
+                    and self.inbox.empty() and not self.busy
+                    and self.clock.now() >= self.quiet_t0 + self.quiet_after)
+
+    def next_turn(self, poll=QUIET_POLL):
+        """(text, quiet): the next line to answer. A real message when one
+        comes; the quiet-chat line when quiet_due; None, False to stop."""
+        while True:
+            try:
+                text = self.inbox.get(timeout=poll if self.quiet_after > 0
+                                      else None)
+            except queue.Empty:
+                if self.quiet_due():
+                    return pz.quiet_user(self.last_user)[0], True
+                continue
+            return text, False
+
     def _loop(self):
         while True:
-            text = self.inbox.get()
+            text, quiet = self.next_turn()
             if text is None:
                 return
             self.busy = True
             try:
-                self.turn(text)
+                self.turn(text, quiet)
             except Exception as exc:  # noqa: BLE001 - one bad turn, not the show
                 self.log(f"live: turn failed: {exc!r}")
                 self.hub.event("log", text=f"turn failed: {exc}")
             finally:
+                self.quiet_t0 = max(self.next_frame / self.fps,
+                                    self.clock.now())
                 self.busy = False
 
     def emit(self, text):
@@ -620,20 +669,32 @@ class Performer:
 
     # One turn ---------------------------------------------------------
 
-    def turn(self, text):
+    def turn(self, text, quiet=False):
         clock = self.clock
         self.turns += 1
         n = self.turns
         t_in = clock.now()
-        self.hub.event("user", text=text, t=t_in)
-        # The reply's language, for the voice: the prompt asks for the
-        # user's language; the first sentence whose script settles it wins
-        # (lang_of), and the rest of the turn keeps it.
-        self.lang, self.lang_set = sp.language(text), False
+        self.hub.event("user", text=text, t=t_in, **({"quiet": True}
+                                                     if quiet else {}))
+        if quiet:
+            # Nobody wrote: the chat's language is still the last message's.
+            self.quiet_n += 1
+            self.lang_set = False
+            self.emit(f"live: turn {n}: chat quiet "
+                      f"{t_in - (self.quiet_t0 or t_in):.1f}s after the last "
+                      f"reply; quiet turn {self.quiet_n}/{self.quiet_max}")
+        else:
+            self.last_user = text
+            # The reply's language, for the voice: the prompt asks for the
+            # user's language; the first sentence whose script settles it
+            # wins (lang_of), and the rest of the turn keeps it.
+            self.lang, self.lang_set = sp.language(text), False
         if self.body is None:
             self.messages.append({"role": "user", "content": text})
         else:
-            self.messages.append(self.body_message(text))
+            self.messages.append(self.body_message(
+                text, self.last_user if quiet else None))
+        self.trim_history(n)
         q = queue.Queue()
         raw, info = [], {"first": None, "stop": None, "error": None}
 
@@ -677,6 +738,13 @@ class Performer:
             self.emit(f"live: turn {n} camera -> {self.home} at "
                       f"{t_back:.2f}s (home)")
             self.framing = self.home
+        if self.body is not None and (self.carry or self.baseline):
+            # The reply's speech is over: the head and gaze it held relax
+            # (over at least a second) and its resting face fades.
+            t_end = max(self.next_frame / self.fps, self.clock.now())
+            self.stream.direct([pz.release_token(t_end)])
+            for fol in self.followers:
+                fol.release(t_end)
         if self.body is not None:
             self.messages[-1] = pz.text_only(self.messages[-1])
         if info["error"] is not None:
@@ -690,6 +758,7 @@ class Performer:
             self.messages.append({"role": "assistant", "content": reply})
         first = info["first"]
         summary = {"turn": n, "user": text, "reply": reply,
+                   **({"quiet": True} if quiet else {}),
                    "model_first_text": None if first is None
                    else round(first, 3), "sentences": lat,
                    "stop_reason": info["stop"]}
@@ -704,6 +773,18 @@ class Performer:
                   + (f"{first:.2f}s" if first is not None else "never")
                   + (f", first audio {lat[0]['audio_at']:.2f}s after enter"
                      if lat else "") + f"; reply: {reply.strip()}")
+
+    def trim_history(self, n):
+        """Keep the system prompt and the last `history_turns` exchanges
+        before this turn's user message (a request of at most
+        2 * history_turns + 1 messages)."""
+        keep = 2 * self.history_turns + 1
+        if self.history_turns > 0 and len(self.messages) > keep:
+            gone = len(self.messages) - keep
+            del self.messages[:gone]
+            self.emit(f"live: turn {n}: history trimmed to the last "
+                      f"{self.history_turns} exchanges ({gone} older "
+                      "messages not sent)")
 
     def sentence(self, raw, n, k, t_in, t_cut):
         """Plan one sentence and put it on the stream. Returns its
@@ -814,7 +895,8 @@ class Performer:
                           + ", ".join(f"{x['view']} at {x['t']:.2f}s"
                                       for x in fts))
         if poses:
-            for k_ in pz.tokens(poses, self.rig.roles, arms):
+            for k_ in pz.tokens(poses, self.rig.roles, arms,
+                                carry=self.carry, baseline=self.baseline):
                 k_["t"] = round(float(k_["t"]) + t_start, 4)
                 directed.append(k_)
             for rec in poses:                  # stream time, for the log
@@ -893,9 +975,11 @@ class Performer:
             lat["reach"] = pz.reach_summary(poses)
         return lat
 
-    def body_message(self, text):
+    def body_message(self, text, lang_text=None):
         """The user line with where the body is now and, for a backend that
-        takes images (--body-image), the frame on screen."""
+        takes images (--body-image), the frame on screen. lang_text: the
+        message the reply language is read from when this line is not one
+        (a quiet turn)."""
         bm = self.body["body"]
         vals, parts = self.stream.body_now()
         img = None
@@ -908,7 +992,8 @@ class Performer:
                     buf, "PNG")
                 img = buf.getvalue()
         tail = (pz.turn_tail(bm, self.framing, text,
-                             getattr(self.a, "body_prompt", "v1"))
+                             getattr(self.a, "body_prompt", "v1"),
+                             lang_text=lang_text)
                 if self.framing is not None else "")
         return pz.user_message(text + "\n" + pz.pose_now(bm, vals, parts)
                                + tail, self.a.backend, img)
@@ -1215,6 +1300,21 @@ def main(argv=None) -> int:
     ap.add_argument("--gap", type=float, default=0.12,
                     help="silence between sentences (each TTS clip already "
                          "has its own lead-in and tail)")
+    ap.add_argument("--history-turns", type=int, default=5, metavar="K",
+                    help="send the model only the last K user / assistant "
+                         "exchanges (and the current line): the student was "
+                         "trained on sessions of 6 turns and copies its own "
+                         "replies past that [5]; 0 keeps the whole "
+                         "conversation")
+    ap.add_argument("--quiet-after", type=float, default=20.0, metavar="S",
+                    help="seconds after a reply's speech ends without a "
+                         "message before the character is sent "
+                         f"\"{pz.QUIET_CHAT}\" (plus the usual camera and "
+                         "reply-language lines) and carries on talking by "
+                         "itself [20]; 0 is never")
+    ap.add_argument("--quiet-max", type=int, default=QUIET_MAX, metavar="N",
+                    help="quiet turns in a row before a real message is "
+                         f"waited for [{QUIET_MAX}]")
     ap.add_argument("--quality", type=int, default=80, help="JPEG quality")
     ap.add_argument("--renderer", default="gl", choices=("gl", "none"),
                     help="none: no GL, a flat test image (the pipeline, page "
@@ -1250,6 +1350,7 @@ def main(argv=None) -> int:
     stream = fs.MotionStream(rig, seed=a.seed, idle=not a.no_idle,
                              head_drift=fs.drift_from_args(a),
                              pose_ease=fs.ease_from_args(a),
+                             baseline_scale=fs.baseline_from_args(a),
                              mouth_map=cal.get("map")
                              if (a.lipsync or "auto") == "auto" else None,
                              log=print)
@@ -1346,7 +1447,8 @@ def both_setup(a, perf, clock, hub):
     bm, bpath, rig, page = fv.live_setup(a)
     stream = fs.MotionStream(rig, seed=a.seed, idle=not a.no_idle,
                              head_drift=fs.drift_from_args(a),
-                             pose_ease=fs.ease_from_args(a), log=print)
+                             pose_ease=fs.ease_from_args(a),
+                             baseline_scale=fs.baseline_from_args(a), log=print)
     perf.followers.append(fv.Follower(a, bm, rig, stream, log=perf.emit))
     slog = (fv.StateLog(a.record, a.fps, bpath, page["path"]) if a.record
             else None)
@@ -1380,7 +1482,8 @@ def vrm_live(a, ap) -> int:
     hub = Hub(clock)
     stream = fs.MotionStream(rig, seed=a.seed, idle=not a.no_idle,
                              head_drift=fs.drift_from_args(a),
-                             pose_ease=fs.ease_from_args(a), log=print)
+                             pose_ease=fs.ease_from_args(a),
+                             baseline_scale=fs.baseline_from_args(a), log=print)
     recorder = (Recorder(a.record, a.fps, video=False) if a.record
                 else None)
     slog = (fv.StateLog(a.record, a.fps, bpath, page["path"]) if a.record
