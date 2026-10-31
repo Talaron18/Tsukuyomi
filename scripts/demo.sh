@@ -34,7 +34,12 @@ while IFS= read -r say || [[ -n "$say" ]]; do
     d="$OUT/${av}_$i"
     [[ -f "$d/demo.mp4" ]] && continue
     mj=${MJ[$av]:-}
-    [[ -z "$mj" ]] && { echo "${av}: no model path in scripts/demo.sh"; continue; }
+    # Not at the usual place (or not listed): the first <avatar>.model3.json
+    # under live2d-models/ or CubismWebSamples/.
+    if [[ -z "$mj" || ! -f "$mj" ]]; then
+      mj=$(find live2d-models CubismWebSamples -name "$av.model3.json" 2>/dev/null | head -1)
+    fi
+    [[ -z "$mj" ]] && { echo "${av}: no $av.model3.json under live2d-models/ or CubismWebSamples/"; continue; }
     xvfb-run -a -s '-screen 0 1024x1024x24' python -m flow.director \
       --model-json "$mj" --rig "rigs/$av.npz" --mode body --backend ollama \
       --model "$MODEL" --tts auto --say "$say" --render --frame "$FRAME" \
