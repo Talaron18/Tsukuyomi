@@ -618,17 +618,17 @@ def correction_line(c) -> str:
 
 # Whether the user asked for a body action. A turn is "asked" when its topic
 # is one of ASK_TOPICS (flow/datagen.personas.json: show = point, wave, raise
-# a hand; pose = a pose, a bow, a dance; invite = come along) or its user line
-# matches a pattern of ASK_WORDS. Heuristic and meant to be extended: the
-# patterns are regular expressions (case-insensitive), all three languages are
-# tried on every line (users mix them), and a line is first stripped of the
-# ASK_NOT phrases, words that contain a trigger without asking for a movement
-# (ja 相手 "partner" has 手; zh 举例 "for example" has 举; en "on the other
-# hand"). "look" and "turn" count only where they are an instruction ("look
+# a hand; pose = a pose, a bow, a dance; invite = come along; wave, r3 on) or
+# its user line matches a pattern of ASK_WORDS. Heuristic and meant to be
+# extended: the patterns are regular expressions (case-insensitive), all three
+# languages are tried on every line (users mix them), and a line is first
+# stripped of the ASK_NOT phrases, words that contain a trigger without asking
+# for a movement (ja 相手 "partner" has 手; zh 举例 "for example" has 举; en
+# "on the other hand"). "look" and "turn" count only where they are an instruction ("look
 # at", "turn around"): "you look cute" asks for nothing. The head and the eyes
 # are kept on every turn, asked or not, so a request to look somewhere is no
 # reason to keep a hand.
-ASK_TOPICS = ("pose", "show", "invite")
+ASK_TOPICS = ("pose", "show", "invite", "wave")
 ASK_WORDS = {
     "en": [r"\bwav(?:e|es|ed|ing)\b", r"\brais(?:e|es|ed|ing)\b",
            r"\bhands?\b", r"\barms?\b", r"\bfingers?\b",

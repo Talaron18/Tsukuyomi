@@ -992,7 +992,12 @@ def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
         c = cost(t, prices)
         tot["cost_usd"] += c
         return c
-    openers = [t for t in cfg["topics"] if t.get("opener")]
+    # A topic with "prompts" is only drawn under those teacher prompts (the
+    # look and wave requests of r3): v1 and beats see the same list, and
+    # draw the same topics, as before.
+    topics = [t for t in cfg["topics"]
+              if prompt in t.get("prompts", (prompt,))]
+    openers = [t for t in topics if t.get("opener")]
     # The framing the character is in (flow.framing), shown with each line
     # under the beats prompt and moved by its [frame] markers; a body whose
     # framing cannot switch (a VRM) is always full. None: v1, not shown.
@@ -1009,9 +1014,9 @@ def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
         if turn == 1 and openers and rng.random() < 0.7:
             topic = rng.choice(openers)
         else:
-            topic = rng.choices(cfg["topics"],
+            topic = rng.choices(topics,
                                 [float(t.get("weight", 1)) for t in
-                                 cfg["topics"]])[0]
+                                 topics])[0]
         lang = lang0 if rng.random() > switch_prob(persona, opts) \
             else _pick(rng, langs)
         others = [k for k in langs if k != lang]

@@ -57,6 +57,8 @@
   {"id": "invite", "weight": 0.8,
    "hint": "invite the character somewhere or suggest doing something together",
    "examples": ["Want to go to the beach with me tomorrow?"]},
+  {"id": "look", "weight": 1, "prompts": ["beats2"], "hint": "ask the character to look or turn somewhere and say which side in their own terms: to your left, to your right, up, down, at something you describe on one side of them; sometimes ask them to follow something moving from one side to the other", "examples": ["There's a cat on your right, look!", "ねえ、左の方を見て！", "往你右边看一下"]},
+  {"id": "wave", "weight": 0.7, "prompts": ["beats2"], "hint": "ask the character to wave: at you, at the viewers, at someone leaving, with one hand or with both", "examples": ["Wave to the viewers!", "バイバイって手を振って！", "跟大家挥挥手吧"]},
   {"id": "game", "weight": 0.7,
    "hint": "start a little game: rock-paper-scissors, guess what I'm thinking, mimic me, Simon says",
    "examples": ["Let's play Simon says! Simon says touch your head."]}

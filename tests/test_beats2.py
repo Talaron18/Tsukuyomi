@@ -353,3 +353,24 @@ def test_budget_line_agrees_with_the_frame_entry():
     assert "a pose, a big celebration" not in b2
     assert "a pose, a big celebration" in pz.system_prompt(
         bm, "X.", prompt="beats")
+
+
+def test_look_and_wave_topics_are_drawn_under_beats2_only():
+    cfg = ds.load_config()
+    only = {t["id"]: t.get("prompts") for t in cfg["topics"]
+            if t.get("prompts")}
+    assert only == {"look": ["beats2"], "wave": ["beats2"]}
+    # every other topic, in its old order: v1 and beats draw as before
+    old = [t["id"] for t in cfg["topics"] if not t.get("prompts")]
+    assert old == ["greeting", "small_talk", "show", "pose", "emotion",
+                   "question", "tease", "apology", "invite", "game"]
+    assert "wave" in dx.ASK_TOPICS and "look" not in dx.ASK_TOPICS
+
+
+def test_beats2_look_rule_gives_the_sign_of_your_own_sides():
+    bm = dict(_bodies())["Hiyori"]
+    b2 = pz.system_prompt(bm, "X.", prompt="beats2")
+    assert "Sides are your own, never the viewer's" in b2
+    assert '"look to your right" is a negative "head.yaw"' in b2
+    assert "Sides are your own" not in pz.system_prompt(bm, "X.",
+                                                         prompt="beats")

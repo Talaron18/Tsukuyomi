@@ -850,7 +850,10 @@ LOOK_RULE = ("- When the user asks you to look or turn somewhere (left, "
              "right, up, down, at the camera), do it in one marker that "
              "holds that direction: {vars}, with \"hold\" 2 to 4. The "
              "head stays turned until your next head move or the end of "
-             "the reply, so do not glance back after a moment.\n")
+             "the reply, so do not glance back after a moment. Sides are "
+             "your own, never the viewer's: \"look to your right\" is a "
+             "negative \"head.yaw\" and \"gaze.x\" (about -15 and -0.6), "
+             "\"to your left\" a positive one (+15, +0.6).\n")
 
 
 def _beats_rule(bm, v2=False) -> str:

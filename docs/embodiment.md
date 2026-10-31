@@ -1009,7 +1009,13 @@ about 40% with a brow lift + pitch + yaw; dances played in bust without
 teacher turns answered in another language than the user's latest line. The
 `beats` prompt stays byte for byte (q8r2 is served with it; the digests in
 `tests/test_facevocab.py` pin it). The changes are a new prompt version,
-`beats2` (`pose.PROMPTS`), which is now the dataset default:
+`beats2` (`pose.PROMPTS`), which is now the dataset default. After the
+second live trial (left and right mirrored in 4 of 6 look requests, a wave
+request without a wave) beats2 also has two request topics of its own in
+`flow/datagen.personas.json`, `look` and `wave` (`"prompts": ["beats2"]`:
+v1 and beats draw the old topic list, so r2 regenerates as before; `wave`
+is in `dataexport.ASK_TOPICS`), and its look rule gives the sign: "look to
+your right" is a negative `head.yaw` / `gaze.x`. The rest of the changes:
 `--teacher-prompt beats2` (`beats` regenerates r2, `v1` r1), served with
 `--body-prompt beats2` (`flow.director`, `flow.live`; `flow.train.evalsft`
 replays the recorded user turns with the registry's prompt, so it needs no
