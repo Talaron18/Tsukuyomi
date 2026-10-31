@@ -1,0 +1,1 @@
+[pose {"mouth.form": 0.8, "eye.L.smile": 0.8, "eye.R.smile": 0.8, "head.tilt": 6, "dur": 0.2, "hold": 0.5}] Oh, a wave! [move {"name": "wave", "side": "R", "beats": 6, "tempo": 100, "amp": 0.6}] Here I am, waving with my right hand. [pose {"brow.L.lift": 0.5, "brow.R.lift": 0.5, "head.yaw": -5, "dur": 0.2, "hold": 0.4}] Did it catch your eye?

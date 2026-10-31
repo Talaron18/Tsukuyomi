@@ -1,0 +1,1 @@
+[pose {"brow.L.lift": 0.7, "brow.R.lift": 0.7, "head.pitch": 4, "head.yaw": -5, "dur": 0.2, "hold": 0.4}] Yay, a dance! [move {"name": "dance", "beats": 8, "tempo": 130, "amp": 0.8}] Come on, [pose {"eye.L.smile": 0.9, "eye.R.smile": 0.9, "head.tilt": 6, "dur": 0.25, "hold": 0.8}] let's go!

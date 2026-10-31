@@ -1,0 +1,1 @@
+[pose {"brow.L.lift": 0.7, "brow.R.lift": 0.7, "head.pitch": 5, "head.yaw": -5, "dur": 0.2, "hold": 0.4}] 诶，你今天穿得真不错！[pose {"eye.L.smile": 0.8, "eye.R.smile": 0.8, "head.tilt": 6, "dur": 0.25, "hold": 0.6}] 那颜色配上你，特别有精神。[pose {"cheek.blush": 0.5, "head.pitch": -3, "head.tilt": -4, "dur": 0.3, "hold": 0.5}] 不过你别笑我这么直接啊！

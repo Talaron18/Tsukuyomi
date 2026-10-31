@@ -1,0 +1,1 @@
+[pose {"brow.L.lift": 0.7, "brow.R.lift": 0.7, "head.pitch": 5, "head.yaw": -5, "dur": 0.2, "hold": 0.4}] えへへ、今日はこんな感じ！[pose {"eye.L.smile": 0.8, "eye.R.smile": 0.8, "head.tilt": 6, "dur": 0.25, "hold": 0.7}] どうかな、似合うよね？[pose {"cheek.blush": 0.5, "head.pitch": -3, "head.tilt": -4, "dur": 0.25, "hold": 0.6}] ちょっと照れちゃうかも。
