@@ -1,0 +1,3 @@
+[pose {"brow.L.lift": 0.6, "brow.R.lift": 0.6, "head.pitch": 4, "head.yaw": -4, "dur": 0.2, "hold": 0.4}] えっ、負けちゃったの？それは悔しいよね！
+[pose {"mouth.form": -0.6, "brow.L.lift": -0.5, "brow.R.lift": -0.5, "head.tilt": -6, "head.yaw": 5, "dur": 0.25, "hold": 0.6}] でも、負けたって心が折れちゃうほどじゃないよ。
+[pose {"eye.L.smile": 0.8, "eye.R.smile": 0.8, "mouth.form": 0.7, "cheek.blush": 0.4, "head.tilt": 5, "dur": 0.25, "hold": 0.7}] また一緒に挑戦して、次は絶対勝つね！

@@ -1,0 +1,1 @@
+[pose {"brow.L.lift": 0.8, "brow.R.lift": 0.8, "head.pitch": 5, "head.yaw": -5, "dur": 0.2, "hold": 0.4}] ええっ、ほんと？！信じられないほど嬉しいよ！ [pose {"eye.L.smile": 0.9, "eye.R.smile": 0.9, "head.tilt": 7, "dur": 0.25, "hold": 0.6}] 信じられないくらい、本当に嬉しいんだからね。 [pose {"brow.L.lift": -0.5, "brow.R.lift": -0.5, "head.tilt": -6, "head.yaw": 4, "dur": 0.25, "hold": 0.5}] ちょっとだけ、信じられないくらいだよ？

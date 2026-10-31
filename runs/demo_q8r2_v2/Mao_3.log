@@ -1,0 +1,134 @@
+[95m────────────────────────────────────────────────[0m
+  [93m★[0m [1m[96mlive2d-py[0m  [2m·[0m  [1mNon-official live2d library[0m
+      [2mversion[0m  [92m[1m0.8.1[0m
+[95m────────────────────────────────────────────────[0m
+[95m────────────────────────────────────────────────[0m
+  [93m★[0m [1m[96mlive2d-py[0m  [2m·[0m  [1mNon-official live2d library[0m
+      [2mversion[0m  [92m[1m0.8.1[0m
+[95m────────────────────────────────────────────────[0m
+[v3] CubismNativeSDK(5-r.5), Python(3.11.16)
+[v3] official: https://www.live2d.com/sdk/download/native/
+Live2D Cubism SDK Core Version 6.0.1
+[v3][I] [Pal] Init Shader Dir: /mnt/e/Tsukuyomi/tsukivenv/lib/python3.12/site-packages/live2d/v3/
+[v3][I] [CSM][I]Live2D Cubism Core version: 06.00.0001 (100663297)
+
+[v3][I] [CSM][I]CubismFramework::StartUp() is complete.
+
+[v3][I] [CSM][I]CubismFramework::Initialize() is complete.
+
+[v3][I] allocate: cpp Model(at=0x16aedba0)
+[v3][I] load modelSetting: CubismWebSamples/Samples/Resources/Mao/Mao.model3.json
+[v3][I] create model: Mao.moc3
+Live2D Cubism SDK Core Version 6.0.1
+[v3][I] load motion: CubismWebSamples/Samples/Resources/Mao/motions/mtn_01.motion3.json => [Idle_0] 
+[v3][I] load motion: CubismWebSamples/Samples/Resources/Mao/motions/sample_01.motion3.json => [Idle_1] 
+[v3][I] load motion: CubismWebSamples/Samples/Resources/Mao/motions/mtn_02.motion3.json => [TapBody_0] 
+[v3][I] load motion: CubismWebSamples/Samples/Resources/Mao/motions/mtn_03.motion3.json => [TapBody_1] 
+[v3][I] load motion: CubismWebSamples/Samples/Resources/Mao/motions/mtn_04.motion3.json => [TapBody_2] 
+[v3][I] load motion: CubismWebSamples/Samples/Resources/Mao/motions/special_01.motion3.json => [TapBody_3] 
+[v3][I] load motion: CubismWebSamples/Samples/Resources/Mao/motions/special_02.motion3.json => [TapBody_4] 
+[v3][I] load motion: CubismWebSamples/Samples/Resources/Mao/motions/special_03.motion3.json => [TapBody_5] 
+Live2D Cubism SDK Core Version 6.0.1
+92 params: expressive 56, physics 20, autonomic 3, mouth 8, discrete 5
+holding 5 whole-model parameters still: ParamAllColor1, ParamAllColor2, ParamAllRotate, ParamAllX, ParamAllY
+seeded from the default pose (no clips available)
+  role body_x   -> ParamBodyAngleX  [id]
+  role body_y   -> ParamBodyAngleY  [id]
+  role body_z   -> ParamBodyAngleZ  [id]
+  role brow_l   -> ParamBrowLY  [id]
+  role brow_la  -> ParamBrowLAngle  [id]
+  role brow_lf  -> ParamBrowLForm  [id]
+  role brow_lx  -> ParamBrowLX  [id]
+  role brow_r   -> ParamBrowRY  [id]
+  role brow_ra  -> ParamBrowRAngle  [id]
+  role brow_rf  -> ParamBrowRForm  [id]
+  role brow_rx  -> ParamBrowRX  [id]
+  role gaze_x   -> ParamEyeBallX  [id]
+  role gaze_y   -> ParamEyeBallY  [id]
+  role head_x   -> ParamAngleX  [id]
+  role head_y   -> ParamAngleY  [id]
+  role head_z   -> ParamAngleZ  [id]
+events: body adapted to the rig's own motions (weights {'body_x': 0.889, 'body_y': 0.889, 'body_z': 0.889, 'w_hold': 0.722, 'w_move': 0.881}; own holds 7 +6 censored, 0 unanimated clips, moves 37): hold 0.46s move 0.83s p_chain 0.62
+events: rendering 31 tokens from runs/demo_q8r2_v2/Mao_3/tokens.json
+events: 16 roles from defaults; tokens blink 4, body_shift 1, brow 7, fixate 5, frame 1, head_turn 2, micro 1, mouth 1, move 1, pose 2, saccade 5, underlay 1
+breath: gain 0.675 (--breath-gain)
+base state from mtn_01.motion3.json: 4 part opacities, 85 held parameters
+moves: 1 motion primitives over the idle (flow.moves)
+pose: 2 body poses over the idle (flow.pose)
+drift: head and body wander x1 on ParamAngleX, ParamAngleY, ParamAngleZ, ParamBodyAngleX, ParamBodyAngleZ
+micro: 1 speech-driven micro-expressions over the idle (flow.micro)
+mouth: lip sync on ParamA
+events: underlay mtn_01.motion3.json x0.5 during rests on 0 loose parameters: none
+events: 0 gesture segments from 8 motion files (arms will score as copying against the rig's own clips; novelty is judged on the role columns)
+snapping 21 switch-like parameters: ParamAllColor1, ParamAllColor2, ParamArmRB02Y, ParamAuraOn, ParamExplosionChargeOn, ParamEyeEffect, ParamEyeLForm, ParamEyeRForm, ParamFaceInkOn, ParamHandLA, ParamHandRA, ParamHatForm, ParamHealLightOn, ParamHeartHealOn, ParamHeartMissOn, ParamSmokeOn, ParamSphereOn, ParamStrengthenLightOn, ParamWandInk, ParamWandInkColorHeal, ParamWandInkColorRainbow
+framing: bust, 1.88+1.0 hu around the chin (figure top 1.78 hu, window top extended) -> scale 2.67, offset (+0.01, -1.29)
+framing: 1 camera switches from bust
+backend: order=sandwich, timestep=fixed 0.0333s (native), parts=32 (pose-fed)
+rendered 201 frames -> runs/demo_q8r2_v2/Mao_3/render/
+contact sheet -> runs/demo_q8r2_v2/Mao_3/render/sheet.png
+video -> runs/demo_q8r2_v2/Mao_3/render/preview.mp4
+[v3][I] deallocate: cpp Model(at=0x16aedba0)
+[v3][I] deallocate: PyModelObject(at=0x1180e30e74f0)
+[v3] CubismNativeSDK(5-r.5), Python(3.11.16)
+[v3] official: https://www.live2d.com/sdk/download/native/
+Live2D Cubism SDK Core Version 6.0.1
+Live2D Cubism SDK Core Version 6.0.1
+director: gesture mtn_01 [measured]: little visible motion; 5.6 s
+director: gesture mtn_02 [measured]: both arms swing back and forth; switches hand pose; 3.5 s
+director: gesture mtn_03 [measured]: shoulders swing back and forth; 4.4 s
+director: gesture mtn_04 [measured]: left arm and hand swing back and forth; shoulders swing back and forth; switches arm pose; 4.2 s, lively
+director: gesture sample_01 [measured]: a part switches; shoulders stay still; 5.6 s, calm
+director: gesture special_01 [measured]: both arms swing back and forth; right hand swings back and forth; switches right arm pose; 7.8 s
+director: gesture special_02 [measured]: both arms swing back and forth; right hand swings back and forth; switches right arm pose; 8.0 s, lively
+director: gesture special_03 [measured]: right arm and hand swing back and forth; shoulders swing back and forth; switches right arm pose; 8.0 s
+director: body mode, rigs/Mao.body.json: 27 variables, 6 arm variants, 8 gestures, motions sway bounce head_bob shimmy look_around cheer wave twirl dance
+mouth: Mao: no talking curves in 8 motions (no lip flaps on the open/vowel parameters) -> open-only on the mouth-open parameter, rest to maximum (as before)
+ollama: stop stop; usage {'prompt_eval_count': 4410, 'eval_count': 152}
+director: model 1.9s, first text after 0.8s
+director: reply: [pose {"eye.L.smile": 0.8, "eye.R.smile": 0.8, "head.tilt": 6, "dur": 0.2, "hold": 0.5}] Of course! [frame full][move {"name": "wave", "side": "R", "beats": 4, "tempo": 120, "amp": 0.8}][pose {"brow.L.lift": 0.6, "brow.R.lift": 0.6, "head.yaw": -5, "dur": 0.25, "hold": 0.6}] There's my right hand, waving at you!
+move: wave at 1.77s, 4 beats at 120 bpm, amp 0.8 (4 solves, 0.079s)
+move: move 1.77s at "There's my right": wave 4 beats at 120 bpm, amp 0.8 [wave(R)] 1 added, 8 played parameters
+pose: pose 0.10s at 'Of course! There' [PartArmLA | PartArmRA]: eye.L.smile 0.80 -> 0.80 (Core 0.80) ok; eye.R.smile 0.80 -> 0.80 (Core 0.80) ok; head.tilt 6 -> 6 (Core 6) ok
+pose: pose 1.77s at "There's my right" [PartArmLA | PartArmRA]: brow.L.lift 0.60 -> 0.60 (Core 0.60) ok; brow.R.lift 0.60 -> 0.60 (Core 0.60) ok; head.yaw -5 -> -5 (Core -5) ok
+pose: 2 markers, 6/6 targets reached, 6/6 on the Core (solve 0.012s)
+micro: 3 events (0 brow, 1 smile, 2 blink) over 2.9s of voice; 2 dropped for a model beat nearby, pitch + loudness
+speech: 5.23s audio (en-US-AnaNeural), tag times from words -> speech.wav
+director: 48 spoken characters, 5.23s speech, 4 actions, 2 subtitles; rendering 6.73s
+director: breath gain 0.675 (Mao.body.json: ParamBreath moves 0.0111 hu, target 0.0075)
+92 params: expressive 56, physics 20, autonomic 3, mouth 8, discrete 5
+holding 5 whole-model parameters still: ParamAllColor1, ParamAllColor2, ParamAllRotate, ParamAllX, ParamAllY
+seeded from the default pose (no clips available)
+  role body_x   -> ParamBodyAngleX  [id]
+  role body_y   -> ParamBodyAngleY  [id]
+  role body_z   -> ParamBodyAngleZ  [id]
+  role brow_l   -> ParamBrowLY  [id]
+  role brow_la  -> ParamBrowLAngle  [id]
+  role brow_lf  -> ParamBrowLForm  [id]
+  role brow_lx  -> ParamBrowLX  [id]
+  role brow_r   -> ParamBrowRY  [id]
+  role brow_ra  -> ParamBrowRAngle  [id]
+  role brow_rf  -> ParamBrowRForm  [id]
+  role brow_rx  -> ParamBrowRX  [id]
+  role gaze_x   -> ParamEyeBallX  [id]
+  role gaze_y   -> ParamEyeBallY  [id]
+  role head_x   -> ParamAngleX  [id]
+  role head_y   -> ParamAngleY  [id]
+  role head_z   -> ParamAngleZ  [id]
+events: body adapted to the rig's own motions (weights {'body_x': 0.889, 'body_y': 0.889, 'body_z': 0.889, 'w_hold': 0.722, 'w_move': 0.881}; own holds 7 +6 censored, 0 unanimated clips, moves 37): hold 0.46s move 0.83s p_chain 0.62
+events: idle profile calm; gestures from 2 of 8 motions (by group): mtn_01* 0.0030, mtn_02 0.0601, mtn_03 0.0436, mtn_04 0.0939, sample_01* 0.0030, special_01 0.1090, special_02 0.1439, special_03 0.0669  (* calm; mean speed/frame)
+director: 4 actions -> 7 tokens; 0 idle tokens overridden
+events: 16 roles from defaults; tokens blink 4, body_shift 1, brow 7, fixate 5, frame 1, head_turn 2, micro 1, mouth 1, move 1, pose 2, saccade 5, underlay 1
+tokens -> runs/demo_q8r2_v2/Mao_3/tokens.json
+breath: gain 0.675 (--breath-gain)
+base state from mtn_01.motion3.json: 4 part opacities, 85 held parameters
+moves: 1 motion primitives over the idle (flow.moves)
+pose: 2 body poses over the idle (flow.pose)
+drift: head and body wander x1 on ParamAngleX, ParamAngleY, ParamAngleZ, ParamBodyAngleX, ParamBodyAngleZ
+micro: 1 speech-driven micro-expressions over the idle (flow.micro)
+mouth: lip sync on ParamA
+events: underlay mtn_01.motion3.json x0.5 during rests on 0 loose parameters: none
+events: 0 gesture segments from 8 motion files (arms will score as copying against the rig's own clips; novelty is judged on the role columns)
+snapping 21 switch-like parameters: ParamAllColor1, ParamAllColor2, ParamArmRB02Y, ParamAuraOn, ParamExplosionChargeOn, ParamEyeEffect, ParamEyeLForm, ParamEyeRForm, ParamFaceInkOn, ParamHandLA, ParamHandRA, ParamHatForm, ParamHealLightOn, ParamHeartHealOn, ParamHeartMissOn, ParamSmokeOn, ParamSphereOn, ParamStrengthenLightOn, ParamWandInk, ParamWandInkColorHeal, ParamWandInkColorRainbow
+dump -> runs/demo_q8r2_v2/Mao_3/plan.npz  (201 frames, 56 expressive, 5 parts, mode events seed=0)
+director: /mnt/e/Tsukuyomi/tsukivenv/bin/python -m flow.runtime --model CubismWebSamples/Samples/Resources/Mao/Mao.model3.json --rig rigs/Mao.npz --events default --probe-dir out --fps 30.0 --seed 0 --seconds 6.73 --breath-gain 0.675 --head-drift-scale 1 --pose-ease --frame bust --tokens-in runs/demo_q8r2_v2/Mao_3/tokens.json --size 512 --out runs/demo_q8r2_v2/Mao_3/render
+director: video with speech and subtitles -> runs/demo_q8r2_v2/Mao_3/demo.mp4
