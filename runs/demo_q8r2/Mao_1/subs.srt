@@ -1,0 +1,20 @@
+1
+00:00:00,100 --> 00:00:00,600
+Hi!
+
+2
+00:00:01,387 --> 00:00:03,062
+It really has been a while!
+
+3
+00:00:04,045 --> 00:00:08,927
+I've been good, honestly, a little sleepy from all the naps.
+
+4
+00:00:10,060 --> 00:00:10,960
+How about you?
+
+5
+00:00:11,822 --> 00:00:13,010
+What have you been up to?
+

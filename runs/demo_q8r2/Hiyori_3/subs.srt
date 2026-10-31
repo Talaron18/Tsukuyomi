@@ -1,0 +1,12 @@
+1
+00:00:00,100 --> 00:00:01,212
+Oh, a wave!
+
+2
+00:00:02,075 --> 00:00:04,763
+Here I am, waving with my right hand.
+
+3
+00:00:05,625 --> 00:00:06,763
+Did it catch your eye?
+

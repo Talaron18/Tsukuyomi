@@ -1,0 +1,8 @@
+1
+00:00:00,100 --> 00:00:00,912
+Of course!
+
+2
+00:00:01,775 --> 00:00:04,362
+There's my right hand, waving at you!
+
