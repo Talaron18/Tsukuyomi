@@ -1,0 +1,42 @@
+{
+ "turns": 630,
+ "parse_rate": 0.0143,
+ "refused_rate": 0.0,
+ "refusal_text_rate": 0.0,
+ "cutoff_rate": 0.0,
+ "markers_per_turn": {
+  "blink": 0.002,
+  "frame": 0.057,
+  "move": 0.081,
+  "pose": 3.322
+ },
+ "body_markers_per_turn": 3.405,
+ "unplayed_per_turn": 0.005,
+ "unplayed": {
+  "move": 1,
+  "pose": 2
+ },
+ "not_played": {
+  "pose:unsolved": 1
+ },
+ "reach": {
+  "targets": 8478,
+  "ok": 8360,
+  "miss": 118,
+  "rate": 0.9861
+ },
+ "miss_per_turn": 0.187,
+ "first_text_seconds": {
+  "p50": 0.056,
+  "p90": 0.067
+ },
+ "tokens_per_second": {
+  "p50": 126.19
+ },
+ "out_tokens_per_turn": 223.1,
+ "name": "student",
+ "backend": "ollama",
+ "model": "tsk-q8r2",
+ "sessions": 105,
+ "seconds": 1528.2
+}
