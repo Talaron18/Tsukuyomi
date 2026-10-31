@@ -132,6 +132,28 @@ RELEASE_MIN = 0.5       # relaxing back is never quicker than this
 # has nothing to give (face shapes, arms).
 LIFE = 0.35
 SETTLE = 0.2
+# Organic playback (PoseLayer(ease=True); the offline director render and
+# flow.live, not the dataset). The model's beats are short eases (0.15-0.3
+# s) to a held target and a release; played as written, a head or torso
+# beat is a spike with nothing moving around it. How a target is
+# interpolated, never what it is or when it starts: head, torso and body
+# angles take at least ANGLE_DUR to arrive and ANGLE_RELEASE to relax (the
+# hold is as long as written, from when the move is done), the face at
+# least FACE_DUR. All of it minimum jerk, an S-curve.
+ANGLE_DUR, FACE_DUR, ANGLE_RELEASE = 0.35, 0.12, 0.7
+_ANGLE_ID = re.compile(r"(^|\.|Param)(Body)?Angle[XYZ]$|^(head|torso|chest|"
+                       r"spine|neck|hips)\.", re.I)
+
+
+def angle_params(pids, roles=()) -> set:
+    """The parameters that take ANGLE_DUR: those bound to a head or body
+    role (runtime's {role: (pid, sign, source)}), and any other whose id is
+    an angle of the head or body (ParamAngleX, ParamBodyAngleZ, head.yaw,
+    torso.tilt). Brow and eye angles are the face's."""
+    out = {p for r, (p, _s, _src) in dict(roles).items()
+           if ev.GROUP_OF.get(r) in ("head", "body")}
+    out |= {p for p in pids if _ANGLE_ID.search(p)}
+    return out
 # A solved parameter is played when it moves at least this fraction of its
 # span from where it was (or is a target's main mover); below it the idle
 # keeps it. Hiyori's hand.R.y = shoulder solve also nudged BodyAngleX by
@@ -1545,10 +1567,15 @@ def drop_clashing_gestures(acts, poses, motions, log=print):
     return gone
 
 
-def end_time(poses) -> float:
-    """When the last pose has relaxed back into the idle."""
-    return max((p["start"] + p["dur"] + p["hold"] + p["release"]
-                for p in poses), default=0.0)
+def end_time(poses, ease=False) -> float:
+    """When the last pose has relaxed back into the idle. ease: as played
+    under organic playback (a head beat arrives and relaxes more slowly)."""
+    def end(p):
+        d, he, rel = (eased(p["dur"], p["dur"] + p["hold"], p["release"],
+                            True, 30.0) if ease else
+                      (p["dur"], p["dur"] + p["hold"], p["release"]))
+        return p["start"] + he + rel
+    return max((end(p) for p in poses), default=0.0)
 
 
 # ----------------------------------------------------------------- tokens
@@ -1602,6 +1629,16 @@ def tokens(poses, roles, arms=()) -> list[dict]:
 
 # ------------------------------------------------------------------- play
 
+def eased(d, he, rel, angle, fps, t0=0.0):
+    """(move, hold end, release) of one continuous parameter under organic
+    playback: the move at least ANGLE_DUR (angle) or FACE_DUR, the hold as
+    long as written (it starts when the longer move is done), the release
+    at least ANGLE_RELEASE (angle) or RELEASE_MIN."""
+    d2 = max(d, ANGLE_DUR if angle else FACE_DUR)
+    return (d2, he + (d2 - d),
+            max(rel, ANGLE_RELEASE if angle else RELEASE_MIN))
+
+
 class PoseLayer:
     """Pose tokens played over the frame the idle built, a frame at a time.
 
@@ -1627,11 +1664,19 @@ class PoseLayer:
     target settles `settle` of the way toward the idle (min-jerk in the
     hold's time), the release then starting from there. life = settle = 0
     is the frozen hold of before.
+
+    ease (organic playback, see ANGLE_DUR): a continuous parameter takes at
+    least ANGLE_DUR (those in `angles`: head, torso, body angles) or
+    FACE_DUR seconds to arrive and at least ANGLE_RELEASE / RELEASE_MIN to
+    relax; onsets and targets are the token's, the hold lasts as long as it
+    was written to, from when the longer move is done. Off: the
+    token's own times, as the dataset and the action head's data play them.
     """
 
     def __init__(self, fps, defaults=None, part_rest=None, life=LIFE,
-                 settle=SETTLE):
+                 settle=SETTLE, ease=False, angles=()):
         self.fps = float(fps)
+        self.ease, self.angles = bool(ease), set(angles)
         self.life, self.settle = float(life), float(settle)
         self.defaults = dict(defaults or {})
         self.part_rest = dict(part_rest or {})
@@ -1715,7 +1760,11 @@ class PoseLayer:
                     frm = (self._eval(self.state[key], tf, u,
                                       i not in still)[0]
                            if key in self.state else u)
-                    self.state[key] = (t0, d, frm, float(v), he, rel,
+                    d_i, he_i, rel_i = d, he, rel
+                    if self.ease and kind == "p" and i not in step:
+                        d_i, he_i, rel_i = eased(
+                            d, he, rel, i in self.angles, self.fps, t0)
+                    self.state[key] = (t0, d_i, frm, float(v), he_i, rel_i,
                                        kind == "q" or i in step, u,
                                        tok.get("settle"))
                     if kind == "q":
@@ -1740,13 +1789,14 @@ class PoseLayer:
         return over, parts
 
 
-def layer_for(tokens_, fps, defaults, part_rest=None):
+def layer_for(tokens_, fps, defaults, part_rest=None, ease=False,
+              angles=()):
     """A PoseLayer with every pose token of a stream committed, in order;
     None when there are none (tag mode: nothing changes)."""
     toks = [k for k in tokens_ if k.get("type") == POSE]
     if not toks:
         return None
-    lay = PoseLayer(fps, defaults, part_rest)
+    lay = PoseLayer(fps, defaults, part_rest, ease=ease, angles=angles)
     for k in sorted(toks, key=lambda k: float(k["t"])):
         lay.commit(k)
     return lay

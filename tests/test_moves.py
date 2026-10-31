@@ -335,7 +335,8 @@ def test_director_runtime_and_stream_play_a_move_alike(tmp_path, capsys):
     np.testing.assert_array_equal(re_["traj"], plan["traj"])
     er = fs.EventRig(str(model), str(rig), "default", None, None, FPS,
                      str(tmp_path), log=lambda s: None)
-    traj, frames = _stream_plan(er, blob, len(plan["traj"]))
+    traj, frames = _stream_plan(er, blob, len(plan["traj"]), seed=2,
+                                head_drift=1.0, pose_ease=True)
     np.testing.assert_array_equal(traj, plan["traj"])
     # Without the marker: moves on or off, the same bytes.
     reply.write_text("Let's go! Woo, nice.", encoding="utf-8")

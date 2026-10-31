@@ -49,11 +49,11 @@ def _plan(tmp_path, extra=()):
     return model, rig, blob, plan
 
 
-def _stream_plan(rig, blob, n):
+def _stream_plan(rig, blob, n, **kw):
     """The stream's frames as runtime --dump records them: the expressive
     columns normalised, the mouth, part opacities."""
     st = fs.MotionStream(rig, tokens=blob["tokens"], autonomic=False,
-                         log=lambda s: None)
+                         log=lambda s: None, **kw)
     mt = next((k for k in blob["tokens"] if k["type"] == "mouth"), None)
     if mt is not None:
         st.add_mouth(0, mt, n)
@@ -71,12 +71,15 @@ def _stream_plan(rig, blob, n):
     return traj, frames
 
 
+QUIET_RUN = ("--no-head-drift", "--no-pose-ease")
+
+
 def test_stream_draws_what_the_runtime_draws(tmp_path, capsys):
     """Fed the runtime's own merged tokens (idle, directed, underlay,
     mouth), the stream's per-frame writes equal runtime --tokens-in
     --dump-only's plan: the live render is the offline render, a frame at a
     time."""
-    model, rig_path, blob, plan = _plan(tmp_path)
+    model, rig_path, blob, plan = _plan(tmp_path, QUIET_RUN)
     capsys.readouterr()
     rig = fs.EventRig(str(model), str(rig_path), "default", None, None, FPS,
                       str(tmp_path), log=lambda s: None)
@@ -91,6 +94,35 @@ def test_stream_draws_what_the_runtime_draws(tmp_path, capsys):
         op = np.array([[fr[1].get(p, np.nan) for p in parts]
                        for fr in frames], np.float32)
         np.testing.assert_array_equal(op, plan["part_opacity"])
+
+
+def test_stream_draws_the_offline_drift_too(tmp_path, capsys):
+    """The director's offline render has the head drift and body sway on by
+    default (as flow.live): the stream with the same seed and scale draws
+    the same frames, and the plan moves where the quiet run holds."""
+    model, rig_path, blob, plan = _plan(tmp_path)
+    _, _, _, quiet = _plan(tmp_path / "q", QUIET_RUN)
+    capsys.readouterr()
+    rig = fs.EventRig(str(model), str(rig_path), "default", None, None, FPS,
+                      str(tmp_path), log=lambda s: None)
+    n = len(plan["traj"])
+    # (the stream seeds its drift from its own seed: the run's, 3)
+    st = fs.MotionStream(rig, seed=3, tokens=blob["tokens"], autonomic=False,
+                         head_drift=1.0, pose_ease=True, log=lambda s: None)
+    mt = next((k for k in blob["tokens"] if k["type"] == "mouth"), None)
+    if mt is not None:
+        st.add_mouth(0, mt, n)
+    ex, pids, lo = rig.expressive, rig.pids, rig.lo
+    span = np.maximum(rig.hi[ex] - lo[ex], 1e-6)
+    got = np.empty((n, len(ex)), np.float32)
+    for f in range(n):
+        over, _p = st.frame()
+        for c, i in enumerate(ex):
+            got[f, c] = ((over[pids[i]] - lo[i]) / span[c] * 2 - 1
+                         if pids[i] in over else rig.default_n[c])
+    np.clip(got, -1, 1, out=got)
+    np.testing.assert_array_equal(got, plan["traj"])
+    assert not np.array_equal(plan["traj"], quiet["traj"][:n])
 
 
 def test_stream_matches_runtime_on_hiyori(tmp_path):

@@ -69,6 +69,7 @@ import json
 import os
 import subprocess
 import sys
+import types
 
 import numpy as np
 
@@ -862,6 +863,21 @@ def main(argv=None) -> int:
     ap.add_argument("--frame", default="full", choices=("bust", "full"),
                     help="camera: bust = head and chest (flow.framing), "
                          "full = the whole canvas [full]")
+    ap.add_argument("--camera-follow", default=True,
+                    action=argparse.BooleanOptionalAction,
+                    help="--direct: in bust the camera eases to full around "
+                         "a whole-body move (flow.framing.follow_tokens) "
+                         "[default on]; --no-camera-follow: it stays")
+    ap.add_argument("--head-drift-scale", type=float, default=0.0,
+                    metavar="X",
+                    help="the slow idle wander of the head and the body's "
+                         "breathing sway (flow.stream.HeadDrift), x its "
+                         "amplitudes; 0 is off [0]. The director passes "
+                         "its own default (1)")
+    ap.add_argument("--pose-ease", action="store_true",
+                    help="organic pose playback (flow.pose.ANGLE_DUR): "
+                         "head / torso targets take at least 0.35 s to "
+                         "arrive and 0.7 s to relax. The director passes it")
     ap.add_argument("--body", default=None,
                     help="the rig's body file for --frame bust [rigs/<rig "
                          "name>.body.json]")
@@ -1104,7 +1120,12 @@ def main(argv=None) -> int:
                     from . import framing as fr
                 except ImportError:
                     from flow import framing as fr
-                directed = directed + fr.frame_tokens(acts)
+                fts = fr.frame_tokens(acts)
+                if a.camera_follow:
+                    # Whole-body moves keep the camera on the figure; the
+                    # model's own markers win (follow_tokens).
+                    fts = fts + fr.follow_tokens(mvs, fts, a.frame)
+                directed = directed + fts
                 # Speech-driven micro-expressions (flow.micro), planned by
                 # the director from the audio.
                 if isinstance(blob, dict) and blob.get("micro"):
@@ -1301,10 +1322,28 @@ def main(argv=None) -> int:
             from . import pose as pz
         except ImportError:
             from flow import pose as pz
-        pose_layer = pz.layer_for(tokens, a.fps, dict(zip(pids, dflt.tolist())),
-                                  base_parts)
+        pose_layer = pz.layer_for(
+            tokens, a.fps, dict(zip(pids, dflt.tolist())), base_parts,
+            ease=a.pose_ease,
+            angles=pz.angle_params(pids, roles) if a.pose_ease else ())
         print(f"pose: {sum(k['type'] == 'pose' for k in tokens)} body poses "
               "over the idle (flow.pose)")
+    drift = None
+    if events_on and a.head_drift_scale > 0:
+        # The idle's slow head wander and body sway, as flow.live's stream
+        # adds them before micro, moves and poses (flow.stream.HeadDrift).
+        try:
+            from . import stream as fs
+        except ImportError:
+            from flow import stream as fs
+        col_of_d = {pids[i]: c for c, i in enumerate(expressive)}
+        drift = fs.HeadDrift(types.SimpleNamespace(
+            pids=pids, expressive=expressive, lo=lo, hi=hi,
+            role_cols=[(r, col_of_d[p], sg)
+                       for r, (p, sg, _) in roles.items()]),
+            a.seed, a.head_drift_scale)
+        print(f"drift: head and body wander x{a.head_drift_scale:g} on "
+              + (", ".join(p for p, *_ in drift.axes) or "nothing"))
     micro_layer = None
     if events_on and any(k["type"] == "micro" for k in tokens):
         try:
@@ -1488,6 +1527,14 @@ def main(argv=None) -> int:
                 for col in gesture_cols:
                     if pids[expressive[col]] not in player.keyed[f]:
                         applied_mask[f, col] = False
+            if drift is not None:
+                over = drift.apply(f / a.fps, over)
+                for p, *_ in drift.axes:
+                    col = expr_col.get(p)
+                    if col is not None and p in over:
+                        i = expressive[col]
+                        applied[f, col] = (over[p] - lo[i]) / span_x[col] * 2 - 1
+                        applied_mask[f, col] = True
             if micro_layer is not None:
                 over = micro_layer.apply(f / a.fps, over, micro_bounds,
                                          micro_dflt)

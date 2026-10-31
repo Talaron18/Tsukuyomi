@@ -1160,6 +1160,15 @@ def runtime_args(a, seconds):
     if a.idle_profile != "calm":
         out += ["--idle-profile", a.idle_profile]
     out += ["--breath-gain", f"{breath_gain(a):g}"]
+    # The offline render's drift, pose ease and camera, as flow.live's.
+    if getattr(a, "head_drift", False):
+        out += ["--head-drift-scale",
+                f"{float(getattr(a, 'head_drift_scale', 1.0)):g}"]
+    if getattr(a, "pose_ease", False):
+        out.append("--pose-ease")
+    if not getattr(a, "camera_follow", True):
+        out.append("--no-camera-follow")
+    out += ["--frame", getattr(a, "frame", "full")]
     return out
 
 
@@ -1362,7 +1371,8 @@ def plan(a, reply, out_dir, motions, log=print, tts=None, body=None):
             + (f", {rs['exact_ok']}/{rs['exact_n']} on the Core"
                if rs["exact_n"] else "") + f" (solve {rs['solve_seconds']}s)")
         extra.update(mode="body", reach=rs)
-        return max(seconds, pz.end_time(poses) + a.tail, end_m)
+        return max(seconds, pz.end_time(poses, getattr(a, "pose_ease", False))
+                   + a.tail, end_m)
     if reply["refused"]:
         with open(os.path.join(out_dir, "refusal.txt"), "w",
                   encoding="utf-8") as fh:
@@ -1462,7 +1472,6 @@ def plan(a, reply, out_dir, motions, log=print, tts=None, body=None):
         raise SystemExit(f"runtime planning failed ({rc})")
     cmd = [sys.executable, "-m", "flow.runtime"] + base + [
         "--tokens-in", tok, "--size", str(a.size),
-        "--frame", getattr(a, "frame", "full"),
         "--out", os.path.join(out_dir, "render")]
     return cmd, seconds
 
@@ -1552,7 +1561,24 @@ def add_args(ap):
                          "idle's fixations")
     ap.add_argument("--head-drift-scale", type=float, default=1.0,
                     metavar="X", help="the drift's amplitude, x its "
-                    "defaults (2.5 deg yaw, 1.5 pitch, 2 tilt) [1]")
+                    "defaults (2.5 deg yaw, 1.5 pitch, 2 tilt; the body "
+                    "sways 0.8 / 0.6) [1]; on in the offline render too")
+    ap.add_argument("--pose-ease", default=True,
+                    action=argparse.BooleanOptionalAction,
+                    help="organic pose playback: head / torso targets take "
+                         "at least 0.35 s to arrive and 0.7 s to relax, "
+                         "face targets 0.12 s (flow.pose.ANGLE_DUR); what "
+                         "the model asked for and when is unchanged "
+                         "[default on]; --no-pose-ease: the beats as "
+                         "written")
+    ap.add_argument("--camera-follow", default=True,
+                    action=argparse.BooleanOptionalAction,
+                    help="in bust, the camera eases to full ~0.3 s before a "
+                         "whole-body move (dance, twirl, shimmy, bounce, "
+                         "cheer) and back ~0.5 s after it, unless a [frame] "
+                         "marker of the model says otherwise there "
+                         "(flow.framing.follow_tokens) [default on]; "
+                         "--no-camera-follow: the camera stays")
     try:
         from . import micro as mc
     except ImportError:

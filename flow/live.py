@@ -802,6 +802,10 @@ class Performer:
             # [frame] markers: the camera's ease at the marker's time; the
             # next turn's camera line shows where it ends.
             fts = fr.frame_tokens(shifted)
+            if getattr(self.a, "camera_follow", True) and mvs:
+                # Whole-body moves in bust (flow.framing.follow_tokens).
+                fts = fts + fr.follow_tokens(mvs, fts, self.framing, t_start,
+                                             log=self.emit)
             if fts:
                 directed += fts
                 self.framing = fr.last_frame(acts, self.framing)
@@ -1243,6 +1247,7 @@ def main(argv=None) -> int:
     hub = Hub(clock)
     stream = fs.MotionStream(rig, seed=a.seed, idle=not a.no_idle,
                              head_drift=fs.drift_from_args(a),
+                             pose_ease=fs.ease_from_args(a),
                              mouth_map=cal.get("map")
                              if (a.lipsync or "auto") == "auto" else None,
                              log=print)
@@ -1338,7 +1343,8 @@ def both_setup(a, perf, clock, hub):
         from flow import vrm as fv
     bm, bpath, rig, page = fv.live_setup(a)
     stream = fs.MotionStream(rig, seed=a.seed, idle=not a.no_idle,
-                             head_drift=fs.drift_from_args(a), log=print)
+                             head_drift=fs.drift_from_args(a),
+                             pose_ease=fs.ease_from_args(a), log=print)
     perf.followers.append(fv.Follower(a, bm, rig, stream, log=perf.emit))
     slog = (fv.StateLog(a.record, a.fps, bpath, page["path"]) if a.record
             else None)
@@ -1371,7 +1377,8 @@ def vrm_live(a, ap) -> int:
     clock = Clock()
     hub = Hub(clock)
     stream = fs.MotionStream(rig, seed=a.seed, idle=not a.no_idle,
-                             head_drift=fs.drift_from_args(a), log=print)
+                             head_drift=fs.drift_from_args(a),
+                             pose_ease=fs.ease_from_args(a), log=print)
     recorder = (Recorder(a.record, a.fps, video=False) if a.record
                 else None)
     slog = (fv.StateLog(a.record, a.fps, bpath, page["path"]) if a.record

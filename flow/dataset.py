@@ -445,6 +445,9 @@ def director_args(spec, opts, persona=None):
     argv += ["--body-prompt", getattr(opts, "teacher_prompt", TEACHER_PROMPT)]
     a = ap.parse_args(argv)
     a.micro = False         # no speech-driven micro-expressions in the data
+    a.head_drift = False    # nor drift, pose ease or camera: the data is the
+    a.pose_ease = False     # trajectory as the model wrote it
+    a.camera_follow = False
     a.tail = opts.tail
     if opts.max_tokens:
         a.max_tokens = opts.max_tokens

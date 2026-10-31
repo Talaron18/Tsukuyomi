@@ -656,16 +656,51 @@ none of which touch the r1 files or the flags of a run in progress:
 **Idle head drift.** Before, the calm idle held the head still between
 fixations (holds of 3 s or more, `events.IDLE`), nothing moved it
 continuously, so a quiet stream looked frozen. `flow.stream.HeadDrift` adds
-a slow wander: per axis the sum of three sines (periods 5-13 s, seeded
-phases), peaking at 2.5 deg yaw, 1.5 pitch and 2 tilt. It is added to the
-head parameters before moves and poses are applied, so face-only beats
-leave it running, and a pose that targets the head moves from where the
-drift has the head to its target and releases back to it (the held target
-keeps the idle's small life under it, as for any pose). `flow.live`
-takes `--head-drift` (default on), `--no-head-drift` and
-`--head-drift-scale X` (they sit in the director's parser, which it
-shares); `MotionStream(head_drift=None)` is off, so the offline director,
-the dataset's trajectories and the action head's data are as before.
+a slow wander: per axis the sum of three sines (periods 4-10 s, seeded
+phases), peaking at 2.5 deg yaw, 1.5 pitch and 2 tilt, and a breathing
+sway of the body angles (`body_x`, `body_z`: 0.8 and 0.6 deg, periods 4-7
+s) where the rig binds them. It is added to the head parameters before
+moves and poses are applied, so face-only beats leave it running, and a
+pose that targets the head moves from where the drift has the head to its
+target and releases back to it (the held target keeps the idle's small
+life under it, as for any pose). `flow.live` takes `--head-drift` (default
+on), `--no-head-drift` and `--head-drift-scale X` (they sit in the
+director's parser, which it shares). The offline director render has it on
+by default too (`runtime --head-drift-scale`, which the director passes;
+the runtime's own default is 0, so a bare `flow.runtime` run and the
+dataset's trajectories and the action head's data are as before:
+`MotionStream(head_drift=None)` is off and `dataset.director_args` turns
+the director's flags off).
+
+**Motion in bursts** (q8r2 demo review: "every figure moves in bursts, even
+a swaying head"). Measured on `Mao_10/demo.mp4`, 34% of the 0.1 s bins had
+almost nothing moving, between short spikes. Causes: (1) the offline render
+had no head drift (it was only in `flow.live`), so between the calm idle's
+fixations (3 s or more) the figure was still; (2) the model's beats are 0.15-0.3 s
+eases to a held target, so a head beat is one short spike, then a hold with
+nothing moving. Fixed in the playback only (targets and the onsets of the
+model's markers are untouched; `--no-head-drift`, `--no-pose-ease` give
+the old render):
+
+- the drift above, now in the offline render (and a livelier period range:
+  4-10 s, was 5-13 s, because near a sine's turning points all axes were
+  slow together);
+- `PoseLayer(ease=True)` (`--pose-ease`, default on in the director and
+  `flow.live`; the dataset and the exporter keep the beats as written):
+  head, torso and body angles take at least `pose.ANGLE_DUR` = 0.35 s to
+  arrive and `ANGLE_RELEASE` = 0.7 s to relax; other (face) parameters at
+  least `FACE_DUR` = 0.12 s and `RELEASE_MIN` = 0.5 s. All minimum jerk (an
+  S-curve). The hold is as long as the marker wrote, from when the longer
+  move is done; the held target keeps the `LIFE` and `SETTLE` it had (the
+  drift continues underneath).
+
+`python scripts/motion_still.py plan.npz|demo.mp4` prints the share of
+0.1 s bins with nearly no motion (mouth, blinks and breath left out of a
+plan; a video's differences include them) and the burstiness (p95 / median
+of the bin speeds). Target for the offline path: under 10% still. On four 0.2 s head
+beats over the calm idle (test rig, 10 s, mean of 8 seeds): still bins
+23.0% before, 2.6% after (the idle alone: 38.8% before, 5.4% after);
+burstiness 11.0 before, 6.7 after. Measure a real run with its `plan.npz`.
 
 **Dense worked example.** Two pilots of the beats prompt gave 0.69 beats a
 sentence, about 0.30 a second of speech, against the 0.5-0.65 a streamer's
@@ -730,6 +765,27 @@ head's data never get it (`dataset.director_args` sets it off; only
 `director.plan`, `vrm.plan` and `live.Performer` build a `Micro`).
 
 ### Framing and motion budget
+
+*Camera follow and tall figures.* Two render rules sit on the framing
+below. **Camera follows whole-body moves** (`framing.follow_tokens`): a
+`[move]` of `dance`, `twirl`, `shimmy`, `bounce` or `cheer` in bust would
+be cropped, so the camera eases to full 0.3 s before it (the usual 0.6 s
+ease) and back to the framing it left 0.5 s after it ends (the turn's home
+in the usual case); moves closer than that share one trip. `wave`, `clap`,
+`sway`, `head_bob` and `look_around` are hand or head moves: no switch. Not
+from full, and not when a `[frame]` marker of the model falls in the
+window (from lead to tail): the model's markers win. The frame tokens are
+made where the model's own are (the runtime's `--direct`, `flow.live`), so
+both renders get it; it logs `framing: camera follows dance: full from ...`
+when it triggers. `--no-camera-follow` (the director's parser, shared by
+`flow.live`; the runtime's too) turns it off. **Hat window**
+(`framing.bust_math`): the bust window's top is `ABOVE` hu over the chin
+unless the figure is taller at rest (a witch hat): then it is the rest
+render's alpha top plus 0.1 hu, at most `HAT_CAP` = 1.0 hu above `ABOVE`
+(very tall ears do not shrink the face further). `BELOW` and the chin's
+horizontal centring stay, and the prompt's camera line (hand visibility,
+`BELOW`) does not change. Logged as `framing: bust, 2.60+1.0 hu ...`.
+
 
 The r2 beats prompt first told every avatar to keep its hands "out of the
 picture". That was true of one framing and of some bodies only: lafei's

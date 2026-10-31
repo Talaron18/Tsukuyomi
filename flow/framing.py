@@ -24,6 +24,20 @@ streamer's camera shows them) instead of the whole canvas.
             minimum jerk) from the marker's time on. The offline render
             (flow.runtime) and the live render loop (flow.live) both ask
             Camera.at(t) each frame.
+  hat       The window's top is ABOVE hu over the chin, unless the figure
+            stands taller at rest (a witch hat, tall ears): then it
+            extends to the figure's top edge (the rest render's alpha top)
+            plus HAT_MARGIN, by at most HAT_CAP hu, so a very tall figure
+            does not shrink the face. BELOW and the centring on the chin
+            stay; the prompt's camera line is about the hands (BELOW), so
+            it stays too.
+  follow    A whole-body move (WHOLE_BODY: dance, twirl, shimmy, bounce,
+            cheer) played in bust would be cropped. follow_tokens() adds
+            the frame tokens that ease the camera to full FOLLOW_LEAD
+            seconds before it and back FOLLOW_TAIL seconds after, unless a
+            [frame] marker of the model falls in that window (the model's
+            markers win). Made with the frame tokens, so the offline render
+            and flow.live both get it; --no-camera-follow turns it off.
   budget    What a body can do, measured from the body file (budget): the
             share of a gesture zone each hand can reach (the per-variable
             ranges of body.limits combined as one box per arm drawing),
@@ -45,6 +59,13 @@ import numpy as np
 FRAMES = ("bust", "full")
 ABOVE, BELOW = 1.5, 1.0
 VIEW_EASE = 0.6          # seconds a [frame] switch takes
+# Tall figures (a witch hat): the window top reaches the figure's top edge
+# plus HAT_MARGIN, at most HAT_CAP hu over ABOVE.
+HAT_MARGIN, HAT_CAP = 0.1, 1.0
+# Camera follows whole-body moves in bust: eased to full FOLLOW_LEAD s
+# before the move, back FOLLOW_TAIL s after it ends.
+WHOLE_BODY = ("dance", "twirl", "shimmy", "bounce", "cheer")
+FOLLOW_LEAD, FOLLOW_TAIL = 0.3, 0.5
 BUST_SHARE = 0.7         # sessions of generated data that start in bust
 # The prompt's face controls (the same prefixes as flow.dataexport's face).
 FACE_PREFIX = ("brow.", "eye.", "mouth.", "cheek.", "gaze.", "tongue.")
@@ -81,10 +102,50 @@ def _alpha_box(img):
     return ys.min(), ys.max(), xs.min(), xs.max()
 
 
+def fit_top(above, top_hu, margin=HAT_MARGIN, cap=HAT_CAP):
+    """The window's height over the chin (hu): `above`, or the figure's top
+    edge `top_hu` (hu over the chin) plus the margin when it is higher, at
+    most `cap` more than `above`."""
+    if top_hu is None:
+        return float(above)
+    return float(min(max(above, top_hu + margin), above + cap))
+
+
+def bust_math(box, extent, origin, unit, size, above=ABOVE, below=BELOW,
+              fit=True):
+    """(scale, off_x, off_y, above used, figure top in hu) from the rest
+    render's alpha `box` (top, bottom, left, right pixels), the visible
+    vertices' `extent` ((x0, y0), (x1, y1) model units), the body frame's
+    chin `origin` and `unit` (hu), the canvas `size`; None when degenerate.
+    The pixel map is two points per axis; the figure's top edge is the
+    alpha top, in hu over the chin."""
+    (x0, y0), (x1, y1) = extent
+    t, b, l, r = box
+    if y1 - y0 <= 0 or x1 - x0 <= 0:
+        return None
+    ox, oy = origin
+    # pixels = p0 + k * model (y flipped)
+    ky, kx = (b - t) / (y1 - y0), (r - l) / (x1 - x0)
+    k = 0.5 * (ky + kx)                         # one scale for both axes
+    py = lambda y: t + (y1 - y) * k             # noqa: E731
+    px = lambda x: l + (x - x0) * k             # noqa: E731
+    top_hu = (py(oy) - t) / (k * unit)
+    used = fit_top(above, top_hu) if fit else float(above)
+    top, bot = py(oy + used * unit), py(oy - below * unit)
+    h = bot - top
+    if h <= 0:
+        return None
+    s = max(1.0, size / h)
+    cy, cx = 0.5 * (top + bot), px(ox)
+    half = size / 2.0
+    return s, -s * (cx - half) / half, s * (cy - half) / half, used, top_hu
+
+
 def bust_view(backend, body_path, model_json, above=ABOVE, below=BELOW,
-              log=print):
+              log=print, fit=True):
     """(scale, offset_x, offset_y) for backend.set_view, or None when the
-    pieces are missing (then the caller keeps the full view)."""
+    pieces are missing (then the caller keeps the full view). fit: the
+    window top reaches a taller figure (bust_math)."""
     import json
     try:
         from l2dprobe import core
@@ -98,7 +159,7 @@ def bust_view(backend, body_path, model_json, above=ABOVE, below=BELOW,
     if "origin" not in frame or "unit" not in frame:
         log("framing: the body file has no frame; full view")
         return None
-    ox, oy = (float(v) for v in frame["origin"])
+    origin = tuple(float(v) for v in frame["origin"])
     unit = float(frame["unit"])
     backend.set_view(1.0, 0.0, 0.0)
     box = _alpha_box(backend.render())
@@ -111,27 +172,16 @@ def bust_view(backend, body_path, model_json, above=ABOVE, below=BELOW,
     if not vis:
         return None
     v = np.concatenate(vis)
-    (x0, y0), (x1, y1) = v.min(0), v.max(0)
-    t, b, l, r = box
-    if y1 - y0 <= 0 or x1 - x0 <= 0:
+    got = bust_math(box, (tuple(v.min(0)), tuple(v.max(0))), origin, unit,
+                    backend.size, above, below, fit)
+    if got is None:
         return None
-    # pixels = p0 + k * model (y flipped)
-    ky, kx = (b - t) / (y1 - y0), (r - l) / (x1 - x0)
-    k = 0.5 * (ky + kx)                         # one scale for both axes
-    py = lambda y: t + (y1 - y) * k             # noqa: E731
-    px = lambda x: l + (x - x0) * k             # noqa: E731
-    top, bot = py(oy + above * unit), py(oy - below * unit)
-    size = backend.size
-    h = bot - top
-    if h <= 0:
-        return None
-    s = max(1.0, size / h)
-    cy, cx = 0.5 * (top + bot), px(ox)
-    half = size / 2.0
-    off_y = s * (cy - half) / half
-    off_x = -s * (cx - half) / half
-    log(f"framing: bust, {above}+{below} hu around the chin -> scale "
-        f"{s:.2f}, offset ({off_x:+.2f}, {off_y:+.2f})")
+    s, off_x, off_y, used, top_hu = got
+    log(f"framing: bust, {used:.2f}+{below} hu around the chin (figure top "
+        f"{top_hu:.2f} hu"
+        + (f", window top {'extended' if used > above else 'kept'}"
+           if fit else "")
+        + f") -> scale {s:.2f}, offset ({off_x:+.2f}, {off_y:+.2f})")
     return s, off_x, off_y
 
 
@@ -299,6 +349,50 @@ def frame_tokens(acts, t0=0.0) -> list:
     seconds later."""
     return [frame_token(x["arg"], float(x["t"]) + t0) for x in acts
             if x.get("tag") == "frame" and x.get("arg") in FRAMES]
+
+
+def follow_tokens(moves, markers, start, t0=0.0, lead=FOLLOW_LEAD,
+                  tail=FOLLOW_TAIL, ease=VIEW_EASE, log=print) -> list:
+    """The frame tokens of the camera following whole-body moves: for each
+    (moves overlapping or closer than lead + tail join into one) a "full"
+    token `lead` s before the first starts and a token back to the framing
+    left `tail` s after the last ends. Only where the camera is in bust
+    then, as the model's `markers` (frame tokens, stream time) and `start`
+    (the framing at t = 0) have it, and only when no marker of the model
+    falls in the window: its markers win. `moves`: records with name,
+    start, seconds (a reply's own time; t0 shifts them to the stream's).
+    Hand and head moves (wave, clap, sway, head_bob, look_around) do not
+    count."""
+    wins = sorted((max(float(m["start"]) + t0 - lead, 0.0),
+                   float(m["start"]) + t0 + float(m["seconds"]) + tail,
+                   m["name"]) for m in moves
+                  if m.get("name") in WHOLE_BODY)
+    merged = []
+    for a, b, name in wins:
+        if merged and a <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], b)
+            merged[-1][2].append(name)
+        else:
+            merged.append([a, b, [name]])
+    marks = sorted(((float(k["t"]), k.get("view")) for k in markers
+                    if k.get("type") == "frame"))
+    out = []
+    for a, b, names in merged:
+        before = start
+        for t, v in marks:
+            if t <= a:
+                before = v
+        if before != "bust":
+            continue
+        if any(a <= t <= b for t, _v in marks):
+            log(f"framing: camera follow skipped for {'+'.join(names)} at "
+                f"{a + lead:.2f}s: a [frame] marker is in its window")
+            continue
+        out += [dict(frame_token("full", a, ease), follow=True),
+                dict(frame_token(before, b, ease), follow=True)]
+        log(f"framing: camera follows {'+'.join(names)}: full from "
+            f"{a:.2f}s, back to {before} at {b:.2f}s")
+    return out
 
 
 def last_frame(tags, default=None):

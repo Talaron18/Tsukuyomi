@@ -582,7 +582,9 @@ def test_director_body_mode_end_to_end(tmp_path, capsys):
     from tests.test_live import _stream_plan
     er = fs.EventRig(str(model), str(rig), "default", None, None, FPS,
                      str(tmp_path), log=lambda s: None)
-    traj, frames = _stream_plan(er, blob, len(plan["traj"]))
+    # (the offline render has the drift and the eased beats by default)
+    traj, frames = _stream_plan(er, blob, len(plan["traj"]), seed=2,
+                                head_drift=1.0, pose_ease=True)
     np.testing.assert_array_equal(traj, plan["traj"])
     sop = np.array([[fr[1].get(p, np.nan) for p in parts] for fr in frames],
                    np.float32)
@@ -742,3 +744,88 @@ def test_tag_mode_plans_do_not_depend_on_the_breath_gain(tmp_path, capsys):
              "hold": 1.0}, {"t": 2.0, "type": "gesture", "role": "arms",
                             "duration": 3.0}]
     assert dr.windows(toks) == {"head": [(1.0, 2.5)], "arms": [(2.0, 5.0)]}
+
+
+# ------------------------------------------------------------ organic playback
+
+def _ebeat(**kw):
+    tok = {"t": 1.0, "type": "pose", "role": "pose", "params": {
+        "ParamAngleX": 10.0, "ParamBrowLY": 0.8}, "parts": {},
+        "parts_from": {}, "step": [], "duration": 0.2, "hold": 0.2,
+        "release": 0.3, "groups": [], "variant": "v", "src": "director"}
+    tok.update(kw)
+    return tok
+
+
+def _eplay(ease, tok, n=120, fps=30.0):
+    lay = pz.PoseLayer(fps, {"ParamAngleX": 0.0, "ParamBrowLY": 0.0},
+                       ease=ease, angles={"ParamAngleX"})
+    lay.commit(tok)
+    rows = []
+    for f in range(n):
+        over, _ = lay.apply(f, {"ParamAngleX": 0.0, "ParamBrowLY": 0.0}, None)
+        rows.append((over["ParamAngleX"], over["ParamBrowLY"]))
+    return np.array(rows)
+
+
+def test_ease_gives_head_targets_a_minimum_arrival_and_a_slow_release():
+    raw, soft = _eplay(False, _ebeat()), _eplay(True, _ebeat())
+    f = lambda t: int(round(t * 30))                  # noqa: E731
+    # as written: the head is there at 0.2 s and gone 0.3 s after its hold
+    assert abs(raw[f(1.2), 0] - 10.0) < 1e-6
+    assert raw[f(1.7), 0] == 0.0
+    # eased: still on its way at 0.2 s, there by 0.35 s; the release
+    # (0.7 s) is not finished 0.3 s after the hold
+    assert 0.0 < soft[f(1.2), 0] < 9.0
+    assert soft[f(1.0 + pz.ANGLE_DUR + 0.05), 0] > 8.0
+    # the hold (0.2 s) starts when the move is done; the release follows
+    end = 1.0 + pz.ANGLE_DUR + 0.2
+    assert 0.0 < soft[f(end + 0.4), 0] < 10.0
+    assert soft[f(end + pz.ANGLE_RELEASE + 0.1), 0] == 0.0
+    # the sharpest frame step is smaller
+    assert np.abs(np.diff(soft[:, 0])).max() < 0.7 * np.abs(
+        np.diff(raw[:, 0])).max()
+
+
+def test_ease_keeps_the_model_s_targets_onsets_and_hold_end():
+    raw, soft = _eplay(False, _ebeat()), _eplay(True, _ebeat())
+    # nothing before the onset
+    assert (soft[:30] == 0).all() and (raw[:30] == 0).all()
+    # the target is the one asked for, held where the move is done
+    held = _eplay(True, _ebeat(hold=2.0))
+    assert abs(held[int(round((1.0 + 0.35 + 0.5) * 30)), 0] - 10.0) < 2.5
+    assert held[:, 0].max() < 10.0 + 1e-6
+
+
+def test_ease_face_targets_stay_quick_but_not_instant():
+    raw = _eplay(False, _ebeat(duration=0.05))
+    soft = _eplay(True, _ebeat(duration=0.05))
+    f = lambda t: int(round(t * 30))                  # noqa: E731
+    # the brow as written reaches its target in a frame or two (0.05 s);
+    # eased it takes FACE_DUR, still well under the head's ANGLE_DUR
+    assert raw[f(1.1), 1] > 0.75
+    assert 0.0 < soft[f(1.0) + 1, 1] < 0.5
+    assert soft[f(1.0 + pz.FACE_DUR) + 1, 1] > 0.75
+    assert pz.FACE_DUR < pz.ANGLE_DUR
+
+
+def test_eased_helper_and_angle_params():
+    d, he, rel = pz.eased(0.2, 1.4, 0.3, True, 30.0, 1.0)
+    assert (d, rel) == (pz.ANGLE_DUR, pz.ANGLE_RELEASE)
+    assert abs(he - (1.4 + pz.ANGLE_DUR - 0.2)) < 1e-9   # same hold, later
+    # the model's longer times stay
+    assert pz.eased(1.0, 1.5, 2.0, True, 30.0, 1.0) == (1.0, 1.5, 2.0)
+    assert pz.eased(0.05, 1.05, 0.05, False, 30.0) == pytest.approx(
+        (pz.FACE_DUR, 1.05 + pz.FACE_DUR - 0.05, pz.RELEASE_MIN))
+    ang = pz.angle_params(
+        ["ParamAngleX", "ParamBodyAngleZ", "ParamBrowLAngle", "head.yaw",
+         "torso.tilt", "eye.L.open", "Param7"], {"head_y": ("Param7", 1, "")})
+    assert ang == {"ParamAngleX", "ParamBodyAngleZ", "head.yaw",
+                   "torso.tilt", "Param7"}
+
+
+def test_ease_off_is_the_beats_as_written_everywhere_else():
+    # the dataset's playback (pz.layer_for / PoseLayer defaults) is as before
+    lay = pz.PoseLayer(30.0, {"ParamAngleX": 0.0})
+    assert not lay.ease
+    assert pz.layer_for([_ebeat()], 30.0, {"ParamAngleX": 0.0}).ease is False

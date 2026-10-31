@@ -81,7 +81,11 @@ LATE_LOG = 0.1
 # a streamer's head is never quite still. A few degrees: below what reads
 # as a gaze shift, above what the eye takes for a frozen frame.
 DRIFT_DEG = {"head_x": 2.5, "head_y": 1.5, "head_z": 2.0}
-DRIFT_PERIODS = (5.0, 13.0)
+# The body's breathing sway: the torso rocks a degree or so, slowly (the
+# breath's own period, 4-7 s), under the head's wander.
+SWAY_DEG = {"body_x": 0.8, "body_z": 0.6}
+SWAY_PERIODS = (4.0, 7.0)
+DRIFT_PERIODS = (4.0, 10.0)
 DRIFT_WEIGHTS = (0.5, 0.3, 0.2)
 
 
@@ -89,7 +93,8 @@ class HeadDrift:
     """A slow, low-amplitude wander of the head over everything the idle
     does: per axis (yaw, pitch, tilt) the sum of three sines with seeded
     periods in `periods` seconds and seeded phases, peaking at `scale` x
-    DRIFT_DEG degrees. Smooth, never repeating in a minute, and a pure
+    DRIFT_DEG degrees; the body's side and tilt axes sway the same way, a
+    degree at most, at the breath's pace (SWAY_DEG, SWAY_PERIODS). Smooth, never repeating in a minute, and a pure
     function of the time (so a seed replays it).
 
     It is added to the idle's head parameters before the moves and poses
@@ -107,13 +112,15 @@ class HeadDrift:
         self.axes = []                      # (pid, lo, hi, peak, T, phase)
         pids = rig.pids
         for r, c, _sg in rig.role_cols:
-            if r not in DRIFT_DEG:
+            if r not in DRIFT_DEG and r not in SWAY_DEG:
                 continue
             i = rig.expressive[c]
             lo, hi = float(rig.lo[i]), float(rig.hi[i])
             half = (hi - lo) / 2
-            peak = DRIFT_DEG[r] * (1.0 if half > 2.0 else half / 30.0)
-            T = rng.uniform(periods[0], periods[1], len(DRIFT_WEIGHTS))
+            deg, per = ((DRIFT_DEG[r], periods) if r in DRIFT_DEG
+                        else (SWAY_DEG[r], SWAY_PERIODS))
+            peak = deg * (1.0 if half > 2.0 else half / 30.0)
+            T = rng.uniform(per[0], per[1], len(DRIFT_WEIGHTS))
             self.axes.append((pids[i], lo, hi, peak * self.scale, T,
                               rng.uniform(0, 2 * np.pi, len(DRIFT_WEIGHTS))))
 
@@ -140,6 +147,12 @@ def drift_from_args(a):
     if not getattr(a, "head_drift", False):
         return None
     return float(getattr(a, "head_drift_scale", 1.0))
+
+
+def ease_from_args(a) -> bool:
+    """MotionStream's pose_ease for parsed arguments (flow.pose.ANGLE_DUR:
+    organic pose playback; --no-pose-ease is the beats as written)."""
+    return bool(getattr(a, "pose_ease", False))
 
 
 class EventRig:
@@ -316,13 +329,14 @@ class MotionStream:
     idle generated; what the equivalence test feeds it. mouth_map: the
     rig's calibrated mouth map (flow.mouth), whose rest the mouth holds
     between sentences. head_drift: None (off, the stream of before) or the
-    HeadDrift scale (1.0: its default amplitudes). Thread safety: direct()/add_mouth() may be called
+    HeadDrift scale (1.0: its default amplitudes). pose_ease: organic pose
+    playback (flow.pose.ANGLE_DUR; off: the beats as written). Thread safety: direct()/add_mouth() may be called
     from any thread while the render thread calls frame().
     """
 
     def __init__(self, rig, seed=0, idle=True, tokens=None, horizon=20.0,
                  refill=10.0, mouth_map=None, log=print, autonomic=True,
-                 head_drift=None):
+                 head_drift=None, pose_ease=False):
         self.rig, self.fps, self.log = rig, rig.fps, log
         self.lock = threading.Lock()
         self.horizon, self.refill = float(horizon), float(refill)
@@ -358,9 +372,10 @@ class MotionStream:
             from . import pose as pz
         except ImportError:
             from flow import pose as pz
-        self.poses = pz.PoseLayer(rig.fps, dict(zip(rig.pids,
-                                                    rig.dflt.tolist())),
-                                  rig.base_parts)
+        self.poses = pz.PoseLayer(
+            rig.fps, dict(zip(rig.pids, rig.dflt.tolist())), rig.base_parts,
+            ease=pose_ease,
+            angles=pz.angle_params(rig.pids, rig.roles) if pose_ease else ())
         # Motion primitives (flow.moves), under the poses.
         try:
             from . import moves as mv

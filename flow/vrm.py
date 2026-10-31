@@ -407,7 +407,8 @@ def plan(a, reply, out_dir, run, log=print, tts=None):
         log(f"pose: {rs['markers']} markers, {rs['ok']}/{rs['targets']} "
             f"targets reached (solve {rs['solve_seconds']}s)")
         extra.update(mode="body", reach=rs)
-        seconds = max(seconds, pz.end_time(poses) + a.tail)
+        seconds = max(seconds, pz.end_time(
+            poses, getattr(a, "pose_ease", False)) + a.tail)
     mvs = []
     if any(x.get("tag") == "move" for x in acts):
         try:
@@ -424,7 +425,8 @@ def plan(a, reply, out_dir, run, log=print, tts=None):
             seconds = max(seconds, mv.end_time(mvs) + a.tail)
     rng = np.random.default_rng([int(a.seed), 1])
     stream = fs.MotionStream(rig, seed=a.seed, idle=not a.no_idle,
-                             log=log)
+                             head_drift=fs.drift_from_args(a),
+                             pose_ease=fs.ease_from_args(a), log=log)
     directed = dr.realize(acts, rig.stats, list(rig.roles), {}, rng,
                           stream.pose(), settle=None)
     if poses:
@@ -465,7 +467,9 @@ def plan(a, reply, out_dir, run, log=print, tts=None):
     if gs_base is not None and getattr(a, "gs_baseline", False):
         # The same turn without the retrieved motion (the demo's other
         # panel): a stream of its own with the same seeds.
-        s2 = fs.MotionStream(rig, seed=a.seed, idle=not a.no_idle, log=log)
+        s2 = fs.MotionStream(rig, seed=a.seed, idle=not a.no_idle,
+                             head_drift=fs.drift_from_args(a),
+                             pose_ease=fs.ease_from_args(a), log=log)
         s2.direct(gs_base)
         if mouth is not None:
             s2.add_mouth(0, mouth, len(mouth["open"]))
