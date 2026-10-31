@@ -1740,14 +1740,17 @@ def add_args(ap):
                          "on]; --no-body-moves: the prompt and parser of "
                          "before them")
     ap.add_argument("--body-prompt", default="v1",
-                    choices=("v1", "beats"),
+                    choices=("v1", "beats", "beats2"),
                     help="--mode body: v1 [default]: the prompt the first "
                          "students were taught with; beats: the expression "
                          "beats (1-3 face beats a sentence, each with a small "
                          "head move, a hand at the moments that call for one, "
                          "the camera line and [frame] markers; flow.pose "
-                         "_beats_rule). A student is served with the prompt "
-                         "it was trained on")
+                         "_beats_rule); beats2: beats with the first dense "
+                         "example of several, [frame full] before whole-body "
+                         "moves and the \"(reply in: ...)\" line on each "
+                         "user turn. A student is served with the prompt it "
+                         "was trained on")
     ap.add_argument("--body-image", action="store_true",
                     help="--mode body: send the model a picture of itself "
                          "with each line (anthropic; siliconflow and ollama "
@@ -1846,12 +1849,15 @@ def prepare_body(a, info=sys.stdout):
             "system": pz.system_prompt(bm, a.persona, images, glines,
                                        mlines, getattr(a, "body_prompt",
                                                        "v1")),
+            "system_for": lambda k: pz.system_prompt(
+                bm, a.persona, images, glines, mlines,
+                getattr(a, "body_prompt", "v1"), k),
             "motions": motions, "stats": None, "roles": None,
             "mode": "body", "body": bm, "body_path": path, "core": core,
             "images": images, "max_tag": pz.MAX_MARKER,
             "parser": lambda: pz.parser_for(
                 bm, gestures=labels, moves=bool(mnames),
-                frames=getattr(a, "body_prompt", "v1") == "beats")}
+                frames=pz.beats_like(getattr(a, "body_prompt", "v1")))}
 
 
 def _quiet_stdout(info):
@@ -2163,11 +2169,10 @@ def main(argv=None) -> int:
                 img = snapshot(a, body, os.path.join(out_dir, "seen.png"))
             # The beats prompt also shows the framing the turn starts in
             # (a.frame, carried from the last [frame] marker).
-            cam = (pz.camera_now(body["body"], a.frame)
-                   if a.body_prompt == "beats" else "")
+            tail = pz.turn_tail(body["body"], a.frame, text, a.body_prompt)
             messages.append(pz.user_message(
-                text + "\n" + pz.pose_now(body["body"])
-                + ("\n" + cam if cam else ""), a.backend, img))
+                text + "\n" + pz.pose_now(body["body"]) + tail,
+                a.backend, img))
             parser = body["parser"]()
         reply = ask(backend, system, messages, labels, offered=offered,
                     parser=parser)
@@ -2175,7 +2180,7 @@ def main(argv=None) -> int:
         res = plan(a, reply, out_dir, motions, tts=tts, body=body)
         if body is not None:
             messages[-1] = pz.text_only(messages[-1])
-            if a.body_prompt == "beats" and not reply["refused"]:
+            if pz.beats_like(a.body_prompt) and not reply["refused"]:
                 # A switch lasts for its reply: the next turn starts, and is
                 # shown, back in the home framing (--frame).
                 a.frame = home_frame
@@ -2269,11 +2274,9 @@ def vrm_main(a, ap) -> int:
             parser = None
         else:
             # A VRM is drawn at one camera: always full (beats prompt).
-            cam = (pz.camera_now(bm, "full")
-                   if a.body_prompt == "beats" else "")
+            tail = pz.turn_tail(bm, "full", text, a.body_prompt)
             messages.append(pz.user_message(
-                text + "\n" + pz.pose_now(bm) + ("\n" + cam if cam else ""),
-                a.backend, None))
+                text + "\n" + pz.pose_now(bm) + tail, a.backend, None))
             parser = body["parser"]()
         reply = ask(backend, run["system"], messages, {},
                     offered=run["offered"], parser=parser)

@@ -202,16 +202,19 @@ REPLAY_VERSION = 2
 ZERO = {"hips.x": 0.0, "hips.y": 0.0}
 USER_MAX = 300          # characters of a simulated user line at most
 SHARD_SIZE = 5000       # turn records per shard
-# The character's system prompt (flow.pose.PROMPTS): "beats" from r2 on,
-# "v1" regenerates r1.
-TEACHER_PROMPT = "beats"
+# The character's system prompt (flow.pose.PROMPTS): "beats2" from r3 on,
+# "beats" regenerates r2 and "v1" r1.
+TEACHER_PROMPT = "beats2"
+# Within-session language switches of the beats2 prompt (--lang-switch): the
+# personas' own "switch" (0.1-0.15) carried an earlier turn's language over
+# into the answer to a user who had moved on; r2 data keeps theirs.
+LANG_SWITCH = 0.03
 # Prices in US$ per million tokens: DeepSeek's deepseek-chat list prices
 # as last checked (2025-09: input 0.28 on a cache miss, 0.028 on a hit,
 # output 0.42). Check https://api-docs.deepseek.com/quick_start/pricing
 # before trusting an estimate; --price-* override them.
 PRICES = {"in": 0.28, "in_hit": 0.028, "out": 0.42}
-LANG_NAMES = {"en": "English", "ja": "Japanese", "zh": "Chinese (Simplified)",
-              "ko": "Korean"}
+LANG_NAMES = pz.LANG_NAMES
 FATAL = re.compile(r"\b(401|402|403) from ")
 
 
@@ -501,11 +504,21 @@ class Avatar:
                 mlines, mnames = dr.move_menu(a, bm)
                 run = {"system": pz.system_prompt(bm, ptext, False, "",
                                                   mlines, a.body_prompt),
+                       "system_for": lambda k, bm=bm, ptext=ptext,
+                       mlines=mlines: pz.system_prompt(
+                           bm, ptext, False, "", mlines, a.body_prompt, k),
                        "labels": {}, "body": bm,
                        "parser": lambda bm=bm, m=bool(mnames),
-                       f=a.body_prompt == "beats":
+                       f=pz.beats_like(a.body_prompt):
                            pz.parser_for(bm, moves=m, frames=f)}
             self.runs[pid] = run
+            # beats2: one system prompt per dense example variant (the
+            # session picks one, flow.pose.variant_for); the key of
+            # variant 0 is the persona's, as for the older prompts.
+            if a.body_prompt == "beats2" and run.get("system_for"):
+                for k in range(1, pz.variant_count(self.bm)):
+                    self.runs[self.key(pid, k)] = {
+                        **run, "system": run["system_for"](k)}
         self.pose_now = pz.pose_now(self.bm)
         self.traj_vars = traj_vars(self.bm, opts.traj_vars)
         self.variant_names = [v["name"] for v in self.bm.variants]
@@ -522,14 +535,18 @@ class Avatar:
             + ", ".join(f"{p} prompt {len(r['system'])} chars"
                         for p, r in self.runs.items()))
 
-    def system(self, persona):
-        return self.runs[persona]["system"]
+    @staticmethod
+    def key(persona, variant=0):
+        return persona if not variant else f"{persona}#{variant}"
 
-    def parser(self, persona):
-        return self.runs[persona]["parser"]()
+    def system(self, persona, variant=0):
+        return self.runs[self.key(persona, variant)]["system"]
 
-    def labels(self, persona):
-        return self.runs[persona].get("labels") or {}
+    def parser(self, persona, variant=0):
+        return self.runs[self.key(persona, variant)]["parser"]()
+
+    def labels(self, persona, variant=0):
+        return self.runs[self.key(persona, variant)].get("labels") or {}
 
     def registry(self) -> dict:
         return {"kind": self.kind, "body": self.body_path,
@@ -828,8 +845,22 @@ def clean_user_line(text) -> str:
 
 
 def detect_lang(text):
-    lang = sp.script_language(text or "")
-    return {"han": "zh"}.get(lang, lang)
+    """The language of a line (flow.pose.detect_lang): the record's
+    lang.user / lang.reply and, under beats2, the user turn's
+    "(reply in: ...)" line."""
+    return pz.detect_lang(text)
+
+
+def switch_prob(persona, opts) -> float:
+    """The chance a turn's language is drawn afresh (not the session's
+    first): --lang-switch when given, else LANG_SWITCH for the beats2
+    prompt and the persona's own "switch" for the older ones (r1 / r2
+    regenerate as they were)."""
+    v = getattr(opts, "lang_switch", None)
+    if v is None and getattr(opts, "teacher_prompt",
+                             TEACHER_PROMPT) == "beats2":
+        v = LANG_SWITCH
+    return float(persona.get("switch", 0.15) if v is None else v)
 
 
 def collect(backend, system, messages):
@@ -917,7 +948,11 @@ def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
     langs = persona.get("languages") or {"en": 1.0}
     lang0 = _pick(rng, langs)
     usys = USER_SYSTEM.format(user=user["style"], character=ptext)
-    system = av.system(sess["persona"])
+    prompt = getattr(opts, "teacher_prompt", TEACHER_PROMPT)
+    # beats2: the dense example this session's prompt shows (from its seed).
+    variant = pz.variant_for(sess["seed"], av.bm) if prompt == "beats2" \
+        else 0
+    system = av.system(sess["persona"], variant)
     psha = sha(system)
     history, transcript, records, arrays = [], [], [], {}
     if tot is None:
@@ -939,7 +974,7 @@ def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
     # The session's home framing is the one every turn starts in: a [frame]
     # switch lasts until the end of its reply.
     framing = home = None
-    if getattr(opts, "teacher_prompt", TEACHER_PROMPT) == "beats":
+    if pz.beats_like(prompt):
         framing = home = sess.get("frame", "bust") if fr.can_frame(av.bm) \
             else "full"
     for turn in range(1, sess["turns"] + 1):
@@ -951,7 +986,7 @@ def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
             topic = rng.choices(cfg["topics"],
                                 [float(t.get("weight", 1)) for t in
                                  cfg["topics"]])[0]
-        lang = lang0 if rng.random() > float(persona.get("switch", 0.15)) \
+        lang = lang0 if rng.random() > switch_prob(persona, opts) \
             else _pick(rng, langs)
         others = [k for k in langs if k != lang]
         mix = rng.choice(others) if others and rng.random() < float(
@@ -980,7 +1015,7 @@ def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
         content = line + "\n" + av.pose_now
         if framing is not None:
             framing = home
-            content += "\n" + pz.camera_now(av.bm, framing)
+            content += pz.turn_tail(av.bm, framing, line, prompt)
         start_frame = framing
         msgs = []
         for h in history:
@@ -989,8 +1024,8 @@ def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
         msgs.append(pz.user_message(content, opts.backend, None))
         reply, c_att = with_retries(
             lambda: dr.ask(char_backend, system, msgs,
-                           av.labels(sess["persona"]), log=_quiet,
-                           parser=av.parser(sess["persona"])),
+                           av.labels(sess["persona"], variant), log=_quiet,
+                           parser=av.parser(sess["persona"], variant)),
             opts.retries, opts.backoff, stop, log, "character")
         c_tok, c_est = call_tokens(reply.get("usage"), system, msgs,
                                    reply["raw"])
@@ -1001,7 +1036,9 @@ def run_session(sess, av, cfg, opts, char_backend, user_backend, run_id,
                "seed": sess["seed"] + turn,
                "avatar": {"name": av.name, "kind": av.kind,
                           "body": av.body_path, "body_sha": av.body_sha,
-                          "prompt_sha": psha},
+                          "prompt_sha": psha,
+                          **({"variant": variant} if prompt == "beats2"
+                             else {})},
                "persona": sess["persona"], "user_type": user["id"],
                "topic": topic["id"],
                "lang": {"asked": lang, "mix": mix,
@@ -1261,6 +1298,9 @@ def run_opts(out):
                     continue
                 if e.get("opts"):
                     last = e["opts"]
+    # Runs from before the option existed taught with "beats": the default
+    # moved on to beats2 since.
+    opts.teacher_prompt = "beats"
     for k, v in last.items():
         if hasattr(opts, k):
             setattr(opts, k, v)
@@ -1539,8 +1579,9 @@ def generate(opts, backend_factory=None, log=print, argv=None) -> dict:
     sessions = plan_sessions([s["name"] for s in specs], personas, cfg,
                              opts.sessions, opts.turns, opts.seed,
                              getattr(opts, "bust_share", fr.BUST_SHARE)
-                             if getattr(opts, "teacher_prompt",
-                                        TEACHER_PROMPT) == "beats" else None)
+                             if pz.beats_like(getattr(
+                                 opts, "teacher_prompt", TEACHER_PROMPT))
+                             else None)
     store = Store(opts.out, opts.shard_size)
     todo = [s for s in sessions if s["id"] not in store.done]
     if store.done:
@@ -1722,12 +1763,21 @@ def add_args(ap):
                          "(the director's default)")
     ap.add_argument("--teacher-prompt", default=TEACHER_PROMPT,
                     choices=pz.PROMPTS,
-                    help="the character's system prompt: beats [default]: "
-                         "1-3 expression beats a sentence (face, with a small "
-                         "head move in the same marker; a hand at the moments "
-                         "that call for one; the camera line and [frame] "
-                         "markers); v1: the prompt of the first run (r1), to "
-                         "regenerate it byte for byte")
+                    help="the character's system prompt: beats2 [default]: "
+                         "the r3 prompt (beats with six dense examples, one "
+                         "per session; [frame full] before whole-body moves; "
+                         "a \"(reply in: ...)\" line on every user turn; "
+                         "fewer language switches); beats: 1-3 expression "
+                         "beats a sentence (face, with a small head move in "
+                         "the same marker; a hand at the moments that call "
+                         "for one; the camera line and [frame] markers), the "
+                         "prompt of r2, to regenerate it byte for byte; v1: "
+                         "the prompt of the first run (r1)")
+    ap.add_argument("--lang-switch", type=float, default=None, metavar="P",
+                    help="the chance a turn's language is drawn afresh "
+                         "instead of the session's [beats2: "
+                         f"{LANG_SWITCH:g}; older prompts: each persona's "
+                         "own \"switch\" in --config, 0.1-0.15]")
     ap.add_argument("--bust-share", type=float, default=fr.BUST_SHARE,
                     metavar="P",
                     help="beats prompt: the share of sessions that start in "

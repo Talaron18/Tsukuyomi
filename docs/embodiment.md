@@ -999,6 +999,72 @@ then
 do not find them.) 八千代辉夜姬 and the Azur Lane rigs are for training and
 tests only, never streamed.
 
+### beats2 (r3 data)
+
+q8r2 (trained on r2, served with `--body-prompt beats`) showed in its eval
+and 30 demo clips: about 20% of replies open with exactly the one dense
+example of the prompt (brows 0.7, pitch +5, yaw -5, dur 0.2, hold 0.4) and
+about 40% with a brow lift + pitch + yaw; dances played in bust without
+`[frame full]` while `[frame full]` went to a single wave; about 8% of the
+teacher turns answered in another language than the user's latest line. The
+`beats` prompt stays byte for byte (q8r2 is served with it; the digests in
+`tests/test_facevocab.py` pin it). The changes are a new prompt version,
+`beats2` (`pose.PROMPTS`), which is now the dataset default:
+`--teacher-prompt beats2` (`beats` regenerates r2, `v1` r1), served with
+`--body-prompt beats2` (`flow.director`, `flow.live`; `flow.train.evalsft`
+replays the recorded user turns with the registry's prompt, so it needs no
+flag). `dataexport` recognises it as beats data (the prompt says
+"expression beats"): the same defaults, manners cap `--max-beats`, hands
+cap and language filter.
+
+- *Openings.* Six dense examples (`pose.dense_variants`, built per body from
+  `pose.offered` like the old one), each eight beats in four to five
+  sentences with its own numbers and order. Hiyori's first beats: an eye
+  smile with a tilt ("Hehe, you remembered?"); a glance away (gaze.x -0.5,
+  yaw -7); a laugh with closed eyes (eye.*.open 0, mouth 1); worried brows
+  with a pout (brows -0.6, mouth -0.5); a blush with chin down; a calm slow
+  tilt (dur 0.45, hold 1). The two short examples rotate with the variant
+  too. The data picks one variant per session from the session's seed
+  (`pose.variant_for`; reproducible, recorded as `avatar.variant` in each
+  turn record, and every variant's prompt is in `avatars.json` under
+  `PERSONA#K`); a served prompt is variant 0 (`system_prompt(variant=0)`),
+  and the student saw all of them. One more rule: "Vary how your replies
+  open: never start every reply with the same expression, and do not take
+  the opening of an example; begin with what this line makes you feel."
+- *Camera.* The `[frame]` entry now says: "Write [frame full] right before a
+  dance or another whole-body move ([move dance] ... the ones
+  `framing.WHOLE_BODY` has that this body does) and before showing an
+  outfit, so the whole figure is in the picture; never for a wave or a
+  single hand move, which stay in bust." The move example shows
+  `[frame full][move ...]`. (The runtime follows whole-body moves anyway;
+  this keeps the data consistent.)
+- *Language.* Every user turn of beats2 ends with the reply language next
+  to the camera line, from the user's latest line:
+  `<line>\n(your body now: ...)\n(camera: ...)\n(reply in: English)`
+  ("Japanese", "Chinese", "Korean"; left out when the line settles nothing,
+  like "OK!"). One function writes it everywhere, `pose.turn_tail`
+  (`pose.detect_lang`, which `dataset.detect_lang` is: the main language of
+  a mixed line, so English with a kana word is English). The dataset
+  (`user_content`), the director (`--say`, `--chat`, VRM too) and the live
+  loop call it, so training and serving match exactly. The rule in the
+  prompt points at it.
+- *Fewer switches.* `datagen.personas.json` is not edited (r2 reproduces
+  with it); `--lang-switch P` sets the chance a turn's language is drawn
+  afresh, default `dataset.LANG_SWITCH` = 0.03 for beats2 (the personas'
+  own 0.10-0.15 for `beats` and `v1`). `mix` is unchanged and each persona
+  keeps its `languages` weights, so the balance stays about 40% en, 37% ja,
+  23% zh over a run. `dataset.run_opts` reads a run that did not record
+  `teacher_prompt` as `beats`.
+
+r3 generation, the r2 avatar list:
+
+    python -m flow.dataset gen --avatars Hiyori,lafei,Mao,huangjiafangzhou_3,八千代辉夜姬,seed-san \
+        --teacher-prompt beats2 --out data/datagen/r3 ...
+
+(`--teacher-prompt beats2` is the default; the personas file is the same.)
+Export and train as for r2; serve the student with `--body-prompt beats2`.
+八千代辉夜姬 and the Azur Lane rigs are for training and tests only.
+
 ### Action head ablations on BEAT2 (2026-10)
 
 The first BEAT2 run (text only, 54 h, 27.6k segments) came out at normalised

@@ -445,8 +445,8 @@ def test_dataset_carries_the_framing_across_turns(tmp_path):
         for r0, r1 in zip(rs, rs[1:]):
             assert r1["framing"]["start"] == r0["framing"]["home"]
         for r in rs:
-            assert r["user_content"].endswith(
-                pz.camera_now(_bm("Hiyori"), r["framing"]["start"]))
+            assert pz.camera_now(_bm("Hiyori"), r["framing"]["start"]) \
+                in r["user_content"].splitlines()
     # The frame markers are played (not "unplayed"), the registry has the
     # budget and what the manners need.
     assert all(m["played"] is True for r in hi for m in r["markers"]
@@ -493,8 +493,8 @@ def test_dataset_turns_start_at_home_after_a_switch_away(tmp_path):
             assert rs[0]["framing"]["home"] == home
             assert rs[1]["framing"]["end"] == home        # no marker: home
             for r in rs:
-                assert r["user_content"].endswith(
-                    pz.camera_now(_bm("Hiyori"), home))
+                assert pz.camera_now(_bm("Hiyori"), home) \
+                    in r["user_content"].splitlines()
 
 
 def test_v1_data_has_no_framing_and_no_camera_line(tmp_path):

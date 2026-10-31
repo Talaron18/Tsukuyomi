@@ -74,8 +74,9 @@ Quality filters, stats and exporters for flow.dataset's turn records.
              reply (after --correct-misses), on history turns too, and the
              spoken text is checked with the pose parser: a turn whose
              spoken text would change is left as it was and counted.
-  beats      the r2 teacher prompt (flow.pose "beats", flow.dataset
-             --teacher-prompt) writes 1-3 expression beats a sentence (at least one): a
+  beats      the r2 / r3 teacher prompts (flow.pose "beats" and "beats2",
+             flow.dataset --teacher-prompt; both say "expression beats",
+             which is how the data is recognised) write 1-3 expression beats a sentence (at least one): a
              pose marker whose targets are the face (brow, eye, mouth, cheek,
              gaze) with optional head angles. Counted by `stats` (beats per
              sentence, the face and the hand share of all pose targets), on
@@ -691,7 +692,9 @@ MAX_POSES = 2
 # tail; was 12, 9 before).
 FACE_PREFIX = ("brow.", "eye.", "mouth.", "cheek.", "gaze.", "tongue.")
 BEATS_MAX = 16
-BEATS_MARK = "expression beats"      # in the prompt text of that version
+# in the prompt text of that version (beats and beats2 alike: the same
+# defaults for both, manners cap, max-beats, hands, language filter)
+BEATS_MARK = "expression beats"
 _SPEC = ("dur", "duration", "hold")
 _ARM_KEYS = ("hand", "hands", "arm", "forearm", "elbow", "wrist")
 

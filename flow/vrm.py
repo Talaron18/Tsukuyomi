@@ -322,6 +322,9 @@ def prepare(a, bm, body_path, info=sys.stdout):
                 "system": pz.system_prompt(bm, a.persona, False, "",
                                            mlines, getattr(a, "body_prompt",
                                                            "v1")),
+                "system_for": lambda k: pz.system_prompt(
+                    bm, a.persona, False, "", mlines,
+                    getattr(a, "body_prompt", "v1"), k),
                 "motions": {}, "stats": rig.stats, "roles": rig.roles,
                 "mode": "body", "body": bm, "body_path": body_path,
                 "core": None, "images": False, "max_tag": pz.MAX_MARKER,

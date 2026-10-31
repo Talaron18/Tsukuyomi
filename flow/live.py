@@ -579,7 +579,8 @@ class Performer:
         # `home` (--frame) is the framing every turn starts in: a switch
         # lasts until the end of its reply, then the camera eases back.
         self.framing = self.home = None
-        if self.body is not None and getattr(a, "body_prompt", "v1") == "beats":
+        if self.body is not None and pz.beats_like(
+                getattr(a, "body_prompt", "v1")):
             self.framing = (getattr(a, "frame", "full")
                             if fr.can_frame(self.body["body"]) else "full")
             self.home = self.framing
@@ -906,10 +907,11 @@ class Performer:
                 Image.fromarray(np.asarray(frame)).convert("RGB").save(
                     buf, "PNG")
                 img = buf.getvalue()
-        cam = (f"\n{pz.camera_now(bm, self.framing)}"
-               if self.framing is not None else "")
+        tail = (pz.turn_tail(bm, self.framing, text,
+                             getattr(self.a, "body_prompt", "v1"))
+                if self.framing is not None else "")
         return pz.user_message(text + "\n" + pz.pose_now(bm, vals, parts)
-                               + cam, self.a.backend, img)
+                               + tail, self.a.backend, img)
 
     def lang_of(self, spoken):
         """The language to speak this sentence in. Offline, the voice is

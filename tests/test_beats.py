@@ -84,9 +84,9 @@ def test_beats_prompt_examples_carry_the_head_in_the_marker():
         assert "hand." not in ex
 
 
-def test_dataset_teaches_with_beats_unless_asked_for_v1(tmp_path):
-    assert ds.parse_opts(["gen"]).teacher_prompt == "beats"
-    for prompt, want in (("beats", True), ("v1", False)):
+def test_dataset_teaches_with_beats2_unless_asked_for_beats_or_v1(tmp_path):
+    assert ds.parse_opts(["gen"]).teacher_prompt == "beats2"
+    for prompt, want in (("beats2", True), ("beats", True), ("v1", False)):
         out, _recs = _run(tmp_path / prompt, FACES, avatars="seed-san",
                           sessions=1, turns=1, prompt=prompt)
         reg = dx.load_registry(out)

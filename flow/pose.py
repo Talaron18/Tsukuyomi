@@ -91,6 +91,7 @@ try:
     from . import director as dr
     from . import events as ev
     from . import framing as fr
+    from . import speech as sp
     from .behaviors import min_jerk
 except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -98,6 +99,7 @@ except ImportError:
     from flow import director as dr
     from flow import events as ev
     from flow import framing as fr
+    from flow import speech as sp
     from flow.behaviors import min_jerk
 
 POSE = "pose"
@@ -756,17 +758,39 @@ Examples of placement (not of content; never copy them):
 {examples}"""
 
 
-# The two prompts of the teacher: "v1" (the first data run, r1; the bytes of
-# before the expression beats) and "beats" (r2: a streamer's face, see
-# _beats_rule). flow.dataset's --teacher-prompt picks; the director's own
-# default stays v1, the prompt the trained students were taught with.
-PROMPTS = ("v1", "beats")
+# The prompts of the teacher: "v1" (the first data run, r1; the bytes of
+# before the expression beats), "beats" (r2: a streamer's face, see
+# _beats_rule; its bytes are what tsk-q8r2 is served with and stay as they
+# are) and "beats2" (r3: beats with several dense examples, the [frame full]
+# entry before whole-body moves, and a reply-language line on every user
+# turn). flow.dataset's --teacher-prompt picks; the director's own default
+# stays v1, the prompt the first students were taught with.
+PROMPTS = ("v1", "beats", "beats2")
+# The prompts with the expression beats, the camera line and [frame] markers.
+FRAMED = ("beats", "beats2")
+
+
+def beats_like(prompt) -> bool:
+    return prompt in FRAMED
+
+
 # The beats prompt's reply-language rule: the pilot's replies kept the
 # language of the earlier ones after the user switched.
 LANG_RULE = ("- Answer in the language of the user's latest message, even "
              "if your earlier replies used another language. When the user "
              "mixes languages, answer in their main language (a mixed-in "
              "word or two may be mirrored).\n")
+# beats2: the language is also written on the user turn ("(reply in: ...)",
+# reply_line), and the opening of a reply is asked to vary.
+LANG_RULE2 = ("- Answer in the language of the user's latest message, even "
+              "if your earlier replies used another language: each user "
+              "message ends with \"(reply in: English)\" (or Japanese, "
+              "Chinese), which is the language of this reply. When the user "
+              "mixes languages, answer in their main language (a mixed-in "
+              "word or two may be mirrored).\n")
+OPEN_RULE = ("- Vary how your replies open: never start every reply with the "
+             "same expression, and do not take the opening of an example; "
+             "begin with what this line makes you feel.\n")
 SENTENCE_RULE = {
     "v1": "- One or two beats per sentence, for what that sentence means. "
           "Put a marker right before the words it goes with, often "
@@ -775,6 +799,8 @@ SENTENCE_RULE = {
              "three in a longer one (the face and head beats above), each "
              "in its own marker right before the words it reacts to, often "
              "mid-sentence.\n" + LANG_RULE}
+SENTENCE_RULE["beats2"] = (SENTENCE_RULE["beats"][:-len(LANG_RULE)]
+                           + LANG_RULE2 + OPEN_RULE)
 
 
 def _bothsides(have, base, kinds):
@@ -784,7 +810,7 @@ def _bothsides(have, base, kinds):
             if f"{base}.{s}.{k}" in have]
 
 
-def _beats_rule(bm) -> str:
+def _beats_rule(bm, v2=False) -> str:
     """The "face beats" lines of the r2 teacher prompt, worded from the
     variables this body has (an avatar without eye.*.smile is told to close
     its eyes; one without brow.*.lift is not told of brows). Streamers move
@@ -875,7 +901,7 @@ def _beats_rule(bm) -> str:
              "show or do something. Then let the hand fall back; the rest "
              "of the time the face and head do it.\n")
     L.append(camera_rule(bm))
-    L.append(budget_line(bm))
+    L.append(budget_line(bm, v2))
     return "".join(L)
 
 
@@ -895,6 +921,44 @@ def frame_entry(bm) -> str:
     """The [frame] line of the marker list ("" for a body whose framing
     cannot switch: a VRM is drawn at one camera)."""
     return FRAME_ENTRY.format(ease=fr.VIEW_EASE) if fr.can_frame(bm) else ""
+
+
+# beats2: the data of r2 played dances in bust and used [frame full] for a
+# single wave, so the entry says when, in terms of what the body does.
+FRAME_ENTRY2 = (
+    "[frame bust] or [frame full]  switch the camera between bust (head and "
+    "chest) and full (the whole figure), as a streamer changes scenes. Write "
+    "[frame full] right before {whole} and before showing an outfit, so the "
+    "whole figure is in the picture; never for a wave or a single hand move, "
+    "which stay in bust. It eases over in about {ease:g} seconds at that "
+    "point of your speech and lasts until the end of this reply; the next "
+    "reply starts back in your home framing. At most once in a reply.\n")
+
+
+def whole_body_moves(bm, moves=True) -> list[str]:
+    """The whole-body moves (flow.framing.WHOLE_BODY) this body can do, in
+    that order; [] when the [move] menu is off."""
+    if not moves:
+        return []
+    try:
+        from . import moves as mv
+    except ImportError:
+        from flow import moves as mv
+    have = set(mv.offered(bm))
+    return [n for n in fr.WHOLE_BODY if n in have]
+
+
+def frame_entry2(bm, moves=True) -> str:
+    """The [frame] line of the beats2 prompt: [frame full] right before a
+    dance or another whole-body move this body does, and before an outfit;
+    never for a wave or one hand."""
+    if not fr.can_frame(bm):
+        return ""
+    names = whole_body_moves(bm, moves)
+    whole = ("a dance or another whole-body move ("
+             + ", ".join(f"[move {{\"name\": \"{n}\"}}]" for n in names)
+             + ")") if names else "a dance or another whole-body move"
+    return FRAME_ENTRY2.format(whole=whole, ease=fr.VIEW_EASE)
 
 
 def _ys(vals):
@@ -958,7 +1022,7 @@ def _times(n, word):
     return f"{n} {word}" + ("" if n == 1 else "s")
 
 
-def budget_line(bm) -> str:
+def budget_line(bm, v2=False) -> str:
     """The motion-budget line of the beats prompt: what this body can do
     (flow.framing.budget: the share of the gesture zone its hands reach,
     the face controls offered, its kind) as how much to move it."""
@@ -998,6 +1062,10 @@ def budget_line(bm) -> str:
     sw = ("; switch to full only for a whole-body moment (a dance, an outfit, "
           "a pose, a big celebration), never for a single hand move"
           if "bust" in b["frames"] else "")
+    if v2 and "bust" in b["frames"]:
+        sw = ("; switch to full only right before a dance or another "
+              "whole-body move or an outfit, never for a wave or a single "
+              "hand move")
     return f"- Motion budget: {what}{sw}.\n"
 
 
@@ -1082,6 +1150,217 @@ def _dense_example(bm, have) -> str:
             f"it? {b[7]}Now tell me the rest.")
 
 
+def _dense_variants(bm, have) -> list[str]:
+    """The dense examples of the beats2 prompt: whole replies of about
+    eight expression beats (the _dense_example density), each opening in
+    another way (an eye smile, a look away, a laugh with closed eyes, a
+    pout with worried brows, a blush, a calm slow tilt), with its own
+    numbers and order. Built from the variables this body offers like the
+    other examples; a variant with fewer than five surviving beats is left
+    out, so the list is the same for a body every time."""
+    def mk(d):
+        d = {k: v for k, v in d.items() if k in have or k in ("dur", "hold")}
+        return "[pose " + json.dumps(d) + "]" \
+            if any(k in have for k in d) else ""
+    shut = {v: 0 for v in _bothsides(have, "eye", ("open",))}
+
+    def sm(x):
+        # No smiling eye (lafei): half shut instead.
+        return {v: x for v in _bothsides(have, "eye", ("smile",))} \
+            or {v: 0.45 for v in shut}
+
+    def br(x):
+        return {"brow.L.lift": x, "brow.R.lift": x}
+
+    def gz(x, y):
+        return {"gaze.x": x, "gaze.y": y}
+    V = [
+        # 0: a smiling eye first
+        [({**sm(0.8), "mouth.form": 0.8, "head.tilt": 6, "dur": 0.2,
+           "hold": 0.6}, "Hehe, you remembered?"),
+         ({**br(0.6), "head.pitch": 3, "head.yaw": 4, "dur": 0.2,
+           "hold": 0.4}, "That is really sweet of you,"),
+         ({**shut, "mouth.form": 1, "head.tilt": -4, "head.pitch": 2,
+           "dur": 0.15, "hold": 0.5}, "and I am a little embarrassed."),
+         ({**gz(0.6, -0.2), "head.yaw": 7, "dur": 0.25, "hold": 0.6},
+          "Look, I even tidied up"),
+         ({**gz(0, 0), "cheek.blush": 0.5, "mouth.form": 0.4,
+           "head.pitch": 4, "dur": 0.3, "hold": 0.8}, "just in case."),
+         ({**br(-0.4), "mouth.form": -0.3, "head.tilt": 4, "head.yaw": -3,
+           "dur": 0.25, "hold": 0.5}, "Is it strange"),
+         ({**sm(0.7), "mouth.form": 0.7, "head.tilt": -5, "dur": 0.25,
+           "hold": 0.6}, "that I am this happy?"),
+         ({**br(0.4), "head.pitch": -3, "head.yaw": 2, "dur": 0.2,
+           "hold": 0.4}, "Stay a while.")],
+        # 1: a look away first
+        [({**gz(-0.5, 0.15), "head.yaw": -7, "dur": 0.25, "hold": 0.7},
+          "Hmm, let me think about that."),
+         ({**gz(0, 0), **br(0.5), "head.pitch": 3, "dur": 0.2,
+           "hold": 0.4}, "Oh, wait,"),
+         ({**sm(0.7), "mouth.form": 0.6, "head.tilt": 5, "dur": 0.2,
+           "hold": 0.6}, "I know a place,"),
+         ({**br(0.8), "head.yaw": 5, "head.pitch": 4, "dur": 0.15,
+           "hold": 0.4}, "a tiny cafe by the river!"),
+         ({**shut, "mouth.form": 1, "head.tilt": -6, "dur": 0.15,
+           "hold": 0.5}, "The cake there is silly good."),
+         ({**gz(0.5, 0), "head.yaw": 6, "cheek.blush": 0.4,
+           "mouth.form": 0.3, "dur": 0.25, "hold": 0.7},
+          "I went there alone once,"),
+         ({**br(-0.5), "mouth.form": -0.4, "head.tilt": 4, "dur": 0.25,
+           "hold": 0.5}, "and it was a bit lonely."),
+         ({**gz(0, 0), **sm(0.8), "mouth.form": 0.9, "head.pitch": 3,
+           "dur": 0.2, "hold": 0.6}, "So come with me this time.")],
+        # 2: a small laugh with closed eyes first
+        [({**shut, "mouth.form": 1, "head.tilt": 6, "head.pitch": 4,
+           "dur": 0.15, "hold": 0.7}, "Ahaha, stop it,"),
+         ({**sm(0.8), "mouth.form": 0.8, "head.yaw": -4, "dur": 0.2,
+           "hold": 0.5}, "you are too funny!"),
+         ({**br(0.6), "head.pitch": -3, "dur": 0.2, "hold": 0.4},
+          "Wait, was that real?"),
+         ({**gz(0.5, 0.1), "head.yaw": 5, "dur": 0.25, "hold": 0.6},
+          "Say it again slowly,"),
+         ({**gz(0, 0), **br(-0.3), "mouth.form": -0.2, "head.tilt": -5,
+           "dur": 0.25, "hold": 0.5}, "I want to be sure I heard it."),
+         ({**shut, "mouth.form": 0.9, "head.tilt": 5, "head.pitch": 3,
+           "dur": 0.15, "hold": 0.5}, "Pfft, no, I cannot breathe."),
+         ({"cheek.blush": 0.5, "mouth.form": 0.5, "head.pitch": 5,
+           "dur": 0.3, "hold": 0.8}, "Sorry, sorry,"),
+         ({**br(0.4), **sm(0.6), "mouth.form": 0.6, "head.yaw": -3,
+           "dur": 0.2, "hold": 0.5}, "keep going.")],
+        # 3: a pout / worried brows first
+        [({**br(-0.6), "mouth.form": -0.5, "head.tilt": -6,
+           "head.pitch": 3, "dur": 0.25, "hold": 0.8},
+          "Eh, you stayed up all night again?"),
+         ({**gz(-0.4, -0.2), "mouth.form": -0.3, "head.yaw": -5,
+           "dur": 0.25, "hold": 0.6}, "That is not good for you,"),
+         ({**br(0.7), "head.pitch": 4, "head.yaw": 3, "dur": 0.2,
+           "hold": 0.5}, "you know that?"),
+         ({**gz(0, 0), **br(-0.4), "mouth.form": -0.6, "head.tilt": 5,
+           "dur": 0.25, "hold": 0.6}, "I was worried,"),
+         ({"cheek.blush": 0.6, "mouth.form": 0.2, "head.pitch": 5,
+           "head.tilt": -4, "dur": 0.3, "hold": 0.8},
+          "really, not just a little."),
+         ({**sm(0.5), "mouth.form": 0.5, "head.yaw": 4, "dur": 0.25,
+           "hold": 0.6}, "But fine, I forgive you"),
+         ({**br(0.5), "mouth.form": 0.8, "head.tilt": 6, "dur": 0.2,
+           "hold": 0.5}, "if you eat something warm."),
+         ({**sm(0.8), "mouth.form": 0.9, "head.pitch": -3, "dur": 0.2,
+           "hold": 0.6}, "Deal?")],
+        # 4: a blush first
+        [({"cheek.blush": 0.7, "mouth.form": 0.4, "head.pitch": 6,
+           "head.tilt": -4, "dur": 0.3, "hold": 0.9},
+          "Um, you say that so suddenly."),
+         ({**gz(-0.5, -0.3), "head.yaw": -6, "dur": 0.25, "hold": 0.7},
+          "I do not know where to look."),
+         ({**gz(0, 0), **br(0.6), "head.pitch": 3, "dur": 0.2,
+           "hold": 0.4}, "Did you mean it?"),
+         ({**sm(0.6), "mouth.form": 0.6, "head.tilt": 5, "dur": 0.2,
+           "hold": 0.6}, "Then I am happy,"),
+         ({**shut, "mouth.form": 0.8, "head.pitch": 4, "dur": 0.15,
+           "hold": 0.5}, "really happy."),
+         ({**br(-0.3), "mouth.form": -0.2, "head.yaw": 3, "head.tilt": -3,
+           "dur": 0.25, "hold": 0.5}, "But do not tease me,"),
+         ({"cheek.blush": 0.4, **sm(0.7), "mouth.form": 0.7, "dur": 0.3,
+           "hold": 0.8}, "or I will hide."),
+         ({**br(0.4), "head.pitch": -3, "head.yaw": -2, "dur": 0.2,
+           "hold": 0.4}, "Say it once more?")],
+        # 5: calm, a slow head tilt first
+        [({"head.tilt": 7, "mouth.form": 0.3, "head.pitch": 2, "dur": 0.45,
+           "hold": 1}, "Mm, I see."),
+         ({**br(0.3), "head.pitch": 3, "dur": 0.25, "hold": 0.5},
+          "So that is how it went."),
+         ({**gz(0.4, -0.1), "head.yaw": 5, "dur": 0.3, "hold": 0.7},
+          "Let me think for a moment,"),
+         ({**gz(0, 0), "mouth.form": 0.2, "head.tilt": -4, "dur": 0.3,
+           "hold": 0.6}, "because it matters."),
+         ({**br(0.5), "head.yaw": -4, "head.pitch": 3, "dur": 0.2,
+           "hold": 0.4}, "I think you did the right thing,"),
+         ({**sm(0.6), "mouth.form": 0.6, "head.tilt": 5, "dur": 0.25,
+           "hold": 0.7}, "even if it was hard."),
+         ({**br(-0.2), "mouth.form": 0.1, "head.pitch": 4, "dur": 0.3,
+           "hold": 0.6}, "Tomorrow will be easier,"),
+         ({**sm(0.7), "mouth.form": 0.7, "head.pitch": -2, "head.yaw": 3,
+           "dur": 0.25, "hold": 0.8}, "and I will be here.")],
+    ]
+    out = []
+    for beats in V:
+        ms = [mk(d) for d, _t in beats]
+        if sum(1 for m in ms if m) < 5:
+            continue
+        out.append(" ".join((m + " " if m else "") + t
+                            for m, (_d, t) in zip(ms, beats)))
+    return out
+
+
+def dense_variants(bm) -> list[str]:
+    """_dense_variants for a body (its offered variables)."""
+    return _dense_variants(bm, set(offered(bm)))
+
+
+def variant_count(bm) -> int:
+    """How many dense example variants the beats2 prompt has for this
+    body (at least 1: a body with none shows no dense example)."""
+    return max(1, len(dense_variants(bm)))
+
+
+def variant_for(seed, bm) -> int:
+    """The dense example variant of a generated session, from its seed
+    alone (flow.dataset: the session's seed, itself from the run seed and
+    the session id); serving uses variant 0."""
+    return int(seed) % variant_count(bm)
+
+
+def _beat_examples2(bm, variant=0) -> list[str]:
+    """Placement examples for the "beats2" prompt: one dense reply (the
+    `variant`th of _dense_variants) and two short ones that also change
+    with it, so no opening is shown every time."""
+    have = set(offered(bm))
+
+    def mk(d):
+        d = {k: v for k, v in d.items() if k in have or k in ("dur", "hold")}
+        return "[pose " + json.dumps(d) + "]" \
+            if any(k in have for k in d) else ""
+    smile = {v: 0.8 for v in _bothsides(have, "eye", ("smile",))} \
+        or {v: 0 for v in _bothsides(have, "eye", ("open",))}
+    shut = {v: 0 for v in _bothsides(have, "eye", ("open",))}
+    br = lambda x: {"brow.L.lift": x, "brow.R.lift": x}  # noqa: E731
+    pool = [
+        (mk({"gaze.x": 0.5, "gaze.y": -0.1, "head.yaw": 6, "dur": 0.25,
+             "hold": 0.6}), "Hmm, I did not expect that.",
+         mk({**smile, "mouth.form": 0.5, "head.tilt": -4, "dur": 0.25,
+             "hold": 0.6}), "Well, maybe."),
+        (mk({"cheek.blush": 0.5, "mouth.form": 0.4, "head.pitch": 5,
+             "dur": 0.3, "hold": 0.8}), "Aww, really?",
+         mk({**smile, "mouth.form": 0.9, "head.tilt": 5, "dur": 0.25,
+             "hold": 0.6}), "You are too kind."),
+        (mk({**br(-0.4), "mouth.form": -0.4, "head.tilt": 5, "dur": 0.25,
+             "hold": 0.6}), "Hm.",
+         mk({"gaze.x": -0.4, "head.yaw": -5, "dur": 0.25, "hold": 0.6}),
+         "I am not sure about that."),
+        (mk({**br(0.7), "head.pitch": 4, "head.yaw": -5, "dur": 0.2,
+             "hold": 0.5}), "Wait, you did what?",
+         mk({**smile, "mouth.form": 0.8, "head.tilt": 6, "dur": 0.25,
+             "hold": 0.6}), "That is hilarious!"),
+        (mk({**shut, "mouth.form": 1, "head.tilt": -5, "head.pitch": 3,
+             "dur": 0.15, "hold": 0.5}), "Hahaha, stop it.",
+         mk({**br(0.5), "mouth.form": 0.8, "head.pitch": -3, "dur": 0.2,
+             "hold": 0.5}), "I cannot breathe."),
+        (mk({"head.tilt": 7, "mouth.form": 0.3, "dur": 0.45, "hold": 1}),
+         "Mm, I see.",
+         mk({**br(0.3), "head.pitch": 3, "dur": 0.25, "hold": 0.5}),
+         "Go on, I am listening."),
+    ]
+    ex = []
+    dense = dense_variants(bm)
+    if dense:
+        ex.append(dense[variant % len(dense)])
+    for k in (variant, variant + 3):
+        a, ta, b, tb = pool[k % len(pool)]
+        if a and b:
+            ex.append(f"{a} {ta} {b} {tb}")
+    return ex
+
+
 def _beat_examples(bm) -> list[str]:
     """Placement examples for the "beats" prompt: face beats with their head
     move in the marker, from the variables this body has ([] when it has no
@@ -1150,24 +1429,30 @@ def _examples(bm, beats=False) -> list[str]:
 
 
 def system_prompt(bm, persona=None, images=False, gestures="",
-                  moves="", prompt="v1") -> str:
+                  moves="", prompt="v1", variant=0) -> str:
     """Byte-stable for a body file, persona, image setting and gesture
     lines: the current pose goes in the user message (pose_now), never
     here. gestures: the [gesture:NAME] entry (director.gesture_lines) when
     body mode offers the rig's own motions (--body-gestures). moves: the
     [move] entry (flow.moves.prompt_lines) when it offers motion
     primitives (--body-moves); "" is the prompt of before them. prompt: "v1"
-    the first teacher prompt, "beats" the expression beats (PROMPTS)."""
+    the first teacher prompt, "beats" the expression beats, "beats2" the
+    same with several dense examples (`variant` picks the one shown: the
+    data uses all of them, serving variant 0), the [frame full] entry
+    before whole-body moves and the reply-language line (PROMPTS)."""
     if prompt not in PROMPTS:
         raise ValueError(f"prompt {prompt!r}: one of {', '.join(PROMPTS)}")
-    beats = prompt == "beats"
-    ex = _examples(bm, beats)
+    beats = beats_like(prompt)
+    v2 = prompt == "beats2"
+    ex = (_beat_examples2(bm, variant) or _examples(bm, False)) if v2 \
+        else _examples(bm, beats)
     if moves:
         try:
             from . import moves as mv
         except ImportError:
             from flow import moves as mv
-        ex.append(mv.PROMPT_EXAMPLE)
+        ex.append(mv.PROMPT_EXAMPLE.replace("[move", "[frame full][move", 1)
+                  if v2 and fr.can_frame(bm) else mv.PROMPT_EXAMPLE)
     persona = (persona or "a friendly, expressive character.").strip()
     # A VRM body says what it is (flow.vrmbody); a Live2D one is the
     # default, its prompt the same bytes as before E3.
@@ -1177,11 +1462,66 @@ def system_prompt(bm, persona=None, images=False, gestures="",
         image=(", and with it a picture of how you look right now, as the "
                "viewer sees you (your left is on the picture's right)"
                if images else ""),
-        gestures=(gestures or "") + (frame_entry(bm) if beats else ""),
+        gestures=(gestures or "") + (
+            frame_entry2(bm, bool(moves)) if v2 else
+            frame_entry(bm) if beats else ""),
         whole="" if beats else _whole_body(bm, bool(gestures)),
-        beats=_beats_rule(bm) if beats else "",
+        beats=_beats_rule(bm, v2) if beats else "",
         sentence_rule=SENTENCE_RULE[prompt], moves=moves or "", move_rule=(mv.PROMPT_RULE if moves else ""),
         examples="\n".join(ex) + "\n")
+
+
+# ---------------------------------------- reply language and the turn's tail
+
+LANG_NAMES = {"en": "English", "ja": "Japanese", "zh": "Chinese (Simplified)",
+              "ko": "Korean"}
+# The names the beats2 user turn carries ("(reply in: English)").
+REPLY_NAMES = {"en": "English", "ja": "Japanese", "zh": "Chinese",
+               "ko": "Korean"}
+
+
+def detect_lang(text):
+    """The main language of a line by script: 'en', 'ja', 'zh', 'ko' or
+    None (flow.speech.script_language; Han alone is Chinese). A line that
+    mixes scripts is the language of most of its letters: a line of English
+    with a kanji or a kana word in it is English."""
+    text = text or ""
+    lang = sp.script_language(text)
+    lang = {"han": "zh"}.get(lang, lang)
+    if lang in ("ja", "zh", "ko"):
+        latin = sum(1 for c in text if c.isascii() and c.isalpha())
+        other = sum(1 for c in text if 0x1100 <= ord(c) <= 0x11FF
+                    or 0x3040 <= ord(c) <= 0x30FF
+                    or 0x3400 <= ord(c) <= 0x9FFF
+                    or 0xAC00 <= ord(c) <= 0xD7AF)
+        if latin >= 8 and latin > 3 * other:
+            return "en"
+    return lang
+
+
+def reply_line(text) -> str:
+    """The user turn's reply-language line of the beats2 prompt:
+    "(reply in: English)", from the user's latest line (detect_lang; ""
+    when it settles nothing, e.g. "OK!"). Training data and serving both
+    write it with this function."""
+    name = REPLY_NAMES.get(detect_lang(text))
+    return f"(reply in: {name})" if name else ""
+
+
+def turn_tail(bm, framing, text, prompt) -> str:
+    """What follows the pose line of a user turn under `prompt`: "" for v1;
+    "\n(camera: ...)" for beats; for beats2 also "\n(reply in: ...)" next
+    to it. `framing`: the framing the turn starts in; `text` the user's
+    line. The data generator, the director and the live loop all call
+    this, so what the student was taught is what it is served."""
+    if not beats_like(prompt):
+        return ""
+    out = "\n" + camera_now(bm, framing)
+    if prompt == "beats2":
+        line = reply_line(text)
+        if line:
+            out += "\n" + line
+    return out
 
 
 def pose_now(bm, values=None, parts=None) -> str:
